@@ -257,42 +257,52 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     }
   }
 
-  // Captura movimento e soltura do mouse em nível de window para não travar quando o cursor sai da imagem
+  // Captura movimento e soltura do mouse em nível de window para fluidez total a 60fps sem sobrecarregar a CPU
   useEffect(() => {
     if (!isDrawing && !isDraggingMask) return
 
+    let rafId: number | null = null
+
     const handleWindowMouseMove = (e: MouseEvent) => {
-      const coords = getRelativeCoords(e.clientX, e.clientY)
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        const coords = getRelativeCoords(e.clientX, e.clientY)
 
-      if (isDraggingMask && selectedMaskId && dragOffset) {
-        setMasks((prev) =>
-          prev.map((m) => {
-            if (m.id === selectedMaskId) {
-              const newX = Math.max(0, Math.min(100 - m.width, coords.x - dragOffset.x))
-              const newY = Math.max(0, Math.min(100 - m.height, coords.y - dragOffset.y))
-              return { ...m, x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 }
-            }
-            return m
+        if (isDraggingMask && selectedMaskId && dragOffset) {
+          setMasks((prev) =>
+            prev.map((m) => {
+              if (m.id === selectedMaskId) {
+                const newX = Math.max(0, Math.min(100 - m.width, coords.x - dragOffset.x))
+                const newY = Math.max(0, Math.min(100 - m.height, coords.y - dragOffset.y))
+                return { ...m, x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 }
+              }
+              return m
+            })
+          )
+          return
+        }
+
+        if (isDrawing && startPos) {
+          const x = Math.min(startPos.x, coords.x)
+          const y = Math.min(startPos.y, coords.y)
+          const w = Math.abs(coords.x - startPos.x)
+          const h = Math.abs(coords.y - startPos.y)
+          setCurrentRect({
+            x: Math.round(x * 10) / 10,
+            y: Math.round(y * 10) / 10,
+            w: Math.round(w * 10) / 10,
+            h: Math.round(h * 10) / 10,
           })
-        )
-        return
-      }
-
-      if (isDrawing && startPos) {
-        const x = Math.min(startPos.x, coords.x)
-        const y = Math.min(startPos.y, coords.y)
-        const w = Math.abs(coords.x - startPos.x)
-        const h = Math.abs(coords.y - startPos.y)
-        setCurrentRect({
-          x: Math.round(x * 10) / 10,
-          y: Math.round(y * 10) / 10,
-          w: Math.round(w * 10) / 10,
-          h: Math.round(h * 10) / 10,
-        })
-      }
+        }
+      })
     }
 
     const handleWindowMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       if (isDraggingMask) {
         setIsDraggingMask(false)
         setDragOffset(null)
@@ -317,9 +327,10 @@ export const ImageOcclusionModal: React.FC<Props> = ({
       }
     }
 
-    window.addEventListener('mousemove', handleWindowMouseMove)
+    window.addEventListener('mousemove', handleWindowMouseMove, { passive: true })
     window.addEventListener('mouseup', handleWindowMouseUp)
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
       window.removeEventListener('mousemove', handleWindowMouseMove)
       window.removeEventListener('mouseup', handleWindowMouseUp)
     }
@@ -805,6 +816,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                     src={imageUrl}
                     alt="Peça anatômica"
                     draggable={false}
+                    decoding="async"
                     onError={() => setMsg('Erro ao renderizar a imagem. Verifique o formato ou tente enviar outro arquivo.')}
                     style={{
                       display: 'block',
@@ -832,17 +844,19 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                           width: `${mask.width}%`,
                           height: `${mask.height}%`,
                           borderRadius: 2,
-                          border: isSelected ? '2px solid #ef4444' : `1.5px solid ${selectedColor.border}`,
-                          background: isSelected ? 'rgba(255, 234, 121, 0.95)' : selectedColor.bg,
+                          border: isSelected ? '2.5px solid #ef4444' : `2px solid ${selectedColor?.border || '#1e293b'}`,
+                          background: isSelected ? '#fed7aa' : (selectedColor?.bg || '#ffea79'),
+                          opacity: 1,
                           color: '#0f172a',
-                          fontWeight: 800,
+                          fontWeight: 900,
                           fontSize: 'clamp(0.68rem, 1.2vw, 0.85rem)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           boxSizing: 'border-box',
                           cursor: isDraggingMask ? 'grabbing' : 'grab',
-                          boxShadow: isSelected ? '0 0 10px rgba(239, 68, 68, 0.7)' : '0 2px 5px rgba(0,0,0,0.2)',
+                          boxShadow: isSelected ? '0 0 10px rgba(239, 68, 68, 0.7)' : '0 2px 5px rgba(0,0,0,0.25)',
+                          zIndex: 10,
                         }}
                       >
                         <span style={{ padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -862,7 +876,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                     )
                   })}
 
-                  {/* Quadradinho sendo desenhado agora */}
+                  {/* Quadradinho sendo desenhado agora (100% OPACO para tapar totalmente a estrutura) */}
                   {currentRect && (
                     <div
                       style={{
@@ -871,10 +885,13 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                         top: `${currentRect.y}%`,
                         width: `${currentRect.w}%`,
                         height: `${currentRect.h}%`,
-                        border: '2px solid #e11d48',
-                        background: 'rgba(255, 234, 121, 0.65)',
+                        border: '2.5px solid #dc2626',
+                        background: '#ffea79',
+                        opacity: 1,
                         pointerEvents: 'none',
                         boxSizing: 'border-box',
+                        boxShadow: '0 0 10px rgba(220, 38, 38, 0.6)',
+                        zIndex: 20,
                       }}
                     />
                   )}

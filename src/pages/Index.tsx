@@ -2122,8 +2122,23 @@ export default function Index() {
       setMsg('Erro ao carregar dados: ' + (e?.message || e))
     }
   }, [])
-  const reviewsForCard = (card: Card, cardId = card.id.replace(/::rev$/, '')) =>
-    reviews.filter((r) => (r.card_ref || r.card) === cardId)
+
+  const reviewsByCard = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const r of reviews) {
+      const key = (r.card_ref || r.card) as string
+      if (!key) continue
+      const arr = map.get(key)
+      if (arr) arr.push(r)
+      else map.set(key, [r])
+    }
+    return map
+  }, [reviews])
+
+  const reviewsForCard = useCallback(
+    (card: Card, cardId = card.id.replace(/::rev$/, '')) => reviewsByCard.get(cardId) || [],
+    [reviewsByCard],
+  )
 
   useEffect(() => {
     if (route.view === 'study' && queue[qIdx]) {
@@ -2712,35 +2727,59 @@ export default function Index() {
 
   const allCards = cards
   const totalCards = allCards.length
-  const cardStates = new Map(
-    allCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
-  )
-  const dueCount = allCards.filter((c) => {
-    const cs = cardStates.get(stateKey(c))!
-    return cs.state !== 'new' && (cs.dueMs || 0) <= Date.now()
-  }).length
-  const newCount = allCards.filter((c) => cardStates.get(stateKey(c))!.state === 'new').length
+
+  const { cardStates, dueCount, newCount, masteredCount, streakDays } = useMemo(() => {
+    const states = new Map(
+      allCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
+    )
+    let due = 0
+    let n = 0
+    let mastered = 0
+    const now = Date.now()
+
+    for (const c of allCards) {
+      const cs = states.get(stateKey(c))
+      if (!cs) continue
+      if (cs.state === 'new') {
+        n += 1
+      } else if ((cs.dueMs || 0) <= now) {
+        due += 1
+      }
+      if ((cs.s || 0) >= 21) {
+        mastered += 1
+      }
+    }
+
+    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    const reviewDays = new Set(
+      reviews
+        .map((r) => {
+          const raw = typeof r.reviewed_at === 'string' ? r.reviewed_at : ''
+          if (!raw) return ''
+          const date = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'))
+          return Number.isNaN(date.getTime()) ? '' : dayKey(date)
+        })
+        .filter(Boolean),
+    )
+    const streakCursor = new Date()
+    if (!reviewDays.has(dayKey(streakCursor))) streakCursor.setDate(streakCursor.getDate() - 1)
+    let streak = 0
+    while (reviewDays.has(dayKey(streakCursor)) && streak < 366) {
+      streak += 1
+      streakCursor.setDate(streakCursor.getDate() - 1)
+    }
+
+    return {
+      cardStates: states,
+      dueCount: due,
+      newCount: n,
+      masteredCount: mastered,
+      streakDays: streak,
+    }
+  }, [allCards, reviews, reviewsForCard])
+
   const reviewTodayCount = dueCount
-  const masteredCount = allCards.filter((c) => (cardStates.get(stateKey(c))!.s || 0) >= 21).length
   const masteredPercent = totalCards ? Math.round((masteredCount * 100) / totalCards) : 0
-  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-  const reviewDays = new Set(
-    reviews
-      .map((r) => {
-        const raw = typeof r.reviewed_at === 'string' ? r.reviewed_at : ''
-        if (!raw) return ''
-        const date = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'))
-        return Number.isNaN(date.getTime()) ? '' : dayKey(date)
-      })
-      .filter(Boolean),
-  )
-  const streakCursor = new Date()
-  if (!reviewDays.has(dayKey(streakCursor))) streakCursor.setDate(streakCursor.getDate() - 1)
-  let streakDays = 0
-  while (reviewDays.has(dayKey(streakCursor)) && streakDays < 366) {
-    streakDays += 1
-    streakCursor.setDate(streakCursor.getDate() - 1)
-  }
 
   // ===== Tela: estudo =====
   if (route.view === 'study') {
