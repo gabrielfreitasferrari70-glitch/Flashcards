@@ -86,22 +86,55 @@ export interface CardExtras {
   clinical?: boolean
 }
 
-export const createCard = async (deckId: string, card: ParsedCsvCard & CardExtras) => {
+export const createCard = async (
+  deckId: string,
+  card: ParsedCsvCard & CardExtras & { occlusion?: any; tags?: string[] },
+) => {
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
 
-  const { data, error } = await supabase.from('mr_cards').insert({
+  const basePayload: any = {
     user_id: user.user.id,
     deck_id: deckId,
     q: card.q,
     a: card.a,
     clinical: !!card.clinical,
-    suspended: false
-  }).select().single()
+    suspended: false,
+  }
 
-  if (error) throw error
-  return data
+  // Se tiver colunas da migração 002, tenta incluir
+  const extendedPayload: any = { ...basePayload }
+  if ((card as any).occlusion) extendedPayload.occlusion = (card as any).occlusion
+  if ((card as any).imageUrl) extendedPayload.image_url = (card as any).imageUrl
+  if ((card as any).tags) extendedPayload.tags = (card as any).tags
+  if ((card as any).group) extendedPayload.group = (card as any).group
+  if ((card as any).ref) extendedPayload.ref = (card as any).ref
+
+  try {
+    const { data, error } = await supabase
+      .from('mr_cards')
+      .insert(extendedPayload)
+      .select()
+      .single()
+    if (!error) return data
+
+    // Se o banco ainda não rodou a migração 002 das colunas novas, faz fallback seguro
+    if (error.code === '42703' || error.message?.includes('column')) {
+      console.warn('Fallback: colunas extras ainda não criadas em mr_cards, inserindo payload básico')
+      const { data: fbData, error: fbErr } = await supabase
+        .from('mr_cards')
+        .insert(basePayload)
+        .select()
+        .single()
+      if (fbErr) throw fbErr
+      return fbData
+    }
+    throw error
+  } catch (err) {
+    throw err
+  }
 }
+
 
 export const updateCard = async (
   card: {

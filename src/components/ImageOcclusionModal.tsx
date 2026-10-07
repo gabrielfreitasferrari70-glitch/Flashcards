@@ -62,29 +62,123 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     setSelectedMaskId(null)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setImageUrl(reader.result as string)
-      setMasks([])
-      setHistory([])
-    }
-    reader.readAsDataURL(file)
+  // Redimensiona e otimiza imagens (evita estourar memória com base64 gigante de fotos de câmera/print)
+  const processImageFile = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        try {
+          const maxDim = 1280
+          let w = img.naturalWidth || img.width
+          let h = img.naturalHeight || img.height
+          if (!w || !h) {
+            URL.revokeObjectURL(url)
+            reject(new Error('Imagem sem dimensões válidas.'))
+            return
+          }
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w)
+              w = maxDim
+            } else {
+              w = Math.round((w * maxDim) / h)
+              h = maxDim
+            }
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            URL.revokeObjectURL(url)
+            reject(new Error('Falha ao inicializar canvas para imagem.'))
+            return
+          }
+          ctx.drawImage(img, 0, 0, w, h)
+          URL.revokeObjectURL(url)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+          resolve(dataUrl)
+        } catch (err) {
+          URL.revokeObjectURL(url)
+          reject(err)
+        }
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('Formato de imagem não reconhecido ou corrompido.'))
+      }
+      img.src = url
+    })
   }
 
-  const getRelativeCoords = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setMsg('')
+    try {
+      const optimized = await processImageFile(file)
+      setImageUrl(optimized)
+      setMasks([])
+      setHistory([])
+    } catch (err: any) {
+      console.error('Erro ao abrir imagem:', err)
+      setMsg('Erro ao abrir imagem: ' + (err?.message || 'formato incompatível'))
+    } finally {
+      setBusy(false)
+      e.target.value = ''
+    }
+  }
+
+  // Suporte a colar imagem direto do clipboard (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile()
+          if (file) {
+            setBusy(true)
+            try {
+              const opt = await processImageFile(file)
+              setImageUrl(opt)
+              setMasks([])
+              setHistory([])
+              setMsg('Imagem colada da área de transferência!')
+              setTimeout(() => setMsg(''), 2500)
+            } catch (err: any) {
+              setMsg('Erro ao colar imagem: ' + (err?.message || err))
+            } finally {
+              setBusy(false)
+            }
+            break
+          }
+        }
+      }
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [])
+
+  const getRelativeCoords = (clientX: number, clientY: number) => {
     if (!imgContainerRef.current) return { x: 0, y: 0 }
     const rect = imgContainerRef.current.getBoundingClientRect()
-    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
-    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100))
+    if (!rect.width || !rect.height || rect.width <= 0 || rect.height <= 0) {
+      return { x: 0, y: 0 }
+    }
+    const rawX = ((clientX - rect.left) / rect.width) * 100
+    const rawY = ((clientY - rect.top) / rect.height) * 100
+    if (isNaN(rawX) || isNaN(rawY)) return { x: 0, y: 0 }
+    const x = Math.max(0, Math.min(100, Math.round(rawX * 10) / 10))
+    const y = Math.max(0, Math.min(100, Math.round(rawY * 10) / 10))
     return { x, y }
   }
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!imageUrl) return
-    const coords = getRelativeCoords(e)
+    const coords = getRelativeCoords(e.clientX, e.clientY)
 
     if (activeTool === 'select' && selectedMaskId) {
       const selected = masks.find((m) => m.id === selectedMaskId)
@@ -108,55 +202,73 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     }
   }
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const coords = getRelativeCoords(e)
+  // Captura movimento e soltura do mouse em nível de window para não travar quando o cursor sai da imagem
+  useEffect(() => {
+    if (!isDrawing && !isDraggingMask) return
 
-    if (isDraggingMask && selectedMaskId && dragOffset) {
-      const updated = masks.map((m) => {
-        if (m.id === selectedMaskId) {
-          const newX = Math.max(0, Math.min(100 - m.width, coords.x - dragOffset.x))
-          const newY = Math.max(0, Math.min(100 - m.height, coords.y - dragOffset.y))
-          return { ...m, x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 }
-        }
-        return m
-      })
-      setMasks(updated)
-      return
-    }
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const coords = getRelativeCoords(e.clientX, e.clientY)
 
-    if (!isDrawing || !startPos) return
-    const x = Math.min(startPos.x, coords.x)
-    const y = Math.min(startPos.y, coords.y)
-    const w = Math.abs(coords.x - startPos.x)
-    const h = Math.abs(coords.y - startPos.y)
-    setCurrentRect({ x, y, w, h })
-  }
-
-  const handleMouseUp = () => {
-    if (isDraggingMask) {
-      setIsDraggingMask(false)
-      setDragOffset(null)
-      return
-    }
-
-    if (!isDrawing || !currentRect) return
-    setIsDrawing(false)
-
-    if (currentRect.w > 2 && currentRect.h > 2) {
-      const newMask: OcclusionMask = {
-        id: 'mask_' + Math.random().toString(36).slice(2, 9),
-        x: Math.round(currentRect.x * 10) / 10,
-        y: Math.round(currentRect.y * 10) / 10,
-        width: Math.round(currentRect.w * 10) / 10,
-        height: Math.round(currentRect.h * 10) / 10,
-        label: `Estrutura ${masks.length + 1}`,
+      if (isDraggingMask && selectedMaskId && dragOffset) {
+        setMasks((prev) =>
+          prev.map((m) => {
+            if (m.id === selectedMaskId) {
+              const newX = Math.max(0, Math.min(100 - m.width, coords.x - dragOffset.x))
+              const newY = Math.max(0, Math.min(100 - m.height, coords.y - dragOffset.y))
+              return { ...m, x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 }
+            }
+            return m
+          })
+        )
+        return
       }
-      pushHistory([...masks, newMask])
-      setSelectedMaskId(newMask.id)
+
+      if (isDrawing && startPos) {
+        const x = Math.min(startPos.x, coords.x)
+        const y = Math.min(startPos.y, coords.y)
+        const w = Math.abs(coords.x - startPos.x)
+        const h = Math.abs(coords.y - startPos.y)
+        setCurrentRect({
+          x: Math.round(x * 10) / 10,
+          y: Math.round(y * 10) / 10,
+          w: Math.round(w * 10) / 10,
+          h: Math.round(h * 10) / 10,
+        })
+      }
     }
-    setCurrentRect(null)
-    setStartPos(null)
-  }
+
+    const handleWindowMouseUp = () => {
+      if (isDraggingMask) {
+        setIsDraggingMask(false)
+        setDragOffset(null)
+      }
+
+      if (isDrawing) {
+        setIsDrawing(false)
+        if (currentRect && currentRect.w > 1.5 && currentRect.h > 1.5) {
+          const newMask: OcclusionMask = {
+            id: 'mask_' + Math.random().toString(36).slice(2, 9),
+            x: currentRect.x,
+            y: currentRect.y,
+            width: currentRect.w,
+            height: currentRect.h,
+            label: `Estrutura ${masks.length + 1}`,
+          }
+          pushHistory([...masks, newMask])
+          setSelectedMaskId(newMask.id)
+        }
+        setCurrentRect(null)
+        setStartPos(null)
+      }
+    }
+
+    window.addEventListener('mousemove', handleWindowMouseMove)
+    window.addEventListener('mouseup', handleWindowMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove)
+      window.removeEventListener('mouseup', handleWindowMouseUp)
+    }
+  }, [isDrawing, isDraggingMask, selectedMaskId, dragOffset, startPos, currentRect, masks])
 
   const updateLabel = (id: string, label: string) => {
     setMasks((prev) => prev.map((m) => (m.id === id ? { ...m, label } : m)))
@@ -186,7 +298,6 @@ export const ImageOcclusionModal: React.FC<Props> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedMaskId) {
-        // Only if not typing in an input
         const tag = (e.target as HTMLElement).tagName
         if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
           removeMask(selectedMaskId)
@@ -197,7 +308,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
       }
     }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener(handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedMaskId, masks, history])
 
   const handleSaveAnkiMode = async (mode: 'hide_all_guess_one' | 'hide_one_guess_one') => {
@@ -624,6 +735,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                     src={imageUrl}
                     alt="Peça anatômica"
                     draggable={false}
+                    onError={() => setMsg('Erro ao renderizar a imagem. Verifique o formato ou tente enviar outro arquivo.')}
                     style={{
                       display: 'block',
                       maxWidth: '820px',

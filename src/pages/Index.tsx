@@ -21,6 +21,7 @@ import {
   MedReviewLegacySessionComplete,
   MedReviewLegacyStyles,
 } from '@/components/MedReviewLegacyLayout'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ImageOcclusionModal } from '@/components/ImageOcclusionModal'
 import { ImageOcclusionViewer } from '@/components/ImageOcclusionViewer'
 import { parseOcclusion } from '@/services/imageOcclusion'
@@ -2916,11 +2917,13 @@ export default function Index() {
                     : renderClozeHtml(card.q, flipped),
               }}
             />
-            {parseOcclusion(card.occlusion || card) && (
-              <ImageOcclusionViewer
-                data={parseOcclusion(card.occlusion || card)!}
-                revealed={flipped}
-              />
+            {parseOcclusion(card.occlusion) && (
+              <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
+                <ImageOcclusionViewer
+                  data={parseOcclusion(card.occlusion)!}
+                  revealed={flipped}
+                />
+              </ErrorBoundary>
             )}
             {!flipped &&
               studyMode === 'flip' &&
@@ -3448,16 +3451,21 @@ export default function Index() {
         />
       )}
       {imageOcclusionOpen && (
-        <ImageOcclusionModal
-          decks={decks}
-          initialDeckId={route.deckId}
-          onClose={() => setImageOcclusionOpen(false)}
-          onSuccess={() => {
-            loadData()
-            setMsg('Cartões de oclusão de imagem criados!')
-            setTimeout(() => setMsg(''), 3000)
-          }}
-        />
+        <ErrorBoundary
+          fallbackTitle="Erro no editor de oclusão de imagem"
+          onReset={() => setImageOcclusionOpen(false)}
+        >
+          <ImageOcclusionModal
+            decks={decks}
+            initialDeckId={route.deckId}
+            onClose={() => setImageOcclusionOpen(false)}
+            onSuccess={() => {
+              loadData()
+              setMsg('Cartões de oclusão de imagem criados!')
+              setTimeout(() => setMsg(''), 3000)
+            }}
+          />
+        </ErrorBoundary>
       )}
       {examPlanTarget && (
         <ExamPlanModal

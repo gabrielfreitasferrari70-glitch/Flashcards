@@ -10,13 +10,14 @@ export const SUGGESTED_TAGS = [
 ]
 
 export function extractCardTags(card: any): string[] {
+  if (!card) return []
   if (Array.isArray(card.tags)) return card.tags
   if (typeof card.tags === 'string' && card.tags.trim()) {
     return card.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
   }
   // Detect high-yield keywords automatically
   const autoTags: string[] = []
-  const text = (card.q + ' ' + card.a).toLowerCase()
+  const text = ((card.q || '') + ' ' + (card.a || '')).toLowerCase()
   if (/caso clínico|paciente|mulher|homem|anos|apresenta|quadro/i.test(text) && !card.clinical) {
     autoTags.push('🩺 Caso Clínico')
   }

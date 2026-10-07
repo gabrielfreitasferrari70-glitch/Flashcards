@@ -10,8 +10,13 @@ interface Props {
 export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
   const [zoomToMask, setZoomToMask] = useState(false)
   const [manuallyRevealed, setManuallyRevealed] = useState<Record<string, boolean>>({})
+  const [imgError, setImgError] = useState(false)
 
-  const activeMask = data.masks.find((m) => m.id === data.activeMaskId) || data.masks[0]
+  if (!data || !data.imageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
+    return null
+  }
+
+  const activeMask = data.masks.find((m) => m && m.id === data.activeMaskId) || data.masks[0]
   const isHideOne = data.mode === 'hide_one_guess_one'
 
   const toggleMask = (id: string, e: React.MouseEvent) => {
@@ -22,12 +27,13 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
   // Calculate zoom transform centering on activeMask
   let transformStyle = 'none'
   let transformOrigin = 'center center'
-  if (zoomToMask && activeMask) {
-    const centerX = activeMask.x + activeMask.width / 2
-    const centerY = activeMask.y + activeMask.height / 2
+  if (zoomToMask && activeMask && typeof activeMask.x === 'number' && typeof activeMask.y === 'number') {
+    const centerX = activeMask.x + (activeMask.width || 0) / 2
+    const centerY = activeMask.y + (activeMask.height || 0) / 2
     transformOrigin = `${centerX}% ${centerY}%`
     transformStyle = 'scale(2.2)'
   }
+
 
   return (
     <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
@@ -116,17 +122,24 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
             transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
-          <img
-            src={data.imageUrl}
-            alt={data.imageTitle || 'Oclusão de Imagem'}
-            style={{
-              display: 'block',
-              maxWidth: '100%',
-              maxHeight: '460px',
-              objectFit: 'contain',
-              userSelect: 'none',
-            }}
-          />
+          {imgError ? (
+            <div style={{ padding: '40px 20px', color: '#fca5a5', textAlign: 'center', fontSize: '.85rem' }}>
+              ⚠️ Não foi possível carregar a imagem da oclusão.
+            </div>
+          ) : (
+            <img
+              src={data.imageUrl}
+              alt={data.imageTitle || 'Oclusão de Imagem'}
+              onError={() => setImgError(true)}
+              style={{
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '460px',
+                objectFit: 'contain',
+                userSelect: 'none',
+              }}
+            />
+          )}
 
           {/* Occlusion Rectangles (estilo clássico do Anki) */}
           {data.masks.map((mask: OcclusionMask) => {
