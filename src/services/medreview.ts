@@ -121,8 +121,27 @@ export const deleteCard = async (cardId: string) => {
 }
 
 // Stubs for complex operations that we are simplifying
-export const moveDeck = async () => {}
-export const moveDeckSection = async () => {}
+export const moveDeck = async (deckId: string, parent: string, rootKind?: string) => {
+  const updates: any = {}
+  if (parent) updates.parent = parent
+  else updates.parent = null
+  if (rootKind) updates.kind = rootKind
+
+  const { data, error } = await supabase.from('mr_decks').update(updates).eq('id', deckId).select().single()
+  if (error) throw error
+  return data
+}
+export const moveDeckSection = async (fromKind: string, parent: string, rootKind?: string) => {
+  const updates: any = {}
+  if (parent) updates.parent = parent
+  else updates.parent = null
+  if (rootKind) updates.kind = rootKind
+
+  // Supabase update on multiple rows
+  const { data, error } = await supabase.from('mr_decks').update(updates).eq('kind', fromKind).is('parent', null).select()
+  if (error) throw error
+  return data
+}
 export const undoMoveSection = async () => {}
 export const repairSection = async () => {}
 export const resetDeck = async () => {}
