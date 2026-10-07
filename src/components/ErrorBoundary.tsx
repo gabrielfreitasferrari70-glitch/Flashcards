@@ -3,6 +3,7 @@ import React, { Component, type ErrorInfo, type ReactNode } from 'react'
 interface Props {
   children: ReactNode
   fallbackTitle?: string
+  isModal?: boolean
   onReset?: () => void
 }
 
@@ -36,9 +37,15 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.href = '/'
   }
 
+  private handleCloseModal = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null })
+    if (this.props.onReset) {
+      this.props.onReset()
+    }
+  }
+
   private handleClearAndReset = () => {
     try {
-      // Limpa dados temporários que possam estar corrompidos sem apagar auth
       sessionStorage.clear()
     } catch {
       /* ignore */
@@ -53,15 +60,21 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      const isModal = this.props.isModal
+
       return (
         <div
           style={{
-            minHeight: '100vh',
+            position: isModal ? 'fixed' : 'relative',
+            inset: isModal ? 0 : undefined,
+            zIndex: isModal ? 9999 : undefined,
+            minHeight: isModal ? undefined : '100vh',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            background: isModal ? 'rgba(15, 23, 42, 0.88)' : 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            backdropFilter: isModal ? 'blur(8px)' : undefined,
             color: '#f8fafc',
             padding: '24px',
             fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
@@ -163,6 +176,24 @@ export class ErrorBoundary extends Component<Props, State> {
               >
                 🔄 Recarregar MedReview
               </button>
+
+              {this.props.isModal && (
+                <button
+                  onClick={this.handleCloseModal}
+                  style={{
+                    background: '#e11d48',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '10px 18px',
+                    fontSize: '.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕ Fechar Janela
+                </button>
+              )}
 
               <button
                 onClick={this.handleClearAndReset}

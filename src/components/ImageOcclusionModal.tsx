@@ -62,54 +62,73 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     setSelectedMaskId(null)
   }
 
-  // Redimensiona e otimiza imagens (evita estourar memória com base64 gigante de fotos de câmera/print)
+  const [isDraggingFileOver, setIsDraggingFileOver] = useState(false)
+
+  // Redimensiona e otimiza imagens com Canvas + Fallback automático para FileReader
   const processImageFile = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        try {
-          const maxDim = 1280
-          let w = img.naturalWidth || img.width
-          let h = img.naturalHeight || img.height
-          if (!w || !h) {
-            URL.revokeObjectURL(url)
-            reject(new Error('Imagem sem dimensões válidas.'))
-            return
-          }
-          if (w > maxDim || h > maxDim) {
-            if (w > h) {
-              h = Math.round((h * maxDim) / w)
-              w = maxDim
-            } else {
-              w = Math.round((w * maxDim) / h)
-              h = maxDim
+    // 1. Tenta otimizar com Canvas para manter peso baixo (<200KB) e fluidez total
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image()
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+          try {
+            const maxDim = 1280
+            let w = img.naturalWidth || img.width
+            let h = img.naturalHeight || img.height
+            if (!w || !h) {
+              URL.revokeObjectURL(url)
+              reject(new Error('Imagem sem dimensões válidas.'))
+              return
             }
-          }
-          const canvas = document.createElement('canvas')
-          canvas.width = w
-          canvas.height = h
-          const ctx = canvas.getContext('2d')
-          if (!ctx) {
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w)
+                w = maxDim
+              } else {
+                w = Math.round((w * maxDim) / h)
+                h = maxDim
+              }
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = w
+            canvas.height = h
+            const ctx = canvas.getContext('2d')
+            if (!ctx) {
+              URL.revokeObjectURL(url)
+              reject(new Error('Canvas 2D não suportado.'))
+              return
+            }
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(0, 0, w, h)
+            ctx.drawImage(img, 0, 0, w, h)
             URL.revokeObjectURL(url)
-            reject(new Error('Falha ao inicializar canvas para imagem.'))
-            return
+            resolve(canvas.toDataURL('image/jpeg', 0.88))
+          } catch (err) {
+            URL.revokeObjectURL(url)
+            reject(err)
           }
-          ctx.drawImage(img, 0, 0, w, h)
-          URL.revokeObjectURL(url)
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-          resolve(dataUrl)
-        } catch (err) {
-          URL.revokeObjectURL(url)
-          reject(err)
         }
-      }
-      img.onerror = () => {
-        URL.revokeObjectURL(url)
-        reject(new Error('Formato de imagem não reconhecido ou corrompido.'))
-      }
-      img.src = url
-    })
+        img.onerror = () => {
+          URL.revokeObjectURL(url)
+          reject(new Error('Falha ao decodificar imagem via Image().'))
+        }
+        img.src = url
+      })
+      return dataUrl
+    } catch (canvasErr) {
+      console.warn('Canvas falhou, usando fallback FileReader:', canvasErr)
+      // 2. Fallback seguro: lê direto via FileReader (funciona para qualquer arquivo de imagem)
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result)
+          else reject(new Error('Resultado inválido do leitor de arquivo.'))
+        }
+        reader.onerror = () => reject(new Error('Falha ao ler arquivo.'))
+        reader.readAsDataURL(file)
+      })
+    }
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,6 +149,42 @@ export const ImageOcclusionModal: React.FC<Props> = ({
       e.target.value = ''
     }
   }
+
+  const handleFileDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingFileOver(false)
+
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+
+    setBusy(true)
+    setMsg('')
+    try {
+      const optimized = await processImageFile(file)
+      setImageUrl(optimized)
+      setMasks([])
+      setHistory([])
+      setMsg('Imagem carregada com sucesso!')
+      setTimeout(() => setMsg(''), 2500)
+    } catch (err: any) {
+      console.error('Erro ao abrir imagem arrastada:', err)
+      setMsg('Erro ao abrir imagem: ' + (err?.message || 'arquivo incompatível'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Previne que soltar arquivo na janela fora da área faça o navegador navegar para o arquivo
+  useEffect(() => {
+    const preventDrag = (e: DragEvent) => e.preventDefault()
+    window.addEventListener('dragover', preventDrag)
+    window.addEventListener('drop', preventDrag)
+    return () => {
+      window.removeEventListener('dragover', preventDrag)
+      window.removeEventListener('drop', preventDrag)
+    }
+  }, [])
 
   // Suporte a colar imagem direto do clipboard (Ctrl+V / Cmd+V)
   useEffect(() => {
@@ -365,7 +420,24 @@ export const ImageOcclusionModal: React.FC<Props> = ({
 
   return (
     <div
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsDraggingFileOver(true)
+      }}
+      onDragEnter={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsDraggingFileOver(true)
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+      onDrop={handleFileDrop}
       style={{
         position: 'fixed',
         inset: 0,
@@ -718,8 +790,6 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                 <div
                   ref={imgContainerRef}
                   onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
                   style={{
                     position: 'relative',
                     display: 'inline-block',
@@ -811,19 +881,49 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                 </div>
               ) : (
                 <div
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsDraggingFileOver(true)
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsDraggingFileOver(true)
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsDraggingFileOver(false)
+                  }}
+                  onDrop={handleFileDrop}
                   style={{
-                    border: '2px dashed #444',
+                    border: isDraggingFileOver ? '2.5px dashed #3b82f6' : '2px dashed #444',
+                    background: isDraggingFileOver ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
                     borderRadius: 14,
                     padding: '60px 40px',
                     textAlign: 'center',
-                    color: '#888',
+                    color: isDraggingFileOver ? '#93c5fd' : '#888',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>🖼️</div>
-                  <strong style={{ display: 'block', color: '#ccc', marginBottom: 6 }}>
-                    Nenhuma imagem carregada
+                  <div style={{ fontSize: '2.8rem', marginBottom: 12 }}>
+                    {isDraggingFileOver ? '📥' : '🖼️'}
+                  </div>
+                  <strong
+                    style={{
+                      display: 'block',
+                      color: isDraggingFileOver ? '#60a5fa' : '#ccc',
+                      marginBottom: 8,
+                      fontSize: '1.05rem',
+                    }}
+                  >
+                    {isDraggingFileOver ? 'Solte a imagem aqui para abrir!' : 'Arraste e solte uma imagem aqui'}
                   </strong>
-                  <span>Clique em "Selecionar Imagem" ou cole a URL de uma peça anatômica acima.</span>
+                  <span style={{ fontSize: '.84rem', color: '#94a3b8' }}>
+                    ou clique em "📁 Selecionar Imagem" acima, cole a URL ou use Ctrl+V.
+                  </span>
                 </div>
               )}
             </div>
@@ -895,13 +995,13 @@ export const ImageOcclusionModal: React.FC<Props> = ({
           <div
             style={{
               padding: '8px 16px',
-              background: msg.includes('Erro') ? '#7f1d1d' : '#854d0e',
+              background: String(msg).includes('Erro') ? '#7f1d1d' : '#854d0e',
               color: '#fff',
               fontSize: '.82rem',
               fontWeight: 700,
             }}
           >
-            {msg}
+            {String(msg)}
           </div>
         )}
 

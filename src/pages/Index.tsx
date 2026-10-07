@@ -3452,6 +3452,7 @@ export default function Index() {
       )}
       {imageOcclusionOpen && (
         <ErrorBoundary
+          isModal
           fallbackTitle="Erro no editor de oclusão de imagem"
           onReset={() => setImageOcclusionOpen(false)}
         >
