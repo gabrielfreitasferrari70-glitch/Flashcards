@@ -54,7 +54,10 @@ const pb = {
         if (name === 'users') {
           const { data, error } = await supabase.auth.signUp({
             email: payload.email,
-            password: payload.password
+            password: payload.password,
+            options: {
+              data: { name: payload.name }
+            }
           })
           if (error) throw error
           
