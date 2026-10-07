@@ -110,29 +110,25 @@ export const createCard = async (
   if ((card as any).group) extendedPayload.group = (card as any).group
   if ((card as any).ref) extendedPayload.ref = (card as any).ref
 
-  try {
-    const { data, error } = await supabase
+  const { data, error } = await supabase
+    .from('mr_cards')
+    .insert(extendedPayload)
+    .select()
+    .single()
+  if (!error) return data
+
+  // Se o banco ainda não rodou a migração 002 das colunas novas, faz fallback seguro
+  if (error.code === '42703' || error.message?.includes('column')) {
+    console.warn('Fallback: colunas extras ainda não criadas em mr_cards, inserindo payload básico')
+    const { data: fbData, error: fbErr } = await supabase
       .from('mr_cards')
-      .insert(extendedPayload)
+      .insert(basePayload)
       .select()
       .single()
-    if (!error) return data
-
-    // Se o banco ainda não rodou a migração 002 das colunas novas, faz fallback seguro
-    if (error.code === '42703' || error.message?.includes('column')) {
-      console.warn('Fallback: colunas extras ainda não criadas em mr_cards, inserindo payload básico')
-      const { data: fbData, error: fbErr } = await supabase
-        .from('mr_cards')
-        .insert(basePayload)
-        .select()
-        .single()
-      if (fbErr) throw fbErr
-      return fbData
-    }
-    throw error
-  } catch (err) {
-    throw err
+    if (fbErr) throw fbErr
+    return fbData
   }
+  throw error
 }
 
 

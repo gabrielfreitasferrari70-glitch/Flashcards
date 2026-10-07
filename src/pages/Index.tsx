@@ -2146,7 +2146,64 @@ export default function Index() {
       fetchCardNote(realId).then((n) => setCurrentCardNote(n || ''))
     }
   }, [route.view, qIdx, queue])
+
   const stateKey = (card: Card) => card.id.replace(/::rev$/, '')
+
+  const allCards = cards
+  const totalCards = allCards.length
+
+  const { cardStates, dueCount, newCount, masteredCount, streakDays } = useMemo(() => {
+    const states = new Map(
+      allCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
+    )
+    let due = 0
+    let n = 0
+    let mastered = 0
+    const now = Date.now()
+
+    for (const c of allCards) {
+      const cs = states.get(stateKey(c))
+      if (!cs) continue
+      if (cs.state === 'new') {
+        n += 1
+      } else if ((cs.dueMs || 0) <= now) {
+        due += 1
+      }
+      if ((cs.s || 0) >= 21) {
+        mastered += 1
+      }
+    }
+
+    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    const reviewDays = new Set(
+      reviews
+        .map((r) => {
+          const raw = typeof r.reviewed_at === 'string' ? r.reviewed_at : ''
+          if (!raw) return ''
+          const date = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'))
+          return Number.isNaN(date.getTime()) ? '' : dayKey(date)
+        })
+        .filter(Boolean),
+    )
+    const streakCursor = new Date()
+    if (!reviewDays.has(dayKey(streakCursor))) streakCursor.setDate(streakCursor.getDate() - 1)
+    let streak = 0
+    while (reviewDays.has(dayKey(streakCursor)) && streak < 366) {
+      streak += 1
+      streakCursor.setDate(streakCursor.getDate() - 1)
+    }
+
+    return {
+      cardStates: states,
+      dueCount: due,
+      newCount: n,
+      masteredCount: mastered,
+      streakDays: streak,
+    }
+  }, [allCards, reviews, reviewsForCard])
+
+  const reviewTodayCount = dueCount
+  const masteredPercent = totalCards ? Math.round((masteredCount * 100) / totalCards) : 0
 
   // Boot: restaura sessão e inicializa biblioteca vazia; seed é idempotente por seed_key.
   useEffect(() => {
@@ -2724,62 +2781,6 @@ export default function Index() {
       </div>
     )
   }
-
-  const allCards = cards
-  const totalCards = allCards.length
-
-  const { cardStates, dueCount, newCount, masteredCount, streakDays } = useMemo(() => {
-    const states = new Map(
-      allCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
-    )
-    let due = 0
-    let n = 0
-    let mastered = 0
-    const now = Date.now()
-
-    for (const c of allCards) {
-      const cs = states.get(stateKey(c))
-      if (!cs) continue
-      if (cs.state === 'new') {
-        n += 1
-      } else if ((cs.dueMs || 0) <= now) {
-        due += 1
-      }
-      if ((cs.s || 0) >= 21) {
-        mastered += 1
-      }
-    }
-
-    const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-    const reviewDays = new Set(
-      reviews
-        .map((r) => {
-          const raw = typeof r.reviewed_at === 'string' ? r.reviewed_at : ''
-          if (!raw) return ''
-          const date = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'))
-          return Number.isNaN(date.getTime()) ? '' : dayKey(date)
-        })
-        .filter(Boolean),
-    )
-    const streakCursor = new Date()
-    if (!reviewDays.has(dayKey(streakCursor))) streakCursor.setDate(streakCursor.getDate() - 1)
-    let streak = 0
-    while (reviewDays.has(dayKey(streakCursor)) && streak < 366) {
-      streak += 1
-      streakCursor.setDate(streakCursor.getDate() - 1)
-    }
-
-    return {
-      cardStates: states,
-      dueCount: due,
-      newCount: n,
-      masteredCount: mastered,
-      streakDays: streak,
-    }
-  }, [allCards, reviews, reviewsForCard])
-
-  const reviewTodayCount = dueCount
-  const masteredPercent = totalCards ? Math.round((masteredCount * 100) / totalCards) : 0
 
   // ===== Tela: estudo =====
   if (route.view === 'study') {
