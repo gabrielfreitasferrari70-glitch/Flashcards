@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { compareDecks } from '@/lib/deckSort'
 import { parseCardsFromCsv, type ParsedCsvCard } from '@/lib/csvImport'
 import {
   createCard,
@@ -243,7 +244,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     return cards.filter((c) => seen.has(c.deck) && !c.deleted).length
   }
   const childrenOf = (deckId: string) =>
-    decks.filter((d) => d.parent === deckId).sort((a, b) => a.order - b.order)
+    decks.filter((d) => d.parent === deckId).sort((a, b) => compareDecks(a, b))
   const subtreeIdsOf = (deckId: string) => {
     const seen = new Set<string>([deckId])
     let grew = true
@@ -290,7 +291,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const rootDecksOf = (kind: string) =>
     decks
       .filter((d) => d.kind === kind && !d.parent && !d.deleted)
-      .sort((a, b) => a.order - b.order)
+      .sort((a, b) => compareDecks(a, b))
   // Só mostramos seções com conteúdo na raiz. O comando global "Nova pasta"
   // abaixo continua oferecendo todas as três categorias, então uma seção vazia
   // não vira um beco sem saída para criação.
@@ -475,7 +476,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const allDecksSorted = useMemo(
     () =>
       [...decks]
-        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .sort((a, b) => compareDecks(a, b))
         .map((d) => ({
           id: d.id,
           label: (d.parent ? '↳ ' : '') + d.title + (d.kind === 'prova' ? ' (Prova)' : ''),
@@ -493,7 +494,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   ): React.ReactNode => {
     const rows = decks
       .filter((d) => (d.parent || '') === parentId && !d.deleted && !blockedIds.has(d.id))
-      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .sort((a, b) => compareDecks(a, b))
     return rows.map((deck) => {
       const kids = decks.filter((d) => d.parent === deck.id && !d.deleted && !blockedIds.has(d.id))
       const isOpen = !!expanded[deck.id]

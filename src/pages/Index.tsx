@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, useMemo, useCallback } from 'react'
+import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 
 import {
@@ -720,7 +721,7 @@ function SessionBuilderModal({
   const visibleDecks = useMemo(() => {
     const q = search.trim().toLowerCase()
     return [...decks]
-      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .sort((a, b) => compareDecks(a, b))
       .filter((d) => !q || d.title.toLowerCase().includes(q))
   }, [decks, search])
   const countOf = (deckId: string) => {
@@ -1780,7 +1781,7 @@ function FsrDashboardModal({
     else if (due <= now + 30 * 86400000) d30++
   }
   // Acerto por pasta (raiz + subpastas)
-  const rootDecks = decks.filter((d) => !d.parent).sort((a, b) => (a.order || 0) - (b.order || 0))
+  const rootDecks = decks.filter((d) => !d.parent).sort((a, b) => compareDecks(a, b))
   const perDeck = rootDecks
     .map((deck) => {
       const ids = new Set([deck.id, ...decks.filter((d) => d.parent === deck.id).map((d) => d.id)])
@@ -3211,7 +3212,7 @@ export default function Index() {
   // duplicada na tela inicial).
   const userDecks = decks
     .filter((d) => d.kind === 'custom' && !d.parent && d.frontline)
-    .sort((a, b) => (a.order || 0) - (b.order || 0))
+    .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
   // seção foi movida (Anki: mover = some da origem), o card some da home.
   // Sem card vazio duplicado com a pasta movida.
@@ -3452,7 +3453,7 @@ export default function Index() {
                     .filter(
                       (d) => (d.parent || '') === parentId && !d.deleted && !blockedIds.has(d.id),
                     )
-                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                    .sort((a, b) => compareDecks(a, b))
                     .map((d) => {
                       const children = decks.filter(
                         (c) => c.parent === d.id && !c.deleted && !blockedIds.has(c.id),
@@ -3687,7 +3688,7 @@ export default function Index() {
                                   !d.deleted &&
                                   d.id !== deckModal.deckId,
                               )
-                              .sort((a, b) => (a.order || 0) - (b.order || 0))
+                              .sort((a, b) => compareDecks(a, b))
                               .map((d) => (
                                 <option key={d.id} value={`deck:${d.id}`}>
                                   ↳ dentro de {d.title}

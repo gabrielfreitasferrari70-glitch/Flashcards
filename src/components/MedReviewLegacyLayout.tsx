@@ -1,4 +1,12 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import {
+  compareDecks,
+  DECK_SORT_EVENT,
+  DECK_SORT_OPTIONS,
+  getDeckSort,
+  setDeckSort,
+  type DeckSortMode,
+} from '@/lib/deckSort'
 
 export type LegacyDeck = {
   id: string
@@ -216,11 +224,19 @@ export function MedReviewLegacyHome(props: HomeProps) {
   // HIERARQUIA DE VERDADE: a view da seção mostra só as pastas de nível inicial
   // (sem parent). O que está DENTRO de uma pasta aparece abrindo a pasta —
   // nunca achatado junto, senão parece que a seção "dissolveu".
-  const folderDecks = openDeckId
-    ? decks.filter((d) => d.parent === openDeckId && !d.deleted)
-    : folderKind
-      ? decks.filter((d) => d.kind === folderKind && !d.parent && !d.deleted)
-      : []
+  const [sortMode, setSortMode] = useState<DeckSortMode>(getDeckSort)
+  useEffect(() => {
+    const sync = () => setSortMode(getDeckSort())
+    window.addEventListener(DECK_SORT_EVENT, sync)
+    return () => window.removeEventListener(DECK_SORT_EVENT, sync)
+  }, [])
+  const folderDecks = (
+    openDeckId
+      ? decks.filter((d) => d.parent === openDeckId && !d.deleted)
+      : folderKind
+        ? decks.filter((d) => d.kind === folderKind && !d.parent && !d.deleted)
+        : []
+  ).sort((a, b) => compareDecks(a, b, sortMode))
   const openDeck = openDeckId ? decks.find((d) => d.id === openDeckId) : null
   // Contador por SUBÁRVORE: pasta organizadora (bloco "Tutoria", view de seção)
   // tem as cartas nas FILHAS — contar a árvore inteira, não só cartas diretas.
@@ -338,6 +354,19 @@ export function MedReviewLegacyHome(props: HomeProps) {
                 <p>{description}</p>
               </div>
               <div className="mr-legacy-folder-head-actions">
+                <select
+                  className="mr-legacy-button"
+                  value={sortMode}
+                  onChange={(e) => setDeckSort(e.target.value as DeckSortMode)}
+                  aria-label="Ordenar pastas"
+                  title="Ordenar pastas"
+                >
+                  {DECK_SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      ↕️ {o.label}
+                    </option>
+                  ))}
+                </select>
                 <button
                   className="mr-legacy-button"
                   onClick={() =>

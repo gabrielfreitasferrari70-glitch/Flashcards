@@ -44,11 +44,23 @@ export const createDeck = async (
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
 
+  // Nova pasta entra no FINAL das irmãs (ordem padrão = ordem de criação).
+  let siblings = supabase
+    .from('mr_decks')
+    .select('order')
+    .eq('user_id', user.user.id)
+    .order('order', { ascending: false })
+    .limit(1)
+  siblings = parentId ? siblings.eq('parent', parentId) : siblings.is('parent', null)
+  const { data: last } = await siblings
+  const nextOrder = ((last?.[0]?.order as number) || 0) + 1
+
   const { data, error } = await supabase.from('mr_decks').insert({
     user_id: user.user.id,
     title,
     kind,
-    order: Date.now() 
+    parent: parentId || null,
+    order: nextOrder
   }).select().single()
   
   if (error) throw error
