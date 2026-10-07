@@ -2113,6 +2113,10 @@ export default function Index() {
       }
       try {
         await pb.collection('users').authRefresh()
+        if (pb.authStore.record && pb.authStore.record.approved === false) {
+          pb.authStore.clear()
+          throw new Error('Sua conta ainda aguarda aprovação do administrador.')
+        }
         if (!pb.authStore.isValid) throw new Error('Sessão expirada. Entre novamente.')
         await ensureSeed()
         await loadData()
@@ -2154,6 +2158,12 @@ export default function Index() {
           .create({ email, password: pass, passwordConfirm: pass, name: name || 'Estudante' })
       }
       await pb.collection('users').authWithPassword(email, pass)
+      
+      if (pb.authStore.record && pb.authStore.record.approved === false) {
+        pb.authStore.clear()
+        throw new Error('Conta criada! Aguarde a aprovação do administrador para entrar.')
+      }
+      
       await ensureSeed()
       await loadData()
       setUser(pb.authStore.record)
