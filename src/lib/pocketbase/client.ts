@@ -77,7 +77,7 @@ const pb = {
         
         if (options?.sort) {
           const isDesc = options.sort.startsWith('-')
-          const col = isDesc ? options.sort.substring(1) : options.sort
+          const col = isDesc ? options.sort.substring(1) === "created" ? "created_at" : (options.sort.substring(1) || options.sort) === "created" ? "created_at" : (options.sort.startsWith("-") ? options.sort.substring(1) : options.sort)
           query = query.order(col, { ascending: !isDesc })
         }
         
