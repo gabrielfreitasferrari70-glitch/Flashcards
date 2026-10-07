@@ -1,0 +1,102 @@
+{
+  "edits": [
+    [
+      "t",
+      "    function loadState() {",
+      "    // Migra todas as cartas para o formato FSRS (idempotente)\n    function migrateAllCardsFSRS() {\n      const walk = (arr) => Array.isArray(arr) && arr.forEach(c => c && c.id && fsrsMigrateCard(c));\n      if (state.tutoria_highlight) walk(state.tutoria_highlight.cards);\n      if (state.tutorias_numbered) Object.values(state.tutorias_numbered).forEach(t => t && walk(t.cards));\n      if (state.custom_tutoria_folders) Object.values(state.custom_tutoria_folders).forEach(f => f && walk(f.cards));\n      if (state.provas) Object.values(state.provas).forEach(p => p && walk(p.cards));\n      if (state.custom_prova_folders) Object.values(state.custom_prova_folders).forEach(f => f && walk(f.cards));\n      if (state.custom_root_folders) Object.values(state.custom_root_folders).forEach(f => f && walk(f.cards));\n    }\n\n    function loadState() {",
+      false
+    ],
+    [
+      "t",
+      "    let state = loadState();",
+      "    let state = loadState();\n    migrateAllCardsFSRS();",
+      false
+    ],
+    [
+      "b",
+      "      const isMastered = (currentCard.interval || 0) >= 21;",
+      "      const visualInfo = getCardVisualSchematic(currentCard);",
+      "      const isMastered = (currentCard.interval || 0) >= 21;\n      const curIntText = formatInterval(currentCard.interval);\n      const curEf = (currentCard.easeFactor || 2.5).toFixed(2);\n      // FSRS memory state: R prevista agora + S/D\n      const _lastRv = currentCard.lastReviewMs || null;\n      const _elDays = _lastRv ? Math.max(0, (Date.now() - _lastRv) / 86400000) : 0;\n      const curR = (currentCard.fsrsS ? Math.round(fsrsRetrievability(_elDays, currentCard.fsrsS) * 100) : null);\n      const curS = currentCard.fsrsS ? formatInterval(currentCard.fsrsS) : null;\n      const curD = currentCard.fsrsD ? currentCard.fsrsD.toFixed(1) : null;\n      const isLeech = (currentCard.lapses || 0) >= getLeechThreshold();\n      const cardDisplayId = `C${idx + 1}`;\n      const groupLabel = currentCard.group || studyState.deckTitle || 'Sessão Médica';\n\n"
+    ],
+    [
+      "b",
+      "                ${isMastered ? '<span class=\"badge-mastered\">",
+      "\n\n            <!-- 2. Visual Area",
+      "                ${isMastered ? '<span class=\"badge-mastered\">🏆 Dominado</span>' : ''}\n                ${isLeech ? '<span class=\"badge-clinical\" title=\"Carta com 8+ lapsos — revise o conceito ou reformule a carta\">🩸 Leech</span>' : ''}\n                ${(() => {\n                  const due = currentCard.dueDate || 0;\n                  if (isCardNew(currentCard)) return '<span class=\"badge-group-tutoria\" title=\"Carta nunca estudada\">🆕 Nova</span>';\n                  if (due <= Date.now()) {\n                    const lateD = Math.floor((Date.now() - due) / 86400000);\n                    if (lateD > 0) { return '<span class=\"badge-clinical\" title=\"Vencida há ' + lateD + ' dia(s)\">⏰ Vencida ' + lateD + 'd</span>'; }\n                    return '<span class=\"badge-clinical\" title=\"Vencida para hoje\">⏰ Vencida hoje</span>';\n                  }\n                  return '';\n                })()}\n              </div>\n              <div class=\"card-status-info\">\n                <span>Intervalo: <strong>${curIntText}</strong></span>\n                <span>•</span>\n                ${curR !== null ? `<span title=\"Probabilidade prevista de você lembrar desta carta agora (FSRS-5)\">R: <strong>${curR}%</strong></span><span>•</span>` : ''}\n                ${curS ? `<span title=\"Estabilidade: intervalo em que a retenção cai para 90%\">S: <strong>${curS}</strong></span><span>•</span>` : ''}\n                ${curD ? `<span title=\"Dificuldade 1-10 (FSRS-5)\">D: <strong>${curD}</strong></span>` : `<span>EF: <strong>${curEf}</strong></span>`}\n              </div>\n            </div>"
+    ],
+    [
+      "t",
+      "              <p class=\"muted\" style=\"max-width: 500px; margin: 0 auto 1.8rem auto; line-height:1.6; font-size:1rem;\">\n                Você revisou todas as <strong>${total}</strong> cartas desta sessão. O algoritmo SM-2 atualizou os próximos intervalos de consolidação na memória de longo prazo.\n              </p>",
+      "              ${(() => {\n                const t = studyState.tally || { again: 0, hard: 0, good: 0, easy: 0, total: 0, startMs: Date.now() };\n                const mins = Math.max(1, Math.round((Date.now() - t.startMs) / 60000));\n                const ok = t.good + t.easy;\n                const acc = t.total > 0 ? Math.round((ok / t.total) * 100) : 0;\n                const accColor = acc >= 85 ? '#166534' : acc >= 60 ? '#d97706' : '#b91c1c';\n                const accMsg = acc >= 85 ? 'Excelente evocação ativa! 🔥' : acc >= 60 ? 'Bom trabalho — revise os pontos cegos. 💪' : 'Sessão difícil: vale revisitar o conteúdo-fonte. 📖';\n                return `\n                  <div class=\"mr-summary-grid\">\n                    <span class=\"mr-summary-chip\">📚 ${t.total} carta${t.total !== 1 ? 's' : ''}</span>\n                    <span class=\"mr-summary-chip\">⏱️ ${mins} min</span>\n                    <span class=\"mr-summary-chip\" style=\"color:${accColor};\">🎯 ${acc}% de evocação</span>\n                    <span class=\"mr-summary-chip\" title=\"Errei / Difícil / Bom / Fácil\">❌ ${t.again} · ⚠️ ${t.hard} · ✅ ${t.good} · ⭐ ${t.easy}</span>\n                  </div>\n                  <p class=\"muted\" style=\"max-width: 500px; margin: 0 auto 1.8rem auto; line-height:1.6; font-size:1rem;\">\n                    ${accMsg} O FSRS-5 recalculou S, D e os próximos intervalos com base na sua retenção alvo (${Math.round(getTargetRetention() * 100)}%).\n                  </p>\n                `;\n              })()}",
+      false
+    ],
+    [
+      "b",
+      "        const newCard = {",
+      "        };",
+      "        const newCard = {\n          id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),\n          q,\n          a,\n          ref: ref || 'Anotações Pessoais / Referência Médica',\n          clinical,\n          repetitions: 0,\n          interval: 0,\n          easeFactor: 2.5,\n          dueDate: Date.now(),\n          fsrsS: null,\n          fsrsD: null,\n          fsrsState: 'new',\n          lapses: 0\n"
+    ],
+    [
+      "b",
+      "            <!-- 3. Question (Larger bold text with icon preview) -->",
+      "            <!-- 4. Structured Answer Area",
+      "            <!-- 3. Question (Larger bold text with icon preview) -->\n            <div class=\"card-question-box\">\n              <h2 class=\"card-question-text\">\n                ${currentCard.icon && !visualInfo ? `<span style=\"margin-right:0.4rem; font-size:1.3rem; vertical-align:middle;\">${currentCard.icon}</span>` : ''}\n                ${hasCloze(currentCard.q) ? renderClozeQuestion(currentCard.q, studyState.clozeIdx || 1) : escapeHtml(currentCard.q)}\n              </h2>\n              ${hasCloze(currentCard.q) && !studyState.isFlipped ? (() => {\n                const n = (currentCard.q.match(/\\{\\{c(\\d+)::/g) || []).length;\n                if (n <= 1) return '';\n                return `<div style=\"display:flex; gap:0.4rem; justify-content:center; margin-top:0.7rem; flex-wrap:wrap;\">\n                  ${Array.from({length: n}, (_, i) => `<button type=\"button\" onclick=\"setClozeIdx(${i + 1})\" class=\"kbd-chip\" style=\"border-radius:9999px; padding:0.3rem 0.8rem; font-size:0.8rem; font-weight:700; ${(studyState.clozeIdx || 1) === (i + 1) ? 'background:#16a34a; color:#fff;' : 'background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;'}\">Lacuna ${i + 1}</button>`).join('')}\n                </div>`;\n              })() : ''}\n            </div>\n\n"
+    ],
+    [
+      "t",
+      "          <button type=\"submit\" id=\"btn-save-card-submit\" class=\"btn btn-flip\" style=\"padding: 0.5rem 1.3rem;\">Salvar Carta</button>",
+      "          <button type=\"button\" id=\"btn-insert-cloze\" class=\"btn btn-sm\" style=\"background:#f0fdf4; color:#166534; border:1.5px solid #16a34a; padding:0.5rem 1rem; border-radius:8px; font-weight:700; cursor:pointer;\" title=\"Inserir lacuna de preenchimento (cloze) na posição do cursor\" onclick=\"(function(){ const ta = document.getElementById('input-card-q'); if (!ta) return; const st = ta.selectionStart || ta.value.length; const n = (ta.value.match(/\\{\\{c\\d+::/g) || []).length + 1; const ins = '{{c' + (n + 1) + '::}}'; ta.value = ta.value.slice(0, st) + ins + ta.value.slice(st); ta.focus(); ta.setSelectionRange(st + 5, st + 5 + ('c' + (n + 1) + '::').length); })()\">➕ Cloze</button>\n          <button type=\"submit\" id=\"btn-save-card-submit\" class=\"btn btn-flip\" style=\"padding: 0.5rem 1.3rem;\">Salvar Carta</button>",
+      false
+    ],
+    [
+      "t",
+      "Como foi sua evocação para o SM-2?",
+      "Como foi sua evocação? (FSRS-5 agendará o próximo intervalo)",
+      true
+    ],
+    [
+      "t",
+      "<p>MedReview — Revisão Ativa de Medicina baseada em evidências & SM-2. Conteúdo formatado a partir de referências consagradas: Guyton, Robbins, Harrison e ESC Guidelines.</p>",
+      "<p>MedReview — Revisão Ativa de Medicina baseada em evidências. Motor de repetição espaçada: <strong>FSRS-5</strong> (open-spaced-repetition, treinado com 700M+ reviews). Conteúdo a partir de referências consagradas: Guyton, Robbins, Harrison e ESC Guidelines.</p>",
+      false
+    ],
+    [
+      "t",
+      "<p class=\"home-hero-subtitle\">Revisão médica ativa com algoritmo SM-2 para retenção clínica de longo prazo.</p>",
+      "<p class=\"home-hero-subtitle\">Revisão médica ativa por FSRS-5</p>",
+      false
+    ],
+    ["t", "Revisão Médica SM-2", "Revisão Médica FSRS-5", true],
+    ["t", "revisão espaçada SM-2", "revisão espaçada FSRS-5", true],
+    ["t", "repetição espaçada SM-2", "repetição espaçada FSRS-5", true],
+    ["t", "histórico SM-2", "histórico de revisões", true],
+    ["t", "SM-2: <strong>", "FSRS: <strong>", true],
+    ["t", "domínio do algoritmo SM-2", "domínio do algoritmo FSRS-5", true],
+    ["t", "4 Anki SM-2 Quality Buttons", "4 Botões de Qualidade FSRS-5", true],
+    [
+      "t",
+      "Segmented Control de Filtro de Estudo (SM-2: Revisões, Novos, Todos)",
+      "Segmented Control de Filtro de Estudo (FSRS: Revisões, Novos, Todos)",
+      true
+    ],
+    ["t", "progresso SM-2", "progresso de revisão", true],
+    [
+      "t",
+      "      card.easeFactor = 2.5;",
+      "      card.easeFactor = 2.5;\n      card.fsrsS = null; card.fsrsD = null; card.fsrsState = 'new'; card.lapses = 0; card.lastReviewMs = null;",
+      false
+    ],
+    [
+      "t",
+      "        <div style=\"display:flex; justify-content:flex-end; margin-top:1.25rem; padding-top:0.85rem; border-top:1px solid #e5e7eb;\">",
+      "        <!-- Seção C2: Backup (export/import) -->\n        <div style=\"margin-bottom:1.5rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:0.9rem 1rem;\">\n          <h4 style=\"margin:0 0 0.35rem 0; font-size:0.95rem; font-weight:800; color:#065f46; display:flex; align-items:center; gap:0.4rem;\">\n            <span>💾</span> Backup & Restauração\n          </h4>\n          <p style=\"margin:0 0 0.65rem 0; font-size:0.8rem; color:#6b7280;\">\n            Baixe um backup JSON de todo o seu progresso (cartas, histórico, tempo de estudo) ou restaure em qualquer dispositivo.\n          </p>\n          <div style=\"display:flex; gap:0.5rem; flex-wrap:wrap;\">\n            <button type=\"button\" onclick=\"exportMedReviewData()\" class=\"btn btn-sm\" style=\"background:#059669; color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; font-weight:700; cursor:pointer;\">\n              ⬇️ Exportar backup\n            </button>\n            <label class=\"btn btn-sm\" style=\"background:#fff; color:#047857; border:1.5px solid #059669; padding:0.5rem 1rem; border-radius:8px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center;\">\n              ⬆️ Importar backup\n              <input type=\"file\" accept=\".json,application/json\" style=\"display:none;\" onchange=\"importMedReviewData(this.files[0])\">\n            </label>\n          </div>\n        </div>\n\n        <!-- Seção D: Config FSRS (retenção alvo) -->\n        <div style=\"margin-bottom:1.5rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:0.9rem 1rem;\">\n          <h4 style=\"margin:0 0 0.35rem 0; font-size:0.95rem; font-weight:800; color:#065f46; display:flex; align-items:center; gap:0.4rem;\">\n            <span>🎯</span> Retenção Alvo do FSRS-5\n          </h4>\n          <p style=\"margin:0 0 0.65rem 0; font-size:0.8rem; color:#6b7280;\">\n            Probabilidade desejada de lembrar das cartas quando vencem. 90% é o padrão recomendado; valores maiores geram intervalos mais curtos (mais revisões), menores geram menos revisões.\n          </p>\n          <div style=\"display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;\">\n            <input type=\"range\" min=\"80\" max=\"97\" step=\"1\" value=\"${Math.round(getTargetRetention() * 100)}\" id=\"fsrs-retention-slider\" oninput=\"document.getElementById('fsrs-retention-val').textContent = this.value + '%'\" onchange=\"setTargetRetention(this.value / 100)\" style=\"flex:1; min-width:180px; accent-color:#16a34a;\">\n            <span id=\"fsrs-retention-val\" style=\"font-weight:800; color:#166534; font-size:1rem; min-width:44px;\">${Math.round(getTargetRetention() * 100)}%</span>\n          </div>\n        </div>\n\n        <!-- Seção E: Leeches -->\n        <div style=\"margin-bottom:1.5rem;\">\n          <h4 style=\"margin:0 0 0.35rem 0; font-size:0.95rem; font-weight:800; color:#b91c1c; display:flex; align-items:center; gap:0.4rem;\">\n            <span>🩸</span> Leeches (cartas que você esquece repetidamente)\n          </h4>\n          <p style=\"margin:0 0 0.65rem 0; font-size:0.8rem; color:#6b7280;\">\n            Cartas com ${getLeechThreshold()}+ lapsos acumulados. Sugestão: reformule a carta (mais atômica), crie um mnemônico ou revise o conceito na fonte.\n          </p>\n          ${(() => {\n            const leeches = allCards.filter(c => (c.lapses || 0) >= getLeechThreshold()).sort((a, b) => (b.lapses || 0) - (a.lapses || 0));\n            if (leeches.length === 0) return '<div class=\"perf-weak-empty\">Nenhuma leech até agora. 👍</div>';\n            return `<div class=\"perf-weak-list\">\n              ${leeches.slice(0, 10).map(c => {\n                const snippet = (c.q || '').slice(0, 65) + ((c.q || '').length > 65 ? '...' : '');\n                return `<div class=\"perf-weak-item\" onclick=\"closeDetailedStatsModal(); studySingleCard('${c.id}')\">\n                  <div class=\"perf-weak-left\">\n                    <span style=\"font-size:0.78rem; font-weight:800; color:#b91c1c;\">${c.lapses}×</span>\n                    <span class=\"perf-weak-icon\">${c.icon || '🎯'}</span>\n                    <span class=\"perf-weak-origin\">${escapeHtml(c.folderTitle || c.containerType || 'Tutoria')}</span>\n                    <span class=\"perf-weak-q\">${escapeHtml(snippet)}</span>\n                  </div>\n                  <span class=\"perf-weak-badge\">🩸 leech</span>\n                </div>`;\n              }).join('')}\n            </div>`;\n          })()}\n        </div>\n\n        <!-- Seção F: Heatmap de consistência (17 semanas) -->\n        <div style=\"margin-bottom:1rem;\">\n          <h4 style=\"margin:0 0 0.35rem 0; font-size:0.95rem; font-weight:800; color:#065f46; display:flex; align-items:center; gap:0.4rem;\">\n            <span>🔥</span> Consistência de Estudo (últimas 17 semanas)\n          </h4>\n          <p style=\"margin:0 0 0.65rem 0; font-size:0.8rem; color:#6b7280;\">\n            Número de cartas avaliadas por dia — como o heatmap de contribuições do GitHub.\n          </p>\n          ${(() => {\n            const byDay = {};\n            evalHistory.forEach(e => {\n              const d = e.date || new Date(e.timestamp).toISOString().split('T')[0];\n              byDay[d] = (byDay[d] || 0) + 1;\n            });\n            const cells = [];\n            const today = new Date();\n            for (let i = 118; i >= 0; i--) {\n              const dt = new Date(today.getTime() - i * 86400000);\n              const ds = dt.toISOString().split('T')[0];\n              cells.push({ ds, n: byDay[ds] || 0 });\n            }\n            const lvl = (n) => n === 0 ? 0 : n <= 5 ? 1 : n <= 15 ? 2 : n <= 30 ? 3 : 4;\n            const colors = ['#e5e7eb', '#bbf7d0', '#86efac', '#4ade80', '#16a34a'];\n            return `<div style=\"display:grid; grid-template-columns:repeat(17, 1fr); gap:3px;\">\n              ${cells.map(c => `<div title=\"${c.ds}: ${c.n} avaliações\" style=\"aspect-ratio:1; border-radius:3px; background:${colors[lvl(c.n)]};\"></div>`).join('')}\n            </div>\n            <div style=\"display:flex; align-items:center; gap:0.35rem; margin-top:0.5rem; font-size:0.72rem; color:#6b7280; justify-content:flex-end;\">\n              Menos <span style=\"width:10px; height:10px; border-radius:2px; background:#e5e7eb; display:inline-block;\"></span>\n              <span style=\"width:10px; height:10px; border-radius:2px; background:#bbf7d0; display:inline-block;\"></span>\n              <span style=\"width:10px; height:10px; border-radius:2px; background:#86efac; display:inline-block;\"></span>\n              <span style=\"width:10px; height:10px; border-radius:2px; background:#4ade80; display:inline-block;\"></span>\n              <span style=\"width:10px; height:10px; border-radius:2px; background:#16a34a; display:inline-block;\"></span> Mais\n            </div>`;\n          })()}\n        </div>\n\n        <div style=\"display:flex; justify-content:flex-end; margin-top:1.25rem; padding-top:0.85rem; border-top:1px solid #e5e7eb;\">",
+      false
+    ],
+    [
+      "t",
+      "      document.getElementById('set-newlimit').value = String(getNewCardsPerDay());\n      document.getElementById('set-newlimit-val').textContent = String(getNewCardsPerDay());",
+      "      const _inf = isNewCardsUnlimited();\n      document.getElementById('set-newlimit-inf').checked = _inf;\n      document.getElementById('set-newlimit').disabled = _inf;\n      document.getElementById('set-newlimit').style.opacity = _inf ? '0.45' : '1';\n      document.getElementById('set-newlimit').value = String(_getSettingInt('medreview_new_per_day', 40));\n      document.getElementById('set-newlimit-val').textContent = _inf ? '♾️' : String(_getSettingInt('medreview_new_per_day', 40));",
+      false
+    ]
+  ]
+}

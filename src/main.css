@@ -1,0 +1,1139 @@
+/* Global styles - Theme, font, utilities, animations and global components */
+
+/* (11) FOUC de painéis nativos de estatística */
+body .deck-stats:not(#global-stats-modal *),
+body .stats-overview:not(#global-stats-modal *),
+body .folder-stats:not(#global-stats-modal *) {
+  display: none !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+
+/* CHANGE THE FONT BELOW TO WHATEVER YOU WANT */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Change the colors to match the design system */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 84% 4.9%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 98%;
+    --secondary-foreground: 222.2 84% 4.9%;
+
+    --muted: 210 40% 98%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 98%;
+    --accent-foreground: 222.2 84% 4.9%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 222.2 84% 4.9%;
+
+    --sidebar-primary: 222.2 84% 4.9%;
+
+    --sidebar-primary-foreground: 0 0% 100%;
+
+    --sidebar-accent: 210 40% 98%;
+
+    --sidebar-accent-foreground: 222.2 84% 4.9%;
+
+    --sidebar-border: 214.3 31.8% 91.4%;
+
+    --sidebar-ring: 222.2 84% 4.9%;
+
+    --chart-1: 34 100% 44%;
+    --chart-2: 189 100% 38%;
+    --chart-3: 209 100% 32%;
+    --chart-4: 42 100% 50%;
+    --chart-5: 33 100% 50%;
+  }
+
+  .dark {
+    /* Change the colors to match the design system consistent with the dark mode */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 84% 4.9%;
+
+    --secondary: 222.2 84% 4.9%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222.2 84% 4.9%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 222.2 84% 4.9%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222.2 84% 4.9%;
+    --input: 222.2 84% 4.9%;
+    --ring: 214.3 31.8% 91.4%;
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 222.2 84% 4.9%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222.2 84% 4.9%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222.2 84% 4.9%;
+    --sidebar-ring: 222.2 84% 4.9%;
+
+    --chart-1: 270 100% 44%;
+    --chart-2: 164 100% 38%;
+    --chart-3: 43 100% 32%;
+    --chart-4: 340 100% 50%;
+    --chart-5: 10 100% 50%;
+  }
+
+  /* NEVER REMOVE THIS */
+  section[aria-label='Notifications alt+T'] {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
+
+@layer utilities {
+  /* KEEP ALL THE ANIMATIONS CLASSES THAT ARE USED BELOW */
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-in-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-in-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out-up {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out-down {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes spotlight {
+    from {
+      opacity: 0;
+      transform: translate(-72%, -62%) scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -40%) scale(1);
+    }
+  }
+
+  .animate-accordion-down {
+    animation: accordion-down 0.2s ease-out;
+  }
+
+  .animate-accordion-up {
+    animation: accordion-up 0.2s ease-out;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .animate-fade-out {
+    animation: fade-out 0.5s ease-out;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.6s ease-out;
+  }
+
+  .animate-fade-in-down {
+    animation: fade-in-down 0.6s ease-out;
+  }
+
+  .animate-fade-out-up {
+    animation: fade-out-up 0.6s ease-out;
+  }
+
+  .animate-fade-out-down {
+    animation: fade-out-down 0.6s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.6s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slide-down 0.6s ease-out;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-spotlight {
+    animation: spotlight 2s ease forwards;
+  }
+}
+
+/* ==========================================================================
+   MedReview - Padronização Visual de Cartões de Pasta (.mr-tutoria-card)
+   Estrutura consolidada para qualquer tipo de pasta (Tutoria, Provas, Módulos,
+   Subpastas, Pastas Raiz e Customizadas). O tipo é diferenciado pelo chip/ícone.
+   ========================================================================== */
+.decks,
+.folders,
+.deck-grid,
+.folder-grid,
+.decks-container,
+.folders-container,
+.folder-cards-list,
+.deck-cards-list,
+.cards-grid,
+div:has(> .mr-folder-card),
+div:has(> .mr-tutoria-card),
+div:has(> .mr-unified-folder-card),
+div:has(> .deck-card),
+div:has(> .folder-card) {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)) !important;
+  gap: 1.25rem !important;
+  align-items: stretch !important;
+}
+
+.mr-tutoria-card,
+.mr-unified-folder-card,
+.mr-folder-card,
+.mr-subfolder-card,
+.deck-card.mr-tutoria-card,
+.deck-card.mr-unified-folder-card,
+.deck-card.mr-folder-card,
+.folder-card.mr-tutoria-card,
+.folder-card.mr-unified-folder-card,
+.folder-card.mr-folder-card {
+  position: relative !important;
+  background: #ffffff !important;
+  border-radius: 16px !important;
+  border: 1.5px solid #d1fae5 !important;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.04) !important;
+  cursor: pointer !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 230px !important;
+  box-sizing: border-box !important;
+  padding: 1.25rem 1.15rem !important;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease !important;
+}
+
+/* Faixa verde superior decorativa */
+.mr-tutoria-card::before,
+.mr-unified-folder-card::before,
+.mr-folder-card::before,
+.mr-subfolder-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #16a34a, #22c55e, #4ade80);
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+}
+
+.mr-tutoria-card:hover,
+.mr-unified-folder-card:hover,
+.mr-folder-card:hover,
+.mr-subfolder-card:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 8px 24px rgba(22, 163, 74, 0.14) !important;
+  border-color: #86efac !important;
+  background: #ffffff !important;
+}
+
+/* Ocultação estrita e completa de elementos e wrappers nativos do snapshot */
+.mr-tutoria-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]),
+.mr-unified-folder-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]),
+.mr-folder-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]),
+.mr-subfolder-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]),
+.deck-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]),
+.folder-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-top-rename
+  ):not([data-mr-decorated]) {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Neutralizar ::before e ::after em qualquer descendente de subpasta (faixa verde só na raiz) */
+.mr-subfolder-card *,
+.mr-subfolder-card *::before,
+.mr-subfolder-card *::after {
+  content: none !important;
+}
+.mr-subfolder-card > *::before {
+  display: none !important;
+}
+
+/* Filhos diretos não autorizados viram estáticos para não colidirem no topo direito */
+.mr-subfolder-card
+  > *:not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-top-delete
+  ) {
+  position: static !important;
+}
+
+/* Supressão profunda de qualquer botão/link nativo não autorizado dentro de .mr-subfolder-card */
+.mr-subfolder-card
+  button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-btn-action
+  ):not(.mr-folder-card-btn-subfolder),
+.mr-subfolder-card
+  a:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-btn-action
+  ):not(.mr-folder-card-btn-subfolder),
+.mr-subfolder-card
+  [role='button']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-btn-action
+  ):not(.mr-folder-card-btn-subfolder) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Supressão direcionada de elementos nativos residuais em .mr-subfolder-card para eliminar chips-fantasma */
+.mr-subfolder-card [class*='count']:not(.mr-folder-card-count-chip),
+.mr-subfolder-card [class*='badge']:not(.mr-folder-card-badge),
+.mr-subfolder-card [class*='reset']:not(.mr-folder-card-btn-reset),
+.mr-subfolder-card .deck-count,
+.mr-subfolder-card .folder-count,
+.mr-subfolder-card .card-count,
+.mr-subfolder-card .badge,
+.mr-subfolder-card .chip,
+.mr-subfolder-card .reset-btn,
+.mr-subfolder-card .btn-reset,
+.mr-subfolder-card .deck-badge,
+.mr-subfolder-card .folder-badge {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Neutralização direta de posições absolutas residuais legadas */
+.mr-tutoria-card
+  > [style*='position: absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-tutoria-card
+  > [style*='position:absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-unified-folder-card
+  > [style*='position: absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-unified-folder-card
+  > [style*='position:absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-folder-card
+  > [style*='position: absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-folder-card
+  > [style*='position:absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-subfolder-card
+  > [style*='position: absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.mr-subfolder-card
+  > [style*='position:absolute']:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename) {
+  display: none !important;
+}
+
+/* Eliminação estrita de imagens e vetores quebrados residuais do snapshot */
+.mr-tutoria-card img,
+.mr-tutoria-card picture,
+.mr-tutoria-card object,
+.mr-tutoria-card embed,
+.mr-tutoria-card canvas,
+.mr-tutoria-card svg:not(.mr-allowed-svg),
+.mr-unified-folder-card img,
+.mr-unified-folder-card picture,
+.mr-unified-folder-card object,
+.mr-unified-folder-card embed,
+.mr-unified-folder-card canvas,
+.mr-unified-folder-card svg:not(.mr-allowed-svg),
+.mr-folder-card img,
+.mr-folder-card picture,
+.mr-folder-card object,
+.mr-folder-card embed,
+.mr-folder-card canvas,
+.mr-folder-card svg:not(.mr-allowed-svg),
+.deck-card img,
+.deck-card picture,
+.deck-card object,
+.deck-card embed,
+.deck-card canvas,
+.deck-card svg:not(.mr-allowed-svg),
+.folder-card img,
+.folder-card picture,
+.folder-card object,
+.folder-card embed,
+.folder-card canvas,
+.folder-card svg:not(.mr-allowed-svg) {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Cabeçalho do Cartão: chip/badge acima, título com ícone abaixo em linha de largura total (88px de padding-right para os botões ✏️ e 🗑) */
+.mr-tutoria-card .mr-folder-card-header,
+.mr-unified-folder-card .mr-folder-card-header,
+.mr-folder-card-header.mr-tutoria-header,
+.mr-folder-card .mr-folder-card-header,
+.mr-subfolder-card .mr-folder-card-header {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 0.55rem !important;
+  margin-bottom: 0.85rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-right: 92px !important;
+  box-sizing: border-box !important;
+}
+
+/* Chip/badge de tipo no topo do cabeçalho */
+.mr-tutoria-card .mr-folder-card-badge,
+.mr-unified-folder-card .mr-folder-card-badge,
+.mr-folder-card .mr-folder-card-badge,
+.mr-subfolder-card .mr-folder-card-badge,
+.mr-folder-card-header.mr-tutoria-header .mr-folder-card-badge,
+.mr-folder-card-badge {
+  align-self: flex-start !important;
+  margin-bottom: 0.65rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  padding: 0.25rem 0.65rem !important;
+  border-radius: 9999px !important;
+  background: #f0fdf4 !important;
+  color: #15803d !important;
+  border: 1px solid #bbf7d0 !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* Wrap de título com ícone: min-height 3.1rem, flex-start */
+.mr-tutoria-card .mr-folder-card-title-wrap,
+.mr-unified-folder-card .mr-folder-card-title-wrap,
+.mr-folder-card .mr-folder-card-title-wrap,
+.deck-card .mr-folder-card-title-wrap,
+.folder-card .mr-folder-card-title-wrap,
+.mr-folder-card-header.mr-tutoria-header .mr-folder-card-title-wrap,
+.mr-folder-card-title-wrap {
+  width: 100% !important;
+  min-height: 3.1rem !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  min-width: 0 !important;
+  line-height: 1.35 !important;
+}
+
+.mr-tutoria-card .mr-folder-card-icon,
+.mr-unified-folder-card .mr-folder-card-icon,
+.mr-folder-card .mr-folder-card-icon,
+.deck-card .mr-folder-card-icon,
+.folder-card .mr-folder-card-icon {
+  font-size: 1.2rem !important;
+  line-height: 1.35 !important;
+  display: inline-block !important;
+  vertical-align: top !important;
+  margin-right: 0.45rem !important;
+  flex-shrink: 0 !important;
+}
+
+.mr-tutoria-card .mr-folder-card-title,
+.mr-unified-folder-card .mr-folder-card-title,
+.mr-folder-card .mr-folder-card-title,
+.deck-card .mr-folder-card-title,
+.folder-card .mr-folder-card-title,
+.mr-folder-card-title {
+  font-size: 1.15rem !important;
+  font-weight: 800 !important;
+  color: #14532d !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.01em !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  width: 100% !important;
+}
+
+/* Slot do botão 🗑 no canto superior direito */
+.mr-tutoria-card .mr-folder-card-top-delete,
+.mr-unified-folder-card .mr-folder-card-top-delete,
+.mr-folder-card .mr-folder-card-top-delete,
+.mr-subfolder-card .mr-folder-card-top-delete,
+.mr-folder-card-top-delete,
+[data-mr-folder-delete],
+[data-mr-sub-delete] {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  box-sizing: border-box !important;
+  z-index: 10 !important;
+  pointer-events: auto !important;
+  color: #dc2626 !important;
+  background: #fef2f2 !important;
+  border: 1px solid #fecaca !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  font-size: 15px !important;
+  cursor: pointer !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 3px rgba(220, 38, 38, 0.12) !important;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease !important;
+}
+
+.mr-tutoria-card .mr-folder-card-top-delete:hover,
+.mr-unified-folder-card .mr-folder-card-top-delete:hover,
+.mr-folder-card .mr-folder-card-top-delete:hover,
+.mr-subfolder-card .mr-folder-card-top-delete:hover,
+.mr-folder-card-top-delete:hover,
+[data-mr-folder-delete]:hover,
+[data-mr-sub-delete]:hover {
+  background: #fee2e2 !important;
+  border-color: #f87171 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Slot do botão ✏️ (editar nome) ao lado do botão 🗑 no canto superior direito */
+.mr-tutoria-card .mr-folder-card-top-rename,
+.mr-unified-folder-card .mr-folder-card-top-rename,
+.mr-folder-card .mr-folder-card-top-rename,
+.mr-subfolder-card .mr-folder-card-top-rename,
+.mr-folder-card-top-rename,
+[data-mr-folder-rename] {
+  position: absolute !important;
+  top: 14px !important;
+  right: 54px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  box-sizing: border-box !important;
+  z-index: 10 !important;
+  pointer-events: auto !important;
+  color: #2563eb !important;
+  background: #eff6ff !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  font-size: 15px !important;
+  cursor: pointer !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12) !important;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease !important;
+}
+
+.mr-tutoria-card .mr-folder-card-top-rename:hover,
+.mr-unified-folder-card .mr-folder-card-top-rename:hover,
+.mr-folder-card .mr-folder-card-top-rename:hover,
+.mr-subfolder-card .mr-folder-card-top-rename:hover,
+[data-mr-folder-rename]:hover {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Neutralização estrita de pseudo-elementos e filhos estranhos dentro dos botões oficiais */
+.mr-folder-card-top-rename::before,
+.mr-folder-card-top-rename::after,
+.mr-folder-card-top-delete::before,
+.mr-folder-card-top-delete::after,
+[data-mr-folder-rename]::before,
+[data-mr-folder-rename]::after,
+[data-mr-folder-delete]::before,
+[data-mr-folder-delete]::after,
+[data-mr-sub-delete]::before,
+[data-mr-sub-delete]::after {
+  content: none !important;
+  display: none !important;
+}
+
+.mr-folder-card-top-rename > *,
+.mr-folder-card-top-delete > *,
+[data-mr-folder-rename] > *,
+[data-mr-folder-delete] > *,
+[data-mr-sub-delete] > * {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+}
+
+/* Modal de renomear pasta/subpasta */
+#mr-folder-rename-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+#mr-folder-rename-modal .mr-rename-card {
+  background: #ffffff;
+  border-radius: 18px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  border: 1.5px solid #bfdbfe;
+  overflow: hidden;
+  animation: mr-fade-up 0.2s ease-out;
+}
+
+#mr-folder-rename-modal .mr-rename-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid #dbeafe;
+  background: #eff6ff;
+}
+
+/* Divisor pontilhado e rodapé de cartões de pasta (.mr-tutoria-card e .mr-folder-card) */
+.mr-tutoria-card .mr-folder-card-footer,
+.mr-unified-folder-card .mr-folder-card-footer,
+.mr-folder-card .mr-folder-card-footer,
+.deck-card .mr-folder-card-footer,
+.folder-card .mr-folder-card-footer,
+.mr-subfolder-card .mr-folder-card-footer {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 0.65rem !important;
+  margin-top: auto !important;
+  position: relative !important;
+  padding-top: 0.85rem !important;
+  border-top: 1.5px dashed #bbf7d0 !important;
+  font-size: 0.8rem !important;
+  color: #64748b !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.mr-tutoria-card .mr-folder-card-footer-left,
+.mr-unified-folder-card .mr-folder-card-footer-left,
+.mr-folder-card .mr-folder-card-footer-left,
+.deck-card .mr-folder-card-footer-left,
+.folder-card .mr-folder-card-footer-left,
+.mr-subfolder-card .mr-folder-card-footer-left {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.mr-tutoria-card .mr-folder-card-count-chip,
+.mr-unified-folder-card .mr-folder-card-count-chip,
+.mr-folder-card .mr-folder-card-count-chip,
+.deck-card .mr-folder-card-count-chip,
+.folder-card .mr-folder-card-count-chip,
+.mr-subfolder-card .mr-folder-card-count-chip,
+.mr-folder-card-count-chip {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  font-size: 0.78rem !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 0 0.75rem !important;
+  margin-bottom: 0.75rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.35rem !important;
+  border-radius: 9999px !important;
+  font-weight: 700 !important;
+  background: #f0fdf4 !important;
+  color: #15803d !important;
+  border: 1px solid #bbf7d0 !important;
+  box-sizing: border-box !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions,
+.mr-unified-folder-card .mr-folder-card-actions,
+.mr-folder-card .mr-folder-card-actions,
+.deck-card .mr-folder-card-actions,
+.folder-card .mr-folder-card-actions,
+.mr-folder-card-actions {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 0.5rem !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin-left: 0 !important;
+}
+
+.mr-subfolder-card .mr-folder-card-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.deck-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.folder-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-action,
+.mr-folder-card-btn-action {
+  white-space: nowrap !important;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.35rem !important;
+  width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 0.35rem !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+  line-height: 1 !important;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-action:hover,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-action:hover,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-action:hover,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-action:hover {
+  transform: translateY(-1px) !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-reset,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-reset,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-reset,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-reset {
+  background: #f0fdf4 !important;
+  color: #15803d !important;
+  border: 1px solid #bbf7d0 !important;
+  border-radius: 8px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-reset:hover,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-reset:hover,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-reset:hover,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-reset:hover {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+  border-color: #fcd34d !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-add,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-add,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-add,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-add {
+  background: #16a34a !important;
+  color: #ffffff !important;
+  border: 1px solid #16a34a !important;
+  font-weight: 800 !important;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.2) !important;
+  border-radius: 8px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-add:hover,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-add:hover,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-add:hover,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-add:hover {
+  background: #15803d !important;
+  border-color: #15803d !important;
+  color: #ffffff !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-subfolder,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder {
+  background: #f0fdf4 !important;
+  color: #166534 !important;
+  border: 1px solid #86efac !important;
+  box-shadow: 0 1px 2px rgba(22, 163, 74, 0.06) !important;
+  border-radius: 8px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.mr-subfolder-card .mr-folder-card-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  padding-right: 8px !important;
+  box-sizing: border-box !important;
+}
+
+.mr-subfolder-card .mr-folder-card-btn-subfolder {
+  margin-right: 6px !important;
+  padding: 0 0.75rem !important;
+  max-width: calc(100% - 12px) !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+#mr-subfolder-wrapper {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+}
+
+#mr-subfolder-wrapper .mr-subfolder-content-container {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#mr-subfolder-wrapper .mr-subfolder-hero-card,
+.mr-subfolder-hero-card {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 0.75rem !important;
+  padding: 1rem 1.25rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#mr-subfolder-wrapper .mr-subfolder-hero-card button,
+.mr-subfolder-hero-card button {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-subfolder:hover,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder:hover,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder:hover,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-subfolder:hover {
+  background: #dcfce7 !important;
+  border-color: #22c55e !important;
+  color: #14532d !important;
+}
+
+.mr-tutoria-card .mr-folder-card-actions .mr-folder-card-btn-delete,
+.mr-unified-folder-card .mr-folder-card-actions .mr-folder-card-btn-delete,
+.mr-folder-card .mr-folder-card-actions .mr-folder-card-btn-delete,
+.mr-subfolder-card .mr-folder-card-actions .mr-folder-card-btn-delete,
+.mr-folder-card-footer .mr-folder-card-btn-delete,
+.mr-folder-card-actions .mr-folder-card-btn-delete,
+.mr-folder-card-btn-delete {
+  display: none !important;
+}
+
+/* [mr-ghost-purge-134] supressão final de fantasmas nos cartões de subpasta */
+.mr-subfolder-card
+  > :not(.mr-folder-card-header):not(.mr-folder-card-footer):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-top-delete
+  ) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.mr-subfolder-card
+  button:not(.mr-folder-card-top-rename):not(.mr-folder-card-top-delete):not(
+    .mr-folder-card-btn-subfolder
+  ) {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+.mr-subfolder-card [class*='chip']:not(.mr-folder-card-count-chip),
+.mr-subfolder-card [class*='badge']:not(.mr-folder-card-badge) {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* [mr-prova-grid-fix] Correção de layout da visão interna da pasta Prova de Módulo */
+/* A) Isolar botão de criação fora da malha dos cartões */
+.folder-grid > button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.deck-grid > button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+.cards-grid > button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename),
+div:has(> .mr-folder-card)
+  > button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-btn-action
+  ),
+div:has(> .mr-unified-folder-card)
+  > button:not(.mr-folder-card-top-delete):not(.mr-folder-card-top-rename):not(
+    .mr-folder-card-btn-action
+  ) {
+  grid-column: 1 / -1 !important;
+  width: fit-content !important;
+  justify-self: start !important;
+  margin-bottom: 0.85rem !important;
+}
+
+/* B) Grade com colunas rigorosamente iguais */
+.decks,
+.folders,
+.deck-grid,
+.folder-grid,
+.decks-container,
+.folders-container,
+.folder-cards-list,
+.deck-cards-list,
+.cards-grid,
+div:has(> .mr-folder-card),
+div:has(> .mr-tutoria-card),
+div:has(> .mr-unified-folder-card),
+div:has(> .deck-card),
+div:has(> .folder-card) {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+  gap: 1.25rem !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* [mr-provas-root-hide] Oculta cartão auto-referencial "Provas de Módulo" DENTRO da pasta de provas */
+.folder-view[data-current-folder='provas'] [data-folder-id='provas'],
+.folder-view[data-current-folder='provas'] .mr-folder-card[data-mr-hidden-provas-root='1'],
+.deck-view[data-current-folder='provas'] [data-folder-id='provas'],
+.deck-view[data-current-folder='provas'] .mr-folder-card[data-mr-hidden-provas-root='1'],
+[data-mr-current-folder='provas'] [data-folder-id='provas'],
+[data-mr-current-folder='provas'] .mr-folder-card[data-mr-hidden-provas-root='1'] {
+  display: none !important;
+}
+
+/* Ocultação não-destrutiva de avatares/iniciais nativos órfãos em visões de pasta (exclui .mr-subfolder-card e home) */
+.folder-view [data-mr-hidden-native]:not(.mr-subfolder-card):not(.mr-subfolder-card *),
+.deck-view [data-mr-hidden-native]:not(.mr-subfolder-card):not(.mr-subfolder-card *) {
+  display: none !important;
+}
+
+/* C) Cartões gêmeos */
+.mr-folder-card,
+.mr-tutoria-card,
+.mr-unified-folder-card,
+.deck-card.mr-folder-card,
+.folder-card.mr-folder-card {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  min-height: 230px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: space-between !important;
+  box-sizing: border-box !important;
+}
+.mr-folder-card-title-wrap {
+  width: 100% !important;
+  min-height: 3.1rem !important;
+  height: 3.1rem !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  min-width: 0 !important;
+}
+.mr-folder-card-title {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  line-height: 1.35 !important;
+  font-size: 1.15rem !important;
+  font-weight: 800 !important;
+  width: 100% !important;
+}

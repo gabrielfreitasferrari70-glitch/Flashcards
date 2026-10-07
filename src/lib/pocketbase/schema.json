@@ -1,0 +1,802 @@
+{
+  "generatedAt": "2026-10-04T07:00:04.912Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "admin_catalog_review_consent",
+          "type": "bool",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "medreview_state",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && user_id = @request.auth.id",
+        "view": "@request.auth.id != '' && user_id = @request.auth.id",
+        "create": "@request.auth.id != '' && user_id = @request.auth.id",
+        "update": "@request.auth.id != '' && user_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "data",
+          "type": "json",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "mr_decks",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && user_id = @request.auth.id",
+        "view": "@request.auth.id != '' && user_id = @request.auth.id",
+        "create": "@request.auth.id != '' && user_id = @request.auth.id",
+        "update": "@request.auth.id != '' && user_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "kind",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["tutoria", "prova", "custom"]
+        },
+        {
+          "name": "order",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "seed_key",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deleted",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "parent",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "mr_decks"
+        },
+        {
+          "name": "mode",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["study", "organizer"]
+        },
+        {
+          "name": "frontline",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "publish_global",
+          "type": "bool",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_mr_decks_user_seed` ON `mr_decks` (user_id, seed_key) WHERE seed_key != ''",
+        "CREATE INDEX `idx_mr_decks_user_parent_order` ON `mr_decks` (user_id, parent, \"order\")"
+      ]
+    },
+    {
+      "name": "mr_cards",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && user_id = @request.auth.id",
+        "view": "@request.auth.id != '' && user_id = @request.auth.id",
+        "create": "@request.auth.id != '' && user_id = @request.auth.id",
+        "update": "@request.auth.id != '' && user_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "deck",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "mr_decks"
+        },
+        {
+          "name": "q",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "a",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "group",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ref",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "suspended",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "seed_key",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deleted",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "diagram_svg",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "diagram_title",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "image",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "choices",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reverse",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "clinical",
+          "type": "bool",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_mr_cards_user_seed` ON `mr_cards` (user_id, seed_key) WHERE seed_key != ''",
+        "CREATE INDEX `idx_mr_cards_user_deck` ON `mr_cards` (user_id, deck)"
+      ]
+    },
+    {
+      "name": "mr_reviews",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && user_id = @request.auth.id",
+        "view": "@request.auth.id != '' && user_id = @request.auth.id",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "card",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "mr_decks"
+        },
+        {
+          "name": "rating",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["again", "hard", "good", "easy"]
+        },
+        {
+          "name": "stability",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "difficulty",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "retrievability",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "elapsed_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "scheduled_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "state",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["new", "learning", "review", "relearning"]
+        },
+        {
+          "name": "due",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reviewed_at",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "card_ref",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "mr_cards"
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX `idx_mr_reviews_user_cardref_time` ON `mr_reviews` (user_id, card_ref, reviewed_at)"
+      ]
+    },
+    {
+      "name": "mr_seed_catalog",
+      "type": "base",
+      "apiRules": {
+        "list": null,
+        "view": null,
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "version",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data",
+          "type": "json",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE UNIQUE INDEX idx_mr_seed_catalog_version ON mr_seed_catalog (version)"]
+    },
+    {
+      "name": "mr_global_decks",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && is_published = true",
+        "view": "@request.auth.id != '' && is_published = true",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "kind",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["tutoria", "prova", "custom"]
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "order",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deleted",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "parent",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "mr_global_decks"
+        },
+        {
+          "name": "is_published",
+          "type": "bool",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_mr_global_decks_order ON mr_global_decks (\"order\")"]
+    },
+    {
+      "name": "mr_global_cards",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && is_published = true",
+        "view": "@request.auth.id != '' && is_published = true",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "deck",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "mr_global_decks"
+        },
+        {
+          "name": "q",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "a",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "group",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ref",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "suspended",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "deleted",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "diagram_svg",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "diagram_title",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "choices",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reverse",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "clinical",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_by",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "is_published",
+          "type": "bool",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_mr_global_cards_deck ON mr_global_cards (deck)"]
+    },
+    {
+      "name": "mr_global_reviews",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && user_id = @request.auth.id",
+        "view": "@request.auth.id != '' && user_id = @request.auth.id",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "global_card_ref",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "mr_global_cards"
+        },
+        {
+          "name": "rating",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["again", "hard", "good", "easy"]
+        },
+        {
+          "name": "stability",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "difficulty",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "retrievability",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "elapsed_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "scheduled_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "state",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["new", "learning", "review", "relearning"]
+        },
+        {
+          "name": "due",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "reviewed_at",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_mr_global_reviews_user_card_time ON mr_global_reviews (user_id, global_card_ref, reviewed_at)"
+      ]
+    },
+    {
+      "name": "mr_catalog_source_map",
+      "type": "base",
+      "apiRules": {
+        "list": null,
+        "view": null,
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "source_user_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "source_kind",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["deck", "card"]
+        },
+        {
+          "name": "source_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "global_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_mr_catalog_source_unique ON mr_catalog_source_map (source_user_id, source_kind, source_id)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+MedReview seed static catalog v1. Concatenate this file with mr-seed-v1-02.txt through mr-seed-v1-07.txt in numeric order, then base64-decode and gunzip. Catalog SHA-256 (uncompressed JSON): ca3f1ed8e1dcd198af46ff255440a6357afaed57a8920b97741a628abbd76f43.
