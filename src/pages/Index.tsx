@@ -21,6 +21,16 @@ import {
   MedReviewLegacySessionComplete,
   MedReviewLegacyStyles,
 } from '@/components/MedReviewLegacyLayout'
+import { ImageOcclusionModal } from '@/components/ImageOcclusionModal'
+import { ImageOcclusionViewer } from '@/components/ImageOcclusionViewer'
+import { parseOcclusion } from '@/services/imageOcclusion'
+import { ExamPlanModal } from '@/components/ExamPlanModal'
+import { CardReportModal } from '@/components/CardReportModal'
+import { MasterReportsModal } from '@/components/MasterReportsModal'
+import { MasterAnalyticsModal } from '@/components/MasterAnalyticsModal'
+import { AiCardGeneratorModal } from '@/components/AiCardGeneratorModal'
+import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
+import { extractCardTags } from '@/services/cardTags'
 
 // ==================== Motor FSRS-5 (portado do MedReview original) ====================
 const FSRS_W = [
@@ -196,6 +206,9 @@ interface Card {
   reverse?: boolean
   clinical?: boolean
   __reverse?: boolean
+  occlusion?: any
+  tags?: string[]
+  imageUrl?: string
 }
 interface Review {
   id: string
@@ -2070,6 +2083,14 @@ export default function Index() {
   const [deckTitle, setDeckTitle] = useState('')
   const [deckKind, setDeckKind] = useState<'tutoria' | 'prova' | 'custom'>('custom')
   const [deckMode, setDeckMode] = useState<'study' | 'organizer'>('study')
+  const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false)
+  const [imageOcclusionOpen, setImageOcclusionOpen] = useState(false)
+  const [examPlanTarget, setExamPlanTarget] = useState<{ id: string; title: string } | null>(null)
+  const [cardReportTarget, setCardReportTarget] = useState<Card | null>(null)
+  const [masterReportsOpen, setMasterReportsOpen] = useState(false)
+  const [masterAnalyticsOpen, setMasterAnalyticsOpen] = useState(false)
+  const [currentCardNote, setCurrentCardNote] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
 
   const retention = useMemo(() => getRetention(), [route, retentionTick])
   const schedulerSettings = useMemo(() => getSchedulerSettings(user?.id), [user?.id, retentionTick])
@@ -2102,6 +2123,13 @@ export default function Index() {
   }, [])
   const reviewsForCard = (card: Card, cardId = card.id.replace(/::rev$/, '')) =>
     reviews.filter((r) => (r.card_ref || r.card) === cardId)
+
+  useEffect(() => {
+    if (route.view === 'study' && queue[qIdx]) {
+      const realId = queue[qIdx].id.replace(/::rev$/, '')
+      fetchCardNote(realId).then((n) => setCurrentCardNote(n || ''))
+    }
+  }, [route.view, qIdx, queue])
   const stateKey = (card: Card) => card.id.replace(/::rev$/, '')
 
   // Boot: restaura sessão e inicializa biblioteca vazia; seed é idempotente por seed_key.
@@ -2774,6 +2802,14 @@ export default function Index() {
               <span className="mr-legacy-control">
                 {qIdx + 1} / {queue.length}
               </span>
+              <button
+                className="mr-legacy-control"
+                onClick={() => setCardReportTarget(card)}
+                title="Reportar erro nesta carta"
+                style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}
+              >
+                ⚠️ Reportar
+              </button>
               <button className="mr-legacy-control" onClick={() => setQIdx(queue.length)}>
                 ✓ Concluído
               </button>
@@ -2842,15 +2878,34 @@ export default function Index() {
             </span>
           </div>
           <article className="mr-legacy-study-card" onClick={() => setFlipped((f) => !f)}>
-            <span className="mr-legacy-badge">
-              {card.__reverse
-                ? '🔁 Cartão reverso (verso → frente)'
-                : isCloze(card.q)
-                  ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
-                  : card.clinical
-                    ? '🩺 Cartão de Modo Clínico'
-                    : '🩺 Cartão de revisão'}
-            </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+              <span className="mr-legacy-badge">
+                {card.__reverse
+                  ? '🔁 Cartão reverso (verso → frente)'
+                  : isCloze(card.q)
+                    ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
+                    : card.clinical
+                      ? '🩺 Cartão de Modo Clínico'
+                      : '🩺 Cartão de revisão'}
+              </span>
+              {extractCardTags(card).map((tag) => (
+                <span
+                  key={tag}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '3px 9px',
+                    borderRadius: 999,
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    fontSize: '.72rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
             <h1
               className="mr-legacy-question"
               dangerouslySetInnerHTML={{
@@ -2861,6 +2916,12 @@ export default function Index() {
                     : renderClozeHtml(card.q, flipped),
               }}
             />
+            {parseOcclusion(card.occlusion || card) && (
+              <ImageOcclusionViewer
+                data={parseOcclusion(card.occlusion || card)!}
+                revealed={flipped}
+              />
+            )}
             {!flipped &&
               studyMode === 'flip' &&
               !card.__reverse &&
@@ -3083,6 +3144,66 @@ export default function Index() {
                     📚 {card.ref}
                   </div>
                 )}
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    marginTop: 18,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: '#f8fafc',
+                    border: '1.5px solid #e2e8f0',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '.76rem',
+                        fontWeight: 800,
+                        color: '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <span>💡</span> MINHA ANOTAÇÃO PESSOAL (PRIVADA)
+                    </span>
+                    {noteSaving && (
+                      <span style={{ fontSize: '.72rem', color: '#16a34a', fontWeight: 700 }}>
+                        ✓ Salvo
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    value={currentCardNote}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setCurrentCardNote(val)
+                      setNoteSaving(true)
+                      saveCardNote(card.id.replace(/::rev$/, ''), val).then(() => {
+                        setTimeout(() => setNoteSaving(false), 800)
+                      })
+                    }}
+                    placeholder="Escreva seus mnemônicos, observações ou pegadinhas pessoais sobre esta carta..."
+                    rows={2}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #cbd5e1',
+                      fontSize: '.84rem',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
               </div>
             )}
           </article>
@@ -3308,7 +3429,80 @@ export default function Index() {
         onDeckClick={openDeck}
         userDecks={userDecks}
         openDeckId={route.deckId}
+        onOpenAiGenerator={() => setAiGeneratorOpen(true)}
+        onOpenImageOcclusion={() => setImageOcclusionOpen(true)}
+        onOpenExamPlan={(dId, dTitle) => setExamPlanTarget({ id: dId, title: dTitle })}
+        onOpenMasterReports={() => setMasterReportsOpen(true)}
+        onOpenMasterAnalytics={() => setMasterAnalyticsOpen(true)}
       />
+      {aiGeneratorOpen && (
+        <AiCardGeneratorModal
+          decks={decks}
+          initialDeckId={route.deckId}
+          onClose={() => setAiGeneratorOpen(false)}
+          onSuccess={() => {
+            loadData()
+            setMsg('Cartões gerados e salvos com sucesso!')
+            setTimeout(() => setMsg(''), 3000)
+          }}
+        />
+      )}
+      {imageOcclusionOpen && (
+        <ImageOcclusionModal
+          decks={decks}
+          initialDeckId={route.deckId}
+          onClose={() => setImageOcclusionOpen(false)}
+          onSuccess={() => {
+            loadData()
+            setMsg('Cartões de oclusão de imagem criados!')
+            setTimeout(() => setMsg(''), 3000)
+          }}
+        />
+      )}
+      {examPlanTarget && (
+        <ExamPlanModal
+          deckId={examPlanTarget.id}
+          deckTitle={examPlanTarget.title}
+          totalCards={cards.filter((c) => c.deck === examPlanTarget.id).length}
+          onClose={() => setExamPlanTarget(null)}
+          onSaved={() => {
+            setMsg('Plano do Modo Prova atualizado!')
+            setTimeout(() => setMsg(''), 3000)
+          }}
+        />
+      )}
+      {cardReportTarget && (
+        <CardReportModal
+          cardId={cardReportTarget.id.replace(/::rev$/, '')}
+          cardQ={cardReportTarget.q}
+          onClose={() => setCardReportTarget(null)}
+          onSuccess={() => {
+            setMsg('Relatório de erro enviado à moderação. Obrigado!')
+            setTimeout(() => setMsg(''), 3500)
+          }}
+        />
+      )}
+      {masterReportsOpen && (
+        <MasterReportsModal
+          onClose={() => setMasterReportsOpen(false)}
+          onOpenCard={(cId) => {
+            const found = cards.find((c) => c.id === cId)
+            if (found) startStudy([found], found.deck, 'Revisar Cartão')
+          }}
+        />
+      )}
+      {masterAnalyticsOpen && (
+        <MasterAnalyticsModal
+          cards={cards}
+          reviews={reviews}
+          decks={decks}
+          onClose={() => setMasterAnalyticsOpen(false)}
+          onOpenCard={(cId) => {
+            const found = cards.find((c) => c.id === cId)
+            if (found) startStudy([found], found.deck, 'Revisar Cartão')
+          }}
+        />
+      )}
       {settingsOpen && (
         <SettingsModal
           accountId={user?.id}

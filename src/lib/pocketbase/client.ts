@@ -64,16 +64,7 @@ const pb = {
           if (data.user && payload.name) {
             await supabase.from('profiles').update({ name: payload.name }).eq('id', data.user.id)
           }
-          
-                  // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
-        return data.map((row: any) => {
-          const mapped = { ...row }
-          if (row.created_at) mapped.created = row.created_at
-          if (row.updated_at) mapped.updated = row.updated_at
-          if (name === 'mr_cards' && row.deck_id) mapped.deck = row.deck_id
-          if (name === 'mr_reviews' && row.card_id) mapped.card_ref = row.card_id
-          return mapped
-        }).user
+          return data.user
         }
         throw new Error('Create not implemented for ' + name)
       },
@@ -93,7 +84,7 @@ const pb = {
           console.error(`Erro ao buscar ${name}:`, error)
           return []
         }
-                // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
+        // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
         return data.map((row: any) => {
           const mapped = { ...row }
           if (row.created_at) mapped.created = row.created_at
@@ -107,7 +98,9 @@ const pb = {
   },
   files: {
     getURL: (record: any, filename: string) => {
-      return ''
+      if (!filename) return ''
+      if (/^(https?:|data:|\/)/i.test(filename)) return filename
+      return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/card-images/${filename}`
     }
   }
 }

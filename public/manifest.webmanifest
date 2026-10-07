@@ -1,0 +1,21 @@
+{
+  "name": "MedReview — Flashcards Médicos",
+  "short_name": "MedReview",
+  "description": "Plataforma de Fixação Médica com FSRS-5 para estudantes de medicina",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png"
+    }
+  ]
+}

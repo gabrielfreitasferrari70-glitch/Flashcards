@@ -181,6 +181,11 @@ type HomeProps = {
   onNewFrontlineFolder: () => void
   onSectionMove?: (kind: 'tutoria' | 'prova' | 'custom') => void
   openDeckId?: string
+  onOpenAiGenerator?: () => void
+  onOpenImageOcclusion?: () => void
+  onOpenExamPlan?: (deckId: string, deckTitle: string) => void
+  onOpenMasterReports?: () => void
+  onOpenMasterAnalytics?: () => void
 }
 
 export function MedReviewLegacyHome(props: HomeProps) {
@@ -218,7 +223,13 @@ export function MedReviewLegacyHome(props: HomeProps) {
     onNewFrontlineFolder,
     onSectionMove,
     openDeckId,
+    onOpenAiGenerator,
+    onOpenImageOcclusion,
+    onOpenExamPlan,
+    onOpenMasterReports,
+    onOpenMasterAnalytics,
   } = props
+  const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
   // Quando um deck específico é aberto (pasta organizadora), mostra só a subárvore dele;
   // senão, a seção inteira (Tutoria/Prova/Minhas Pastas).
   // HIERARQUIA DE VERDADE: a view da seção mostra só as pastas de nível inicial
@@ -286,8 +297,34 @@ export function MedReviewLegacyHome(props: HomeProps) {
             </span>
           </div>
           <div className="mr-legacy-header-actions">
+            {isMaster && (
+              <>
+                <button
+                  className="mr-legacy-button"
+                  onClick={onOpenMasterAnalytics}
+                  style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1d4ed8' }}
+                  title="Painel Docente & Desempenho da Turma"
+                >
+                  🎓 Docente
+                </button>
+                <button
+                  className="mr-legacy-button"
+                  onClick={onOpenMasterReports}
+                  style={{ background: '#fffbeb', borderColor: '#fde68a', color: '#b45309' }}
+                  title="Erros reportados por alunos"
+                >
+                  ⚠️ Erros
+                </button>
+              </>
+            )}
+            <button className="mr-legacy-button" onClick={onOpenAiGenerator} title="Gerar cartas com IA">
+              🤖 Criar com IA
+            </button>
+            <button className="mr-legacy-button" onClick={onOpenImageOcclusion} title="Oclusão de Imagem">
+              🖼️ Oclusão
+            </button>
             <button className="mr-legacy-button" onClick={onClinical}>
-              📋 Modo Caso Clínico
+              📋 Modo Clínico
             </button>
             <button className="mr-legacy-button primary" onClick={onNewFrontlineFolder}>
               ＋ Nova Pasta
@@ -380,6 +417,13 @@ export function MedReviewLegacyHome(props: HomeProps) {
             {openDeckId && (
               <div className="mr-legacy-folder-manage" aria-label="Gerenciar a pasta aberta">
                 <span className="mr-legacy-folder-manage-label">Gerenciar esta pasta</span>
+                <button
+                  className="mr-legacy-button"
+                  onClick={() => onOpenExamPlan?.(openDeckId, title)}
+                  style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#15803d' }}
+                >
+                  🎯 Modo Prova (Data-Alvo)
+                </button>
                 <button className="mr-legacy-button" onClick={() => onDeckRename?.(openDeckId)}>
                   ✏️ Renomear pasta
                 </button>
@@ -548,6 +592,12 @@ export function MedReviewLegacyHome(props: HomeProps) {
                 </button>
                 <button className="mr-legacy-button" onClick={onClinical}>
                   📋 Modo Caso Clínico
+                </button>
+                <button className="mr-legacy-button" onClick={onOpenAiGenerator}>
+                  🤖 Criar com IA
+                </button>
+                <button className="mr-legacy-button" onClick={onOpenImageOcclusion}>
+                  🖼️ Oclusão
                 </button>
                 <button className="mr-legacy-button" onClick={() => onNewFolderIn('custom')}>
                   ＋ Nova pasta
