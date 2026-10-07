@@ -697,7 +697,7 @@ function buildSessionCards(
   for (const c of cards) {
     if (!deckSet.has(c.deck)) continue
     if (c.suspended && !opts.includeSuspended) continue
-    const cs = cardStateFromReviews(reviews.filter((r) => (r.card_ref || r.card) === c.id))
+    const cs = cardStateFromReviews(reviews.filter((r) => (r.card_id || r.card_ref || r.card) === c.id))
     const isNew = cs.state === 'new'
     const isDue = cs.state !== 'new' && (cs.dueMs || 0) <= now
     const isFuture = cs.state !== 'new' && (cs.dueMs || 0) > now
@@ -1108,7 +1108,7 @@ function CardStatsModal({
   onClose: () => void
 }) {
   const cardReviews = reviews
-    .filter((r) => (r.card_ref || r.card) === card.id)
+    .filter((r) => (r.card_id || r.card_ref || r.card) === card.id)
     .sort((a, b) => (parsePbDate(a.reviewed_at) || 0) - (parsePbDate(b.reviewed_at) || 0))
   const total = cardReviews.length
   const correct = cardReviews.filter((r) => r.rating === 'good' || r.rating === 'easy').length
@@ -1786,7 +1786,7 @@ function FsrDashboardModal({
   let d30 = 0
   for (const c of cards) {
     if (c.suspended) continue
-    const cs = cardStateFromReviews(reviews.filter((r) => (r.card_ref || r.card) === c.id))
+    const cs = cardStateFromReviews(reviews.filter((r) => (r.card_id || r.card_ref || r.card) === c.id))
     if (cs.state === 'new') continue
     const due = cs.dueMs || 0
     if (due <= now) overdue++
@@ -1801,7 +1801,7 @@ function FsrDashboardModal({
       const ids = new Set([deck.id, ...decks.filter((d) => d.parent === deck.id).map((d) => d.id)])
       const deckCards = cards.filter((c) => ids.has(c.deck))
       const cardIds = new Set(deckCards.map((c) => c.id))
-      const rs = reviews.filter((r) => cardIds.has(r.card_ref || r.card))
+      const rs = reviews.filter((r) => cardIds.has(r.card_id || r.card_ref || r.card))
       const correct = rs.filter((r) => r.rating === 'good' || r.rating === 'easy').length
       return {
         title: deck.title,
@@ -2126,7 +2126,7 @@ export default function Index() {
   const reviewsByCard = useMemo(() => {
     const map = new Map<string, any[]>()
     for (const r of reviews) {
-      const key = (r.card_ref || r.card) as string
+      const key = (r.card_id || r.card_ref || r.card) as string
       if (!key) continue
       const arr = map.get(key)
       if (arr) arr.push(r)
@@ -2698,7 +2698,9 @@ export default function Index() {
     const fmt = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 19)
     try {
       const reviewInput = {
+        card_id: realId,
         card_ref: realId,
+        card: realId,
         rating: quality,
         stability: chosen.newS ?? fsrsInitialStability(chosen.g),
         difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
@@ -2715,7 +2717,7 @@ export default function Index() {
         reviewed_at: fmt(now),
       }
       const created = await createReview(reviewInput)
-      const savedReview = { ...(created as any), ...reviewInput }
+      const savedReview = { ...(created as any), ...reviewInput, card_id: realId, card_ref: realId, card: realId }
       setReviews((rs) => [...rs, savedReview])
       setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
       setMsg(`Carta agendada para daqui ${chosen.label}`)
@@ -2823,9 +2825,7 @@ export default function Index() {
           onExit={returnToFolders}
         />
       )
-    const cs = cardStateFromReviews(
-      reviews.filter((r) => (r.card_ref || r.card) === card.id.replace(/::rev$/, '')),
-    )
+    const cs = cardStateFromReviews(reviewsForCard(card))
     const pv = previewIntervalsForSettings(cs, retention, schedulerSettings)
     return (
       <div className="mr-legacy-study-page">

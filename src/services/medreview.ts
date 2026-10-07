@@ -2,7 +2,9 @@ import { supabase } from '@/lib/supabase/client'
 import type { ParsedCsvCard } from '@/lib/csvImport'
 
 export interface ReviewInput {
-  card_id: string
+  card_id?: string
+  card_ref?: string
+  card?: string
   rating: 'again' | 'hard' | 'good' | 'easy'
   stability: number
   difficulty: number
@@ -18,9 +20,12 @@ export const createReview = async (data: ReviewInput) => {
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
 
+  const targetCardId = data.card_id || data.card_ref || data.card
+  if (!targetCardId) throw new Error('Identificador do cartão (card_id) não fornecido')
+
   const { data: res, error } = await supabase.from('mr_reviews').insert({
     user_id: user.user.id,
-    card_id: data.card_id,
+    card_id: targetCardId,
     rating: data.rating,
     stability: data.stability,
     difficulty: data.difficulty,

@@ -820,8 +820,8 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                     onError={() => setMsg('Erro ao renderizar a imagem. Verifique o formato ou tente enviar outro arquivo.')}
                     style={{
                       display: 'block',
-                      maxWidth: '820px',
-                      maxHeight: '52vh',
+                      maxWidth: '940px',
+                      maxHeight: '66vh',
                       objectFit: 'contain',
                       pointerEvents: 'none',
                     }}
