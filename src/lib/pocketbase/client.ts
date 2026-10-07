@@ -65,7 +65,15 @@ const pb = {
             await supabase.from('profiles').update({ name: payload.name }).eq('id', data.user.id)
           }
           
-          return data.user
+                  // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
+        return data.map((row: any) => {
+          const mapped = { ...row }
+          if (row.created_at) mapped.created = row.created_at
+          if (row.updated_at) mapped.updated = row.updated_at
+          if (name === 'mr_cards' && row.deck_id) mapped.deck = row.deck_id
+          if (name === 'mr_reviews' && row.card_id) mapped.card_ref = row.card_id
+          return mapped
+        }).user
         }
         throw new Error('Create not implemented for ' + name)
       },
@@ -85,7 +93,15 @@ const pb = {
           console.error(`Erro ao buscar ${name}:`, error)
           return []
         }
-        return data
+                // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
+        return data.map((row: any) => {
+          const mapped = { ...row }
+          if (row.created_at) mapped.created = row.created_at
+          if (row.updated_at) mapped.updated = row.updated_at
+          if (name === 'mr_cards' && row.deck_id) mapped.deck = row.deck_id
+          if (name === 'mr_reviews' && row.card_id) mapped.card_ref = row.card_id
+          return mapped
+        })
       }
     }
   },
