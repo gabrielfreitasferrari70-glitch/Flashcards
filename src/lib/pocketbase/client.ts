@@ -1,8 +1,5 @@
 import { supabase } from '../supabase/client'
 
-// Um proxy (adaptador) para enganar o frontend antigo fazendo-o pensar que está falando com o PocketBase,
-// mas na verdade está falando com o Supabase.
-
 class AuthStore {
   isValid = false
   record: any = null
@@ -27,7 +24,6 @@ const pb = {
           throw new Error('Sessão inválida')
         }
         
-        // Pega o perfil para ver se está aprovado
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
         
         authStore.isValid = true
@@ -62,8 +58,6 @@ const pb = {
           })
           if (error) throw error
           
-          // O trigger do Supabase cria o profile automaticamente com approved=false.
-          // Só atualizamos o nome se necessário.
           if (data.user && payload.name) {
             await supabase.from('profiles').update({ name: payload.name }).eq('id', data.user.id)
           }
@@ -77,7 +71,9 @@ const pb = {
         
         if (options?.sort) {
           const isDesc = options.sort.startsWith('-')
-          const col = isDesc ? options.sort.substring(1) === "created" ? "created_at" : (options.sort.substring(1) || options.sort) === "created" ? "created_at" : (options.sort.startsWith("-") ? options.sort.substring(1) : options.sort)
+          let col = isDesc ? options.sort.substring(1) : options.sort
+          if (col === 'created') col = 'created_at'
+          if (col === 'updated') col = 'updated_at'
           query = query.order(col, { ascending: !isDesc })
         }
         
@@ -92,7 +88,6 @@ const pb = {
   },
   files: {
     getURL: (record: any, filename: string) => {
-      // Retorna placeholder ou null por enquanto, já que imagens demandariam Storage no Supabase
       return ''
     }
   }
