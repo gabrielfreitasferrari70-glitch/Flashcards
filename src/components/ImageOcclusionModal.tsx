@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import type { OcclusionMask } from '@/services/imageOcclusion'
 import { createCard } from '@/services/medreview'
 
@@ -8,6 +8,16 @@ interface Props {
   onClose: () => void
   onSuccess: () => void
 }
+
+type ActiveTool = 'select' | 'rect' | 'ellipse'
+
+const ANKI_COLORS = [
+  { name: 'Amarelo Anki', bg: '#ffea79', border: '#1e293b' },
+  { name: 'Laranja', bg: '#ffcc80', border: '#e65100' },
+  { name: 'Verde', bg: '#c8e6c9', border: '#2e7d32' },
+  { name: 'Azul', bg: '#bbdefb', border: '#1565c0' },
+  { name: 'Rosa', bg: '#f8bbd0', border: '#c2185b' },
+]
 
 export const ImageOcclusionModal: React.FC<Props> = ({
   decks,
@@ -19,14 +29,38 @@ export const ImageOcclusionModal: React.FC<Props> = ({
   const [title, setTitle] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [masks, setMasks] = useState<OcclusionMask[]>([])
+  const [history, setHistory] = useState<OcclusionMask[][]>([])
   const [selectedMaskId, setSelectedMaskId] = useState<string | null>(null)
+  const [activeTool, setActiveTool] = useState<ActiveTool>('rect')
+  const [selectedColor, setSelectedColor] = useState(ANKI_COLORS[0])
+  const [zoomLevel, setZoomLevel] = useState(1)
+
+  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false)
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null)
   const [currentRect, setCurrentRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  // Dragging selected mask state
+  const [isDraggingMask, setIsDraggingMask] = useState(false)
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null)
+
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
   const imgContainerRef = useRef<HTMLDivElement>(null)
+
+  const pushHistory = (newMasks: OcclusionMask[]) => {
+    setHistory((prev) => [...prev.slice(-15), masks])
+    setMasks(newMasks)
+  }
+
+  const handleUndo = () => {
+    if (history.length === 0) return
+    const prev = history[history.length - 1]
+    setHistory((h) => h.slice(0, -1))
+    setMasks(prev)
+    setSelectedMaskId(null)
+  }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -34,6 +68,8 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     const reader = new FileReader()
     reader.onload = () => {
       setImageUrl(reader.result as string)
+      setMasks([])
+      setHistory([])
     }
     reader.readAsDataURL(file)
   }
@@ -49,14 +85,46 @@ export const ImageOcclusionModal: React.FC<Props> = ({
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!imageUrl) return
     const coords = getRelativeCoords(e)
-    setIsDrawing(true)
-    setStartPos(coords)
-    setCurrentRect({ x: coords.x, y: coords.y, w: 0, h: 0 })
+
+    if (activeTool === 'select' && selectedMaskId) {
+      const selected = masks.find((m) => m.id === selectedMaskId)
+      if (
+        selected &&
+        coords.x >= selected.x &&
+        coords.x <= selected.x + selected.width &&
+        coords.y >= selected.y &&
+        coords.y <= selected.y + selected.height
+      ) {
+        setIsDraggingMask(true)
+        setDragOffset({ x: coords.x - selected.x, y: coords.y - selected.y })
+        return
+      }
+    }
+
+    if (activeTool === 'rect' || activeTool === 'ellipse') {
+      setIsDrawing(true)
+      setStartPos(coords)
+      setCurrentRect({ x: coords.x, y: coords.y, w: 0, h: 0 })
+    }
   }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDrawing || !startPos) return
     const coords = getRelativeCoords(e)
+
+    if (isDraggingMask && selectedMaskId && dragOffset) {
+      const updated = masks.map((m) => {
+        if (m.id === selectedMaskId) {
+          const newX = Math.max(0, Math.min(100 - m.width, coords.x - dragOffset.x))
+          const newY = Math.max(0, Math.min(100 - m.height, coords.y - dragOffset.y))
+          return { ...m, x: Math.round(newX * 10) / 10, y: Math.round(newY * 10) / 10 }
+        }
+        return m
+      })
+      setMasks(updated)
+      return
+    }
+
+    if (!isDrawing || !startPos) return
     const x = Math.min(startPos.x, coords.x)
     const y = Math.min(startPos.y, coords.y)
     const w = Math.abs(coords.x - startPos.x)
@@ -65,9 +133,16 @@ export const ImageOcclusionModal: React.FC<Props> = ({
   }
 
   const handleMouseUp = () => {
+    if (isDraggingMask) {
+      setIsDraggingMask(false)
+      setDragOffset(null)
+      return
+    }
+
     if (!isDrawing || !currentRect) return
     setIsDrawing(false)
-    if (currentRect.w > 3 && currentRect.h > 3) {
+
+    if (currentRect.w > 2 && currentRect.h > 2) {
       const newMask: OcclusionMask = {
         id: 'mask_' + Math.random().toString(36).slice(2, 9),
         x: Math.round(currentRect.x * 10) / 10,
@@ -76,7 +151,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
         height: Math.round(currentRect.h * 10) / 10,
         label: `Estrutura ${masks.length + 1}`,
       }
-      setMasks((prev) => [...prev, newMask])
+      pushHistory([...masks, newMask])
       setSelectedMaskId(newMask.id)
     }
     setCurrentRect(null)
@@ -88,55 +163,71 @@ export const ImageOcclusionModal: React.FC<Props> = ({
   }
 
   const removeMask = (id: string) => {
-    setMasks((prev) => prev.filter((m) => m.id !== id))
+    pushHistory(masks.filter((m) => m.id !== id))
     if (selectedMaskId === id) setSelectedMaskId(null)
   }
 
-  const handleSave = async (generateOnePerMask: boolean) => {
+  const duplicateMask = () => {
+    if (!selectedMaskId) return
+    const target = masks.find((m) => m.id === selectedMaskId)
+    if (!target) return
+    const newMask: OcclusionMask = {
+      ...target,
+      id: 'mask_' + Math.random().toString(36).slice(2, 9),
+      x: Math.min(90, target.x + 3),
+      y: Math.min(90, target.y + 3),
+      label: `${target.label} (cópia)`,
+    }
+    pushHistory([...masks, newMask])
+    setSelectedMaskId(newMask.id)
+  }
+
+  // Keyboard shortcuts (Delete, Ctrl+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedMaskId) {
+        // Only if not typing in an input
+        const tag = (e.target as HTMLElement).tagName
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          removeMask(selectedMaskId)
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        handleUndo()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener(handleKeyDown)
+  }, [selectedMaskId, masks, history])
+
+  const handleSaveAnkiMode = async (mode: 'hide_all_guess_one' | 'hide_one_guess_one') => {
     if (!deckId) {
-      setMsg('Escolha uma pasta de destino.')
+      setMsg('Escolha a pasta de destino.')
       return
     }
     if (!imageUrl) {
-      setMsg('Selecione uma imagem.')
+      setMsg('Selecione ou cole uma imagem.')
       return
     }
     if (masks.length === 0) {
-      setMsg('Desenhe pelo menos uma tarja na imagem.')
+      setMsg('Desenhe pelo menos um quadradinho na imagem.')
       return
     }
 
     setBusy(true)
     setMsg('')
     try {
-      if (generateOnePerMask) {
-        // Estilo Anki: 1 cartão para CADA tarja (Oculta todas, testa uma)
-        for (let i = 0; i < masks.length; i++) {
-          const mask = masks[i]
-          const qText = `Identifique a estrutura destacada em amarelo [${mask.label || `Item ${i + 1}`}]`
-          const aText = mask.label || `Estrutura ${i + 1}`
-          await createCard(deckId, {
-            q: qText,
-            a: aText,
-            group: 'Oclusão de Imagem',
-            ref: title || 'Anatomia / Histologia',
-            clinical: false,
-            imageUrl,
-            occlusion: {
-              imageUrl,
-              imageTitle: title || 'Oclusão de Imagem',
-              masks,
-              activeMaskId: mask.id,
-              mode: 'hide_all_guess_one',
-            },
-            tags: ['🖼️ Oclusão de Imagem', 'Anatomia'],
-          } as any)
-        }
-      } else {
-        // 1 cartão único com todas as tarjas
+      const modeLabel = mode === 'hide_all_guess_one' ? 'Ocultar Todos, Adivinhar Um' : 'Ocultar Um, Adivinhar Um'
+
+      // Cria 1 cartão para CADA quadradinho (padrão exato do Anki)
+      for (let i = 0; i < masks.length; i++) {
+        const mask = masks[i]
+        const qText = `Identifique a estrutura no quadradinho destacado [${mask.label || `Item ${i + 1}`}]`
+        const aText = mask.label || `Estrutura ${i + 1}`
+
         await createCard(deckId, {
-          q: title || 'Identifique as estruturas marcadas',
-          a: masks.map((m, idx) => `${idx + 1}. ${m.label}`).join('\n'),
+          q: qText,
+          a: aText,
           group: 'Oclusão de Imagem',
           ref: title || 'Anatomia / Histologia',
           clinical: false,
@@ -145,16 +236,17 @@ export const ImageOcclusionModal: React.FC<Props> = ({
             imageUrl,
             imageTitle: title || 'Oclusão de Imagem',
             masks,
-            mode: 'hide_all_guess_one',
+            activeMaskId: mask.id,
+            mode,
           },
-          tags: ['🖼️ Oclusão de Imagem'],
+          tags: ['🖼️ Oclusão de Imagem', 'Anatomia'],
         } as any)
       }
 
       onSuccess()
       onClose()
     } catch (e: any) {
-      setMsg('Erro ao salvar cartões: ' + (e?.message || e))
+      setMsg('Erro ao gerar cartões: ' + (e?.message || e))
     } finally {
       setBusy(false)
     }
@@ -167,74 +259,61 @@ export const ImageOcclusionModal: React.FC<Props> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 100,
-        background: 'rgba(15,23,42,.65)',
+        background: 'rgba(15,23,42,.75)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
-        backdropFilter: 'blur(4px)',
+        padding: '12px',
+        backdropFilter: 'blur(5px)',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#fff',
-          borderRadius: 20,
-          width: '95%',
-          maxWidth: '860px',
-          maxHeight: '90vh',
+          background: '#2b2b2b',
+          color: '#e2e8f0',
+          borderRadius: 14,
+          width: '98%',
+          maxWidth: '1040px',
+          height: '92vh',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
+          boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+          border: '1px solid #444',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
         }}
       >
+        {/* Barra Superior estilo Anki: Tipo & Baralho */}
         <header
           style={{
-            padding: '18px 24px',
-            borderBottom: '1px solid #e2e8f0',
+            background: '#1e1e1e',
+            borderBottom: '1px solid #3a3a3a',
+            padding: '10px 16px',
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
           }}
         >
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🖼️</span> Criador de Oclusão de Imagem (Image Occlusion)
-            </h2>
-            <p style={{ margin: '4px 0 0', fontSize: '.8rem', color: '#64748b' }}>
-              Tampe as estruturas em lâminas de histologia ou peças anatômicas.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '1.4rem',
-              cursor: 'pointer',
-              color: '#64748b',
-            }}
-          >
-            ✕
-          </button>
-        </header>
-
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '.8rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                Pasta de destino
-              </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '.78rem', color: '#94a3b8', fontWeight: 700 }}>
+              Tipo: <strong style={{ color: '#fff' }}>Oclusão de Imagem</strong>
+            </span>
+            <span style={{ color: '#555' }}>|</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: '.78rem', color: '#94a3b8', fontWeight: 700 }}>Baralho:</span>
               <select
                 value={deckId}
                 onChange={(e) => setDeckId(e.target.value)}
                 style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  border: '1.5px solid #cbd5e1',
-                  background: '#fff',
+                  background: '#383838',
+                  color: '#fff',
+                  border: '1px solid #555',
+                  borderRadius: 6,
+                  padding: '4px 8px',
+                  fontSize: '.8rem',
+                  outline: 'none',
                 }}
               >
                 {decks.map((d) => (
@@ -244,279 +323,549 @@ export const ImageOcclusionModal: React.FC<Props> = ({
                 ))}
               </select>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '.8rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                Título / Peça anatômica
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Coração — Face Esternocostal"
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  border: '1.5px solid #cbd5e1',
-                }}
-              />
-            </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: '.8rem', fontWeight: 700, color: '#334155', marginBottom: 6 }}>
-              Imagem da peça
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Título da peça (ex: Coração - Faces e Vasos)"
+              style={{
+                background: '#383838',
+                color: '#fff',
+                border: '1px solid #555',
+                borderRadius: 6,
+                padding: '4px 10px',
+                fontSize: '.8rem',
+                minWidth: '220px',
+              }}
+            />
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#aaa',
+                fontSize: '1.2rem',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+
+        {/* Sub-barra de ferramentas rápidas */}
+        <div
+          style={{
+            background: '#252525',
+            borderBottom: '1px solid #333',
+            padding: '6px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <label
+              style={{
+                background: '#3b82f6',
+                color: '#fff',
+                fontSize: '.75rem',
+                fontWeight: 700,
+                padding: '5px 10px',
+                borderRadius: 6,
+                cursor: 'pointer',
+              }}
+            >
+              📁 Selecionar Imagem
+              <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
             </label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                style={{
-                  padding: '8px',
-                  border: '1.5px dashed #cbd5e1',
-                  borderRadius: 10,
-                  flex: 1,
-                  background: '#f8fafc',
-                }}
-              />
-              <span style={{ alignSelf: 'center', color: '#94a3b8', fontSize: '.8rem' }}>ou cole URL:</span>
-              <input
-                value={imageUrl.startsWith('data:') ? '' : imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://..."
-                style={{
-                  flex: 1,
-                  padding: '9px 12px',
-                  borderRadius: 10,
-                  border: '1.5px solid #cbd5e1',
-                }}
-              />
-            </div>
+            <span style={{ fontSize: '.75rem', color: '#777' }}>ou cole URL:</span>
+            <input
+              value={imageUrl.startsWith('data:') ? '' : imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+              style={{
+                background: '#333',
+                color: '#ddd',
+                border: '1px solid #444',
+                borderRadius: 5,
+                padding: '4px 8px',
+                fontSize: '.75rem',
+                width: '180px',
+              }}
+            />
           </div>
 
-          {imageUrl ? (
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 8,
-                }}
-              >
-                <span style={{ fontSize: '.8rem', fontWeight: 700, color: '#15803d' }}>
-                  ✏️ Clique e arraste na imagem para desenhar as tarjas:
-                </span>
-                <span style={{ fontSize: '.78rem', color: '#64748b' }}>
-                  {masks.length} tarja(s) criada(s)
-                </span>
-              </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button
+              onClick={handleUndo}
+              disabled={history.length === 0}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                color: history.length ? '#fff' : '#666',
+                borderRadius: 5,
+                padding: '4px 8px',
+                fontSize: '.75rem',
+                cursor: history.length ? 'pointer' : 'default',
+              }}
+              title="Desfazer (Ctrl+Z)"
+            >
+              ↩️ Desfazer
+            </button>
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(2.5, z + 0.2))}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                color: '#fff',
+                borderRadius: 5,
+                padding: '4px 8px',
+                fontSize: '.75rem',
+                cursor: 'pointer',
+              }}
+              title="Aproximar Zoom"
+            >
+              🔍+
+            </button>
+            <button
+              onClick={() => setZoomLevel((z) => Math.max(0.6, z - 0.2))}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                color: '#fff',
+                borderRadius: 5,
+                padding: '4px 8px',
+                fontSize: '.75rem',
+                cursor: 'pointer',
+              }}
+              title="Afastar Zoom"
+            >
+              🔍-
+            </button>
+            <button
+              onClick={() => setZoomLevel(1)}
+              style={{
+                background: '#333',
+                border: '1px solid #444',
+                color: '#fff',
+                borderRadius: 5,
+                padding: '4px 8px',
+                fontSize: '.75rem',
+                cursor: 'pointer',
+              }}
+              title="Resetar Zoom"
+            >
+              ⛶
+            </button>
+          </div>
+        </div>
 
-              {/* Canvas area */}
-              <div
-                ref={imgContainerRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
+        {/* Área Central: Barra de Ferramentas Vertical + Canvas */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Barra de Ferramentas Vertical estilo Anki (esquerda) */}
+          <aside
+            style={{
+              width: '48px',
+              background: '#222222',
+              borderRight: '1px solid #333',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '10px 0',
+              gap: 8,
+            }}
+          >
+            {/* Selecionar */}
+            <button
+              onClick={() => setActiveTool('select')}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: 7,
+                border: 'none',
+                background: activeTool === 'select' ? '#2563eb' : '#333',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '1rem',
+              }}
+              title="Ferramenta de Seleção (Mover / Ajustar)"
+            >
+              ↖️
+            </button>
+
+            {/* Retângulo (Quadradinho clássico do Anki) */}
+            <button
+              onClick={() => setActiveTool('rect')}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: 7,
+                border: 'none',
+                background: activeTool === 'rect' ? '#2563eb' : '#333',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '1rem',
+              }}
+              title="Retângulo (Quadradinho de Oclusão)"
+            >
+              🔲
+            </button>
+
+            {/* Duplicar */}
+            <button
+              onClick={duplicateMask}
+              disabled={!selectedMaskId}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: 7,
+                border: 'none',
+                background: selectedMaskId ? '#333' : '#222',
+                color: selectedMaskId ? '#fff' : '#555',
+                cursor: selectedMaskId ? 'pointer' : 'default',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '.9rem',
+              }}
+              title="Duplicar retângulo selecionado"
+            >
+              📋
+            </button>
+
+            {/* Lixeira */}
+            <button
+              onClick={() => selectedMaskId && removeMask(selectedMaskId)}
+              disabled={!selectedMaskId}
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: 7,
+                border: 'none',
+                background: selectedMaskId ? '#7f1d1d' : '#222',
+                color: selectedMaskId ? '#fca5a5' : '#555',
+                cursor: selectedMaskId ? 'pointer' : 'default',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '.9rem',
+              }}
+              title="Excluir retângulo selecionado (Del)"
+            >
+              🗑️
+            </button>
+
+            <div style={{ width: '28px', height: '1px', background: '#3a3a3a', margin: '4px 0' }} />
+
+            {/* Paleta de Cores estilo Anki */}
+            {ANKI_COLORS.map((c) => (
+              <button
+                key={c.bg}
+                onClick={() => setSelectedColor(c)}
                 style={{
-                  position: 'relative',
-                  display: 'inline-block',
-                  maxWidth: '100%',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  background: '#0f172a',
-                  cursor: 'crosshair',
-                  userSelect: 'none',
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  background: c.bg,
+                  border: selectedColor.bg === c.bg ? '2.5px solid #fff' : '1px solid #555',
+                  cursor: 'pointer',
                 }}
-              >
-                <img
-                  src={imageUrl}
-                  alt="Pré-visualização"
-                  draggable={false}
+                title={c.name}
+              />
+            ))}
+          </aside>
+
+          {/* Canvas Escuro Central com Imagem */}
+          <div
+            style={{
+              flex: 1,
+              background: '#1a1a1a',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                overflow: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '20px',
+              }}
+            >
+              {imageUrl ? (
+                <div
+                  ref={imgContainerRef}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
                   style={{
-                    display: 'block',
-                    maxWidth: '100%',
-                    maxHeight: '380px',
-                    objectFit: 'contain',
-                    pointerEvents: 'none',
+                    position: 'relative',
+                    display: 'inline-block',
+                    transform: `scale(${zoomLevel})`,
+                    transformOrigin: 'center center',
+                    transition: 'transform 0.15s ease',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                    cursor: activeTool === 'rect' ? 'crosshair' : activeTool === 'select' ? 'default' : 'crosshair',
+                    userSelect: 'none',
                   }}
-                />
-
-                {/* Drawn masks */}
-                {masks.map((mask, idx) => (
-                  <div
-                    key={mask.id}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedMaskId(mask.id)
-                    }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt="Peça anatômica"
+                    draggable={false}
                     style={{
-                      position: 'absolute',
-                      left: `${mask.x}%`,
-                      top: `${mask.y}%`,
-                      width: `${mask.width}%`,
-                      height: `${mask.height}%`,
-                      borderRadius: 4,
-                      border: selectedMaskId === mask.id ? '2.5px solid #f59e0b' : '2px solid #ef4444',
-                      background: selectedMaskId === mask.id ? 'rgba(245, 158, 11, 0.65)' : 'rgba(239, 68, 68, 0.55)',
-                      color: '#fff',
-                      fontWeight: 800,
-                      fontSize: '.75rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxSizing: 'border-box',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    #{idx + 1}
-                  </div>
-                ))}
-
-                {/* Drawing rect */}
-                {currentRect && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${currentRect.x}%`,
-                      top: `${currentRect.y}%`,
-                      width: `${currentRect.w}%`,
-                      height: `${currentRect.h}%`,
-                      border: '2px dashed #3b82f6',
-                      background: 'rgba(59, 130, 246, 0.35)',
+                      display: 'block',
+                      maxWidth: '820px',
+                      maxHeight: '52vh',
+                      objectFit: 'contain',
                       pointerEvents: 'none',
-                      boxSizing: 'border-box',
                     }}
                   />
-                )}
-              </div>
 
-              {/* Mask list with label inputs */}
-              {masks.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <h4 style={{ margin: '0 0 10px', fontSize: '.85rem', color: '#334155' }}>
-                    Respostas de cada tarja (Gabaritos):
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
-                    {masks.map((mask, idx) => (
+                  {/* Quadradinhos já desenhados (Estilo Anki exato com alças de redimensionamento) */}
+                  {masks.map((mask, idx) => {
+                    const isSelected = selectedMaskId === mask.id
+                    return (
                       <div
                         key={mask.id}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedMaskId(mask.id)
+                        }}
                         style={{
+                          position: 'absolute',
+                          left: `${mask.x}%`,
+                          top: `${mask.y}%`,
+                          width: `${mask.width}%`,
+                          height: `${mask.height}%`,
+                          borderRadius: 2,
+                          border: isSelected ? '2px solid #ef4444' : `1.5px solid ${selectedColor.border}`,
+                          background: isSelected ? 'rgba(255, 234, 121, 0.95)' : selectedColor.bg,
+                          color: '#0f172a',
+                          fontWeight: 800,
+                          fontSize: 'clamp(0.68rem, 1.2vw, 0.85rem)',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6,
-                          padding: '6px 10px',
-                          borderRadius: 10,
-                          border: selectedMaskId === mask.id ? '2px solid #f59e0b' : '1px solid #e2e8f0',
-                          background: selectedMaskId === mask.id ? '#fffbeb' : '#f8fafc',
+                          justifyContent: 'center',
+                          boxSizing: 'border-box',
+                          cursor: isDraggingMask ? 'grabbing' : 'grab',
+                          boxShadow: isSelected ? '0 0 10px rgba(239, 68, 68, 0.7)' : '0 2px 5px rgba(0,0,0,0.2)',
                         }}
                       >
-                        <span style={{ fontWeight: 800, color: '#64748b', fontSize: '.8rem' }}>#{idx + 1}</span>
-                        <input
-                          value={mask.label}
-                          onChange={(e) => updateLabel(mask.id, e.target.value)}
-                          placeholder="Nome da estrutura..."
-                          style={{
-                            flex: 1,
-                            padding: '4px 6px',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: 6,
-                            fontSize: '.82rem',
-                          }}
-                        />
-                        <button
-                          onClick={() => removeMask(mask.id)}
-                          style={{
-                            border: 'none',
-                            background: 'none',
-                            color: '#ef4444',
-                            cursor: 'pointer',
-                            fontWeight: 700,
-                          }}
-                          title="Excluir tarja"
-                        >
-                          ✕
-                        </button>
+                        <span style={{ padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          #{idx + 1}
+                        </span>
+
+                        {/* Handles nos 4 cantos se selecionado (estilo Anki) */}
+                        {isSelected && (
+                          <>
+                            <div style={{ position: 'absolute', top: -4, left: -4, width: 8, height: 8, background: '#ef4444', border: '1px solid #fff' }} />
+                            <div style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, background: '#ef4444', border: '1px solid #fff' }} />
+                            <div style={{ position: 'absolute', bottom: -4, left: -4, width: 8, height: 8, background: '#ef4444', border: '1px solid #fff' }} />
+                            <div style={{ position: 'absolute', bottom: -4, right: -4, width: 8, height: 8, background: '#ef4444', border: '1px solid #fff' }} />
+                          </>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    )
+                  })}
+
+                  {/* Quadradinho sendo desenhado agora */}
+                  {currentRect && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: `${currentRect.x}%`,
+                        top: `${currentRect.y}%`,
+                        width: `${currentRect.w}%`,
+                        height: `${currentRect.h}%`,
+                        border: '2px solid #e11d48',
+                        background: 'rgba(255, 234, 121, 0.65)',
+                        pointerEvents: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    border: '2px dashed #444',
+                    borderRadius: 14,
+                    padding: '60px 40px',
+                    textAlign: 'center',
+                    color: '#888',
+                  }}
+                >
+                  <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>🖼️</div>
+                  <strong style={{ display: 'block', color: '#ccc', marginBottom: 6 }}>
+                    Nenhuma imagem carregada
+                  </strong>
+                  <span>Clique em "Selecionar Imagem" ou cole a URL de uma peça anatômica acima.</span>
                 </div>
               )}
             </div>
-          ) : (
-            <div
-              style={{
-                border: '2px dashed #cbd5e1',
-                borderRadius: 16,
-                padding: '40px 20px',
-                textAlign: 'center',
-                color: '#64748b',
-                background: '#f8fafc',
-              }}
-            >
-              Envie ou cole a imagem acima para começar a marcar as estruturas.
-            </div>
-          )}
 
-          {msg && (
-            <div
-              style={{
-                marginTop: 14,
-                padding: '10px 14px',
-                borderRadius: 10,
-                background: msg.includes('Erro') ? '#fee2e2' : '#fef3c7',
-                color: msg.includes('Erro') ? '#991b1b' : '#92400e',
-                fontSize: '.85rem',
-                fontWeight: 600,
-              }}
-            >
-              {msg}
-            </div>
-          )}
+            {/* Painel inferior de gabaritos dos quadradinhos */}
+            {masks.length > 0 && (
+              <div
+                style={{
+                  background: '#202020',
+                  borderTop: '1px solid #333',
+                  padding: '8px 16px',
+                  maxHeight: '140px',
+                  overflowY: 'auto',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '.75rem', fontWeight: 800, color: '#94a3b8' }}>
+                    Rótulos dos Quadradinhos ({masks.length}):
+                  </span>
+                  {masks.map((mask, idx) => (
+                    <div
+                      key={mask.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: selectedMaskId === mask.id ? '#383838' : '#2b2b2b',
+                        border: selectedMaskId === mask.id ? '1.5px solid #ef4444' : '1px solid #444',
+                        borderRadius: 6,
+                        padding: '3px 8px',
+                      }}
+                    >
+                      <span style={{ fontSize: '.74rem', fontWeight: 900, color: '#fbbf24' }}>#{idx + 1}</span>
+                      <input
+                        value={mask.label}
+                        onChange={(e) => updateLabel(mask.id, e.target.value)}
+                        placeholder="Nome da estrutura..."
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#fff',
+                          fontSize: '.78rem',
+                          outline: 'none',
+                          width: '130px',
+                        }}
+                      />
+                      <button
+                        onClick={() => removeMask(mask.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '.75rem',
+                          fontWeight: 800,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
+        {msg && (
+          <div
+            style={{
+              padding: '8px 16px',
+              background: msg.includes('Erro') ? '#7f1d1d' : '#854d0e',
+              color: '#fff',
+              fontSize: '.82rem',
+              fontWeight: 700,
+            }}
+          >
+            {msg}
+          </div>
+        )}
+
+        {/* Rodapé com botões fiéis ao Anki */}
         <footer
           style={{
-            padding: '14px 24px',
-            borderTop: '1px solid #e2e8f0',
+            background: '#1e1e1e',
+            borderTop: '1px solid #333',
+            padding: '12px 18px',
             display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 10,
-            background: '#f8fafc',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
           }}
         >
-          <button
-            onClick={onClose}
-            disabled={busy}
-            style={{
-              padding: '9px 16px',
-              borderRadius: 10,
-              border: '1px solid #cbd5e1',
-              background: '#fff',
-              color: '#475569',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => handleSave(true)}
-            disabled={busy || masks.length === 0}
-            style={{
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: 'none',
-              background: 'linear-gradient(135deg,#16a34a,#22c55e)',
-              color: '#fff',
-              fontWeight: 800,
-              cursor: busy ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 12px rgba(22,163,74,.2)',
-            }}
-          >
-            {busy ? 'Criando…' : `⚡ Criar ${masks.length} Cartões (1 por tarja — Anki)`}
-          </button>
+          <span style={{ fontSize: '.78rem', color: '#888' }}>
+            {masks.length} quadradinho(s) demarcado(s) na imagem
+          </span>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={onClose}
+              disabled={busy}
+              style={{
+                background: '#333',
+                color: '#ccc',
+                border: '1px solid #444',
+                borderRadius: 8,
+                padding: '8px 14px',
+                fontSize: '.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Fechar
+            </button>
+
+            {/* Botão Anki: Ocultar Um, Adivinhar Um */}
+            <button
+              onClick={() => handleSaveAnkiMode('hide_one_guess_one')}
+              disabled={busy || masks.length === 0}
+              style={{
+                background: '#475569',
+                color: '#fff',
+                border: '1px solid #64748b',
+                borderRadius: 8,
+                padding: '8px 15px',
+                fontSize: '.82rem',
+                fontWeight: 800,
+                cursor: busy || masks.length === 0 ? 'not-allowed' : 'pointer',
+              }}
+              title="Gera cartões onde apenas 1 quadradinho é ocultado por vez, mantendo os outros visíveis como referência anatômica"
+            >
+              {busy ? 'Gerando…' : 'Ocultar Um, Adivinhar Um'}
+            </button>
+
+            {/* Botão Anki: Ocultar Todos, Adivinhar Um */}
+            <button
+              onClick={() => handleSaveAnkiMode('hide_all_guess_one')}
+              disabled={busy || masks.length === 0}
+              style={{
+                background: 'linear-gradient(135deg,#16a34a,#22c55e)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 18px',
+                fontSize: '.82rem',
+                fontWeight: 900,
+                cursor: busy || masks.length === 0 ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 14px rgba(22,163,74,0.3)',
+              }}
+              title="Gera cartões onde todos os quadradinhos continuam tapados e você precisa identificar o que está destacado em vermelho"
+            >
+              {busy ? 'Gerando…' : 'Ocultar Todos, Adivinhar Um'}
+            </button>
+          </div>
         </footer>
       </div>
     </div>
