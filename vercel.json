@@ -19,6 +19,15 @@
       ]
     },
     {
+      "source": "/cards-media/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
       "source": "/assets/(.*)",
       "headers": [
         {
@@ -30,7 +39,7 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!cards-media/|assets/|catalog\\.json|restorationData\\.json|sw\\.js|favicon\\.ico|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ]
