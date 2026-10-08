@@ -14,6 +14,7 @@ import {
   renameDeck,
   repairSection,
   resetDeck,
+  restoreBackupData,
   undoMoveSection,
 } from '@/services/medreview'
 import {
@@ -3497,7 +3498,7 @@ export default function Index() {
   // ficam no portal Minhas Pastas (feedback: pasta criada lá dentro aparecia
   // duplicada na tela inicial).
   const userDecks = decks
-    .filter((d) => !d.parent && !d.deleted)
+    .filter((d) => d.kind === 'custom' && !d.parent && d.frontline)
     .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
   // seção foi movida (Anki: mover = some da origem), o card some da home.
@@ -3558,6 +3559,50 @@ export default function Index() {
   ]
   return (
     <>
+      {decks.length === 0 && (
+        <div
+          style={{
+            background: '#eff6ff',
+            borderBottom: '1.5px solid #93c5fd',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: '14px',
+            zIndex: 50,
+          }}
+        >
+          <span style={{ fontSize: '.92rem', color: '#1e40af', fontWeight: 600 }}>
+            Pastas ou cartões sumiram? Restaure sua biblioteca completa (34 pastas e 863 cartões):
+          </span>
+          <button
+            style={{
+              background: '#2563eb',
+              color: '#fff',
+              border: 'none',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              fontWeight: 800,
+              fontSize: '.88rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
+            }}
+            onClick={async () => {
+              setMsg('Restaurando suas 34 pastas e 863 cartões do backup...')
+              try {
+                await restoreBackupData(true)
+                await loadData()
+                setMsg('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+              } catch (e: any) {
+                setMsg('Erro ao restaurar: ' + (e?.message || e))
+              }
+            }}
+          >
+            🚀 Restaurar 863 Cartões Agora
+          </button>
+        </div>
+      )}
       <MedReviewLegacyHome
         userEmail={user?.email}
         totalCards={totalCards}

@@ -15,6 +15,7 @@ import {
   moveDeck,
   renameDeck,
   resetDeck,
+  restoreBackupData,
   setCardSuspended,
   setCardsSuspendedBatch,
   updateCard,
@@ -1046,6 +1047,27 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
         <button className="mr-lib-mini" onClick={() => openFolderModal('', 'custom')}>
           ＋ Nova pasta
         </button>
+        {decks.length === 0 && (
+          <button
+            className="mr-lib-mini"
+            style={{ background: '#2563eb', color: '#fff', borderColor: '#1d4ed8', fontWeight: 800 }}
+            onClick={async () => {
+              try {
+                setBusy(true)
+                setMessage('Restaurando suas 34 pastas e 863 cartões do backup...')
+                await restoreBackupData(true)
+                await onRefresh()
+                setMessage('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+              } catch (e: any) {
+                setError('Erro ao restaurar: ' + (e?.message || e))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            ↺ Restaurar 863 cartas
+          </button>
+        )}
         <span className="mr-lib-count">
           {decks.length} pastas · {cards.length} cartões
         </span>
@@ -1059,6 +1081,54 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
         {message && (
           <div className="mr-lib-notice" style={{ background: '#f0fdf4', color: '#166534' }}>
             {message}
+          </div>
+        )}
+
+        {decks.length === 0 && (
+          <div
+            style={{
+              margin: '20px 0 28px',
+              padding: '24px',
+              borderRadius: '16px',
+              background: '#eff6ff',
+              border: '1.5px solid #93c5fd',
+              textAlign: 'center',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem', color: '#1e3a8a', fontWeight: 800 }}>
+              Recuperar Pastas e Cartões
+            </h3>
+            <p style={{ margin: '0 auto 16px', maxWidth: 640, color: '#3b82f6', fontSize: '.92rem', lineHeight: 1.5 }}>
+              Detectamos seu backup completo de <strong>34 pastas</strong> e <strong>863 cartões</strong> (incluindo UC-2 Tutorias, Módulos e UC-1 Anatomia de Músculos com imagens). Clique abaixo para restaurar imediatamente:
+            </p>
+            <button
+              style={{
+                background: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '.98rem',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+              }}
+              onClick={async () => {
+                try {
+                  setBusy(true)
+                  setMessage('Restaurando suas 34 pastas e 863 cartões do backup...')
+                  await restoreBackupData(true)
+                  await onRefresh()
+                  setMessage('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+                } catch (e: any) {
+                  setError('Erro ao restaurar: ' + (e?.message || e))
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              🚀 Restaurar Todas as 34 Pastas e 863 Cartões
+            </button>
           </div>
         )}
 
