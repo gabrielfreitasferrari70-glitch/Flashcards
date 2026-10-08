@@ -113,6 +113,8 @@ function formatInterval(days: number): string {
 // ===== Cloze deletion ({{c1::texto}}) — formato padrão dos decks médicos =====
 const CLOZE_RE = /\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}/g
 function isCloze(text: string): boolean {
+  if (!text) return false
+  if (text.includes('image-occlusion:')) return false
   CLOZE_RE.lastIndex = 0
   return CLOZE_RE.test(text || '')
 }
@@ -126,8 +128,13 @@ function clozeCount(text: string): number {
 // Renderiza o texto com as lacunas: preserva HTML e imagens do Anki; antes de virar, oculta com dica ou numeração; depois, destaca com esmeralda.
 function renderClozeHtml(text: string, revealed: boolean): string {
   if (!text) return ''
-  const hasHtml = /<[a-z][\s\S]*>/i.test(text)
-  const baseText = hasHtml ? text : text.replace(/\n/g, '<br/>')
+  const sanitized = text
+    .replace(/<!--occlusion:[\s\S]*?-->/g, '')
+    .replace(/(?:\{\{c\d+::)?image-occlusion:[^}\s<]+(?:\}\})?/gi, '')
+    .trim()
+  if (!sanitized) return ''
+  const hasHtml = /<[a-z][\s\S]*>/i.test(sanitized)
+  const baseText = hasHtml ? sanitized : sanitized.replace(/\n/g, '<br/>')
 
   CLOZE_RE.lastIndex = 0
   let out = ''
@@ -3008,11 +3015,13 @@ export default function Index() {
                 <span className="mr-legacy-badge">
                   {card.__reverse
                     ? '🔁 Cartão reverso (verso → frente)'
-                    : isCloze(card.q)
-                      ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
-                      : card.clinical
-                        ? '🩺 Cartão de Modo Clínico'
-                        : '🩺 Cartão de revisão'}
+                    : parseOcclusion(card.occlusion, card.a)
+                      ? '🎯 Oclusão de Imagem (Anatomia)'
+                      : isCloze(card.q)
+                        ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
+                        : card.clinical
+                          ? '🩺 Cartão de Modo Clínico'
+                          : '🩺 Cartão de revisão'}
                 </span>
                 {extractCardTags(card).map((tag) => (
                   <span
@@ -3096,10 +3105,10 @@ export default function Index() {
                     : renderClozeHtml(card.q, flipped),
               }}
             />
-            {parseOcclusion(card.occlusion) && (
+            {parseOcclusion(card.occlusion, card.a) && (
               <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
                 <ImageOcclusionViewer
-                  data={parseOcclusion(card.occlusion)!}
+                  data={parseOcclusion(card.occlusion, card.a)!}
                   revealed={flipped}
                 />
               </ErrorBoundary>

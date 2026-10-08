@@ -90,6 +90,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             q: c.q,
             a: c.a,
             tags: c.tags,
+            occlusion: (c as any).occlusion,
           })),
         )
       }
@@ -405,12 +406,16 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                     >
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                         <span style={{ fontWeight: 800, color: '#15803d' }}>Carta #{idx + 1}</span>
-                        {c.isCloze && (
+                        {(c as any).occlusion ? (
+                          <span style={{ background: '#fdf2f8', color: '#be185d', padding: '1px 5px', borderRadius: 4, fontSize: '.7rem', fontWeight: 700 }}>
+                            🎯 Oclusão de Imagem
+                          </span>
+                        ) : c.isCloze ? (
                           <span style={{ background: '#fef3c7', color: '#b45309', padding: '1px 5px', borderRadius: 4, fontSize: '.7rem', fontWeight: 700 }}>
                             🧩 Cloze
                           </span>
-                        )}
-                        {(c.q.includes('<img') || c.a.includes('<img')) && (
+                        ) : null}
+                        {(c.q.includes('<img') || c.a.includes('<img') || !!(c as any).occlusion) && (
                           <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '1px 5px', borderRadius: 4, fontSize: '.7rem', fontWeight: 700 }}>
                             🖼️ Imagem
                           </span>
@@ -421,6 +426,15 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                           </span>
                         )}
                       </div>
+                      {(c as any).occlusion?.imageUrl && (
+                        <div style={{ margin: '6px 0', borderRadius: 8, overflow: 'hidden', maxHeight: 80, display: 'inline-block', border: '1px solid #e2e8f0' }}>
+                          <img
+                            src={(c as any).occlusion.imageUrl}
+                            alt="Miniatura Oclusão"
+                            style={{ height: 80, width: 'auto', display: 'block', objectFit: 'contain' }}
+                          />
+                        </div>
+                      )}
                       <div
                         style={{ color: '#1e293b', fontWeight: 600, marginBottom: 6 }}
                         dangerouslySetInnerHTML={{

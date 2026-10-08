@@ -15,7 +15,21 @@ export interface OcclusionData {
   mode?: 'hide_all_guess_one' | 'hide_one_guess_one'
 }
 
-export function parseOcclusion(raw: any): OcclusionData | null {
+export function parseOcclusion(raw: any, fallbackText?: string): OcclusionData | null {
+  if (!raw && fallbackText) {
+    const match = fallbackText.match(/<!--occlusion:([A-Za-z0-9+/=]+)-->/)
+    if (match) {
+      try {
+        raw = JSON.parse(decodeURIComponent(escape(atob(match[1]))))
+      } catch {
+        try {
+          raw = JSON.parse(atob(match[1]))
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
   if (!raw) return null
   try {
     const data = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -50,4 +64,5 @@ export function parseOcclusion(raw: any): OcclusionData | null {
   }
   return null
 }
+
 

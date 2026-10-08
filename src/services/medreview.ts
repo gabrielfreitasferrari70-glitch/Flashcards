@@ -138,36 +138,68 @@ export const createCard = async (
 
 export const createCardsBatch = async (
   deckId: string,
-  cards: Array<{ q: string; a: string; tags?: string[]; clinical?: boolean; ref?: string; group?: string }>,
+  cards: Array<{
+    q: string
+    a: string
+    tags?: string[]
+    clinical?: boolean
+    ref?: string
+    group?: string
+    occlusion?: any
+    imageUrl?: string
+  }>,
 ) => {
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
 
-  const payloads = cards.map((c) => ({
-    user_id: user.user!.id,
-    deck_id: deckId,
-    q: c.q,
-    a: c.a,
-    clinical: !!c.clinical,
-    suspended: false,
-    tags: c.tags || [],
-    group: c.group || '',
-    ref: c.ref || '',
-  }))
+  const payloads = cards.map((c) => {
+    let finalA = c.a
+    if (c.occlusion) {
+      try {
+        const occStr = btoa(unescape(encodeURIComponent(JSON.stringify(c.occlusion))))
+        finalA = `${c.a}\n<!--occlusion:${occStr}-->`
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      user_id: user.user!.id,
+      deck_id: deckId,
+      q: c.q,
+      a: finalA,
+      clinical: !!c.clinical,
+      suspended: false,
+      tags: c.tags || [],
+      group: c.group || '',
+      ref: c.ref || '',
+      occlusion: c.occlusion || null,
+    }
+  })
 
   const { data, error } = await supabase.from('mr_cards').insert(payloads).select('id')
   if (!error) return data
 
   // Fallback se colunas extras não existirem
   if (error.code === '42703' || error.message?.includes('column')) {
-    const basicPayloads = cards.map((c) => ({
-      user_id: user.user!.id,
-      deck_id: deckId,
-      q: c.q,
-      a: c.a,
-      clinical: !!c.clinical,
-      suspended: false,
-    }))
+    const basicPayloads = cards.map((c) => {
+      let finalA = c.a
+      if (c.occlusion) {
+        try {
+          const occStr = btoa(unescape(encodeURIComponent(JSON.stringify(c.occlusion))))
+          finalA = `${c.a}\n<!--occlusion:${occStr}-->`
+        } catch {
+          /* ignore */
+        }
+      }
+      return {
+        user_id: user.user!.id,
+        deck_id: deckId,
+        q: c.q,
+        a: finalA,
+        clinical: !!c.clinical,
+        suspended: false,
+      }
+    })
     const { data: fbData, error: fbErr } = await supabase.from('mr_cards').insert(basicPayloads).select('id')
     if (fbErr) throw fbErr
     return fbData

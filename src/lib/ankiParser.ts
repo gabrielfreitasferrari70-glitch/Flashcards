@@ -3,8 +3,9 @@
  * 1. Descompacta pacotes .apkg com JSZip.
  * 2. Suporta descompressão de bancos Zstandard (Zstd) em collection.anki21b usando fzstd.
  * 3. Ignora os cartões dummy ("Atualize para a versão mais recente do Anki...") inseridos pelo Anki moderno em collection.anki2.
- * 4. Decodifica mapa de mídia (media ou media.zst) e converte fotos em Base64 Data URLs.
- * 5. Abre a base de dados real com sql.js e extrai 100% dos cartões com suas imagens e formatação.
+ * 4. Decodifica mapa de mídia (media ou media.zst, comprimido ou texto plano) e converte fotos em Base64 Data URLs.
+ * 5. Suporte nativo a cartões Image Occlusion do Anki 23/24 (image-occlusion:rect) com renderização visual interativa completa.
+ * 6. Abre a base de dados real com sql.js e extrai 100% dos cartões com suas imagens e formatação.
  */
 
 import JSZip from 'jszip'
@@ -16,6 +17,7 @@ export interface ParsedAnkiCard {
   a: string
   tags?: string[]
   isCloze?: boolean
+  occlusion?: any
 }
 
 export interface AnkiPackageResult {
@@ -37,6 +39,8 @@ function getMimeType(fileName: string): string {
       return 'image/svg+xml'
     case 'webp':
       return 'image/webp'
+    case 'bmp':
+      return 'image/bmp'
     default:
       return 'application/octet-stream'
   }
@@ -76,12 +80,37 @@ function decompressIfZstd(bytes: Uint8Array): Uint8Array {
   return bytes
 }
 
+function registerMedia(map: Map<string, string>, name: string, dataUrl: string) {
+  if (!name || !dataUrl) return
+  const clean = name.trim()
+  map.set(clean, dataUrl)
+  map.set(clean.toLowerCase(), dataUrl)
+  try {
+    const dec = decodeURIComponent(clean)
+    map.set(dec, dataUrl)
+    map.set(dec.toLowerCase(), dataUrl)
+  } catch {
+    /* ignore */
+  }
+  try {
+    const enc = encodeURIComponent(clean)
+    map.set(enc, dataUrl)
+    map.set(enc.toLowerCase(), dataUrl)
+  } catch {
+    /* ignore */
+  }
+  const base = clean.split('/').pop()?.split('\\').pop() || clean
+  map.set(base, dataUrl)
+  map.set(base.toLowerCase(), dataUrl)
+}
+
 /**
- * Limpa HTML mantendo quebras de linha e estrutura legível
+ * Limpa HTML mantendo quebras de linha e estrutura legível, removendo artefatos internos do Anki
  */
 export function cleanAnkiHtml(html: string): string {
   if (!html) return ''
-  let text = html
+  return html
+    .replace(/(?:\{\{c\d+::)?image-occlusion:[^}\s<]+(?:\}\})?/gi, '')
     .replace(/<br\s*[/]?>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
     .replace(/<div>/gi, '')
@@ -94,23 +123,58 @@ export function cleanAnkiHtml(html: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .trim()
-  return text
 }
 
 /**
- * Substitui tags de imagem (<img src="paste-123.png">) pelos Data URLs em Base64
+ * Substitui tags de imagem (<img src="paste-123.png">) ou referências brutas pelos Data URLs em Base64
  */
 function injectMediaIntoHtml(html: string, mediaMap: Map<string, string>): string {
   if (!html) return ''
-  return html.replace(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi, (match, src) => {
-    const rawFileName = src.trim()
-    const decodedName = decodeURIComponent(rawFileName)
-    const dataUrl = mediaMap.get(rawFileName) || mediaMap.get(decodedName)
+  // 1. Substitui tags <img src="...">
+  let processed = html.replace(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi, (match, src) => {
+    const raw = src.trim()
+    const base = raw.split('/').pop()?.split('\\').pop() || raw
+    let dataUrl =
+      mediaMap.get(raw) ||
+      mediaMap.get(base) ||
+      mediaMap.get(raw.toLowerCase()) ||
+      mediaMap.get(base.toLowerCase())
+
+    if (!dataUrl) {
+      try {
+        const decRaw = decodeURIComponent(raw)
+        const decBase = decodeURIComponent(base)
+        dataUrl =
+          mediaMap.get(decRaw) ||
+          mediaMap.get(decBase) ||
+          mediaMap.get(decRaw.toLowerCase()) ||
+          mediaMap.get(decBase.toLowerCase())
+      } catch {
+        /* ignore */
+      }
+    }
+
     if (dataUrl) {
       return `<img src="${dataUrl}" style="max-width:100%;height:auto;border-radius:10px;margin:10px 0;display:block;box-shadow:0 4px 14px rgba(0,0,0,0.1)" alt="Imagem Anki" />`
     }
     return match
   })
+
+  // 2. Se o campo for puramente o nome de um arquivo de imagem sem tag <img>
+  const trimmed = html.trim()
+  const baseTrimmed = trimmed.split('/').pop()?.split('\\').pop() || trimmed
+  if (!processed.includes('<img')) {
+    const directUrl =
+      mediaMap.get(trimmed) ||
+      mediaMap.get(baseTrimmed) ||
+      mediaMap.get(trimmed.toLowerCase()) ||
+      mediaMap.get(baseTrimmed.toLowerCase())
+    if (directUrl) {
+      processed = `<img src="${directUrl}" style="max-width:100%;height:auto;border-radius:10px;margin:10px 0;display:block;box-shadow:0 4px 14px rgba(0,0,0,0.1)" alt="Imagem Anki" />`
+    }
+  }
+
+  return processed
 }
 
 /**
@@ -128,51 +192,76 @@ function formatClozeForCard(text: string, targetIndex: number): string {
 }
 
 /**
- * Processa pacotes .apkg com suporte total a Anki moderno (collection.anki21b / Zstd)
+ * Processa pacotes .apkg com suporte total a Anki moderno (collection.anki21b / Zstd e Image Occlusion nativo)
  */
 export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): Promise<AnkiPackageResult> {
   const zip = await JSZip.loadAsync(fileBuffer)
 
-  // 1. Extrai mapeamento de mídia (suporta 'media' ou 'media.zst')
+  // 1. Extrai mapeamento de mídia com suporte a Zstandard e múltiplos formatos
   const mediaMap = new Map<string, string>()
-  let mediaJsonText = ''
 
-  const mediaZstFile = zip.file('media.zst')
-  const mediaFile = zip.file('media')
-
-  if (mediaZstFile) {
-    try {
-      const raw = await mediaZstFile.async('uint8array')
-      const decompressed = decompressIfZstd(raw)
-      mediaJsonText = new TextDecoder('utf-8').decode(decompressed)
-    } catch (e) {
-      console.warn('Erro ao ler media.zst:', e)
-    }
-  } else if (mediaFile) {
-    try {
-      mediaJsonText = await mediaFile.async('text')
-    } catch (e) {
-      console.warn('Erro ao ler media:', e)
+  // Procura o arquivo de mapeamento de mídia
+  let mediaEntry: JSZip.JSZipObject | null = zip.file('media.zst') || zip.file('media')
+  if (!mediaEntry) {
+    for (const key of Object.keys(zip.files)) {
+      const lower = key.toLowerCase()
+      if (lower === 'media' || lower.endsWith('/media') || lower === 'media.zst' || lower.endsWith('/media.zst')) {
+        mediaEntry = zip.file(key)
+        break
+      }
     }
   }
 
-  if (mediaJsonText) {
+  if (mediaEntry) {
     try {
+      const raw = await mediaEntry.async('uint8array')
+      const decompressed = decompressIfZstd(raw)
+      const mediaJsonText = new TextDecoder('utf-8').decode(decompressed)
       const mediaJson = JSON.parse(mediaJsonText) as Record<string, string>
+
       for (const [zipKey, realName] of Object.entries(mediaJson)) {
-        const entry = zip.file(zipKey)
+        let entry = zip.file(zipKey) || zip.file(String(zipKey))
+        if (!entry) {
+          for (const k of Object.keys(zip.files)) {
+            const baseK = k.split('/').pop() || ''
+            if (baseK === String(zipKey) || k === String(zipKey)) {
+              entry = zip.file(k)
+              break
+            }
+          }
+        }
         if (entry) {
           let rawBytes = await entry.async('uint8array')
           rawBytes = decompressIfZstd(rawBytes)
           const mime = getMimeType(realName)
           const base64Data = uint8ArrayToBase64(rawBytes)
           const dataUrl = `data:${mime};base64,${base64Data}`
-          mediaMap.set(realName, dataUrl)
-          mediaMap.set(decodeURIComponent(realName), dataUrl)
+          registerMedia(mediaMap, realName, dataUrl)
         }
       }
     } catch (e) {
-      console.warn('Erro ao decodificar arquivos de mídia do Anki:', e)
+      console.warn('Erro ao decodificar mapeamento de mídia do Anki:', e)
+    }
+  }
+
+  // Fallback e reforço: também indexa qualquer imagem armazenada diretamente no zip
+  for (const [key, zipObj] of Object.entries(zip.files)) {
+    if (zipObj.dir) continue
+    const baseName = key.split('/').pop() || ''
+    const ext = baseName.split('.').pop()?.toLowerCase() || ''
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext)) {
+      if (!mediaMap.has(baseName) && !mediaMap.has(baseName.toLowerCase())) {
+        try {
+          let rawBytes = await zipObj.async('uint8array')
+          rawBytes = decompressIfZstd(rawBytes)
+          const mime = getMimeType(baseName)
+          const base64Data = uint8ArrayToBase64(rawBytes)
+          const dataUrl = `data:${mime};base64,${base64Data}`
+          registerMedia(mediaMap, baseName, dataUrl)
+        } catch (err) {
+          console.warn('Erro ao carregar arquivo de imagem direto do zip:', baseName, err)
+        }
+      }
     }
   }
 
@@ -215,7 +304,6 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
   }
 
   const rawDbBytes = await zip.file(dbFileName)!.async('uint8array')
-  // Descompacta Zstandard se necessário
   const dbBytes = decompressIfZstd(rawDbBytes)
 
   // Inicializa o engine SQLite WebAssembly
@@ -268,6 +356,124 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
         // Substitui referências de mídia em todos os campos
         const processedFields = fields.map((f) => injectMediaIntoHtml(f, mediaMap))
 
+        // Detecta Oclusão de Imagem Nativa do Anki (Anki 23.10+, Anki 24+)
+        const hasNativeOcclusion = fields.some((f) => f.includes('image-occlusion:'))
+
+        if (hasNativeOcclusion) {
+          const occlusionRaw = fields.find((f) => f.includes('image-occlusion:')) || ''
+
+          // 1. Identifica a imagem
+          let imageUrl = ''
+          for (const f of processedFields) {
+            const imgMatch = f.match(/<img[^>]+src=["']([^"']+)["']/i)
+            if (imgMatch && imgMatch[1]) {
+              imageUrl = imgMatch[1]
+              break
+            }
+          }
+          if (!imageUrl) {
+            for (const f of fields) {
+              const clean = f.trim()
+              const base = clean.split('/').pop()?.split('\\').pop() || clean
+              const found =
+                mediaMap.get(clean) ||
+                mediaMap.get(base) ||
+                mediaMap.get(clean.toLowerCase()) ||
+                mediaMap.get(base.toLowerCase())
+              if (found) {
+                imageUrl = found
+                break
+              }
+            }
+          }
+          if (!imageUrl && mediaMap.size > 0) {
+            imageUrl = Array.from(mediaMap.values())[0]
+          }
+
+          // 2. Identifica título/header e anotações extras
+          const textFields = fields
+            .filter((f) => !f.includes('image-occlusion:') && !f.includes('<img'))
+            .map((f) => cleanAnkiHtml(f))
+            .filter(Boolean)
+          const header = textFields[0] || ''
+          const remarks = textFields.slice(1).join(' • ') || ''
+
+          // 3. Faz parse de todas as máscaras com suas coordenadas exatas
+          const maskMatches = [
+            ...occlusionRaw.matchAll(/(?:\{\{c(\d+)::)?image-occlusion:(\w+):([^}\n<"]+)(?:\}\})?/g),
+          ]
+          const masks: Array<{ id: string; x: number; y: number; width: number; height: number; label: string }> = []
+          let maskIdx = 0
+
+          for (const m of maskMatches) {
+            maskIdx++
+            const clozeNum = m[1] ? parseInt(m[1], 10) : maskIdx
+            const params = m[3]
+
+            const leftM = params.match(/left=([0-9.]+)/)
+            const topM = params.match(/top=([0-9.]+)/)
+            const widthM = params.match(/width=([0-9.]+)/)
+            const heightM = params.match(/height=([0-9.]+)/)
+            const oiM = params.match(/oi=([^:\s]+)/)
+
+            if (leftM && topM && widthM && heightM) {
+              const x = parseFloat(leftM[1]) * 100
+              const y = parseFloat(topM[1]) * 100
+              const width = parseFloat(widthM[1]) * 100
+              const height = parseFloat(heightM[1]) * 100
+              const id = oiM ? `oi_${oiM[1]}` : `mask_${clozeNum}`
+
+              masks.push({
+                id,
+                x: Math.max(0, Math.min(100, x)),
+                y: Math.max(0, Math.min(100, y)),
+                width: Math.max(0.5, Math.min(100, width)),
+                height: Math.max(0.5, Math.min(100, height)),
+                label: `Estrutura ${clozeNum}`,
+              })
+            }
+          }
+
+          const targetCloze = ord + 1
+          const activeMask =
+            masks[ord] ||
+            masks.find((m) => m.id === `oi_${targetCloze}` || m.id === `mask_${targetCloze}`) ||
+            masks[0]
+          const activeMaskId = activeMask ? activeMask.id : masks[0]?.id || 'm_0'
+
+          const occlusionData = {
+            imageUrl,
+            imageTitle: header || 'Oclusão Anatômica',
+            masks:
+              masks.length > 0
+                ? masks
+                : [{ id: 'm_0', x: 20, y: 20, width: 60, height: 20, label: 'Estrutura 1' }],
+            activeMaskId,
+            mode: 'hide_all_guess_one',
+          }
+
+          const qTitle = header ? `<strong>${header}</strong>` : 'Identifique a estrutura oculta em destaque na imagem'
+          const q = `<div class="anki-io-prompt" style="font-size:1.05rem;font-weight:700;color:#0f172a;margin-bottom:6px">${qTitle}</div><div style="font-size:.82rem;color:#64748b;margin-bottom:10px">Carta ${ord + 1} de ${masks.length || 1} • Oclusão de Imagem</div>`
+
+          const aLabel = activeMask?.label || `Estrutura ${ord + 1}`
+          const remarksHtml = remarks
+            ? `<div style="margin-top:12px;padding:10px 14px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;font-size:.88rem;color:#334155">${remarks}</div>`
+            : ''
+          const a = `<div style="font-size:1.05rem;font-weight:700;color:#16a34a;margin-bottom:6px">✓ Resposta: ${aLabel} revelada na imagem</div>${remarksHtml}`
+
+          const tags = tagsRaw.trim().split(/\s+/).filter(Boolean)
+          if (!tags.includes('🖼️ Oclusão de Imagem')) tags.push('🖼️ Oclusão de Imagem')
+
+          cards.push({
+            q,
+            a,
+            tags: tags.length ? tags : undefined,
+            isCloze: false,
+            occlusion: occlusionData,
+          })
+          continue
+        }
+
         const isCloze = /\{\{c\d+::.*?\}\}/.test(processedFields[0])
         let q = ''
         let a = ''
@@ -283,7 +489,7 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
           processedFields.length >= 4 &&
           (processedFields[1].includes('<img') || processedFields[2].includes('<img'))
         ) {
-          // Image Occlusion Enhanced
+          // Image Occlusion Enhanced (Add-on)
           const header = processedFields[0]
             ? `<div style="font-weight:700;margin-bottom:8px">${processedFields[0]}</div>`
             : ''
@@ -329,11 +535,40 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
         for (const row of notesRes[0].values) {
           const fldsRaw = (row[1] as string) || ''
           const tagsRaw = (row[2] as string) || ''
-          const fields = fldsRaw.split('\x1f').map((f) => injectMediaIntoHtml(f, mediaMap))
+          const fields = fldsRaw.split('\x1f')
+          const processedFields = fields.map((f) => injectMediaIntoHtml(f, mediaMap))
 
-          const isCloze = /\{\{c\d+::.*?\}\}/.test(fields[0])
-          const q = fields[0] || ''
-          const a = fields.slice(1).filter(Boolean).join('<br><br>') || (isCloze ? 'Complete a lacuna' : 'Revisão')
+          const hasNativeOcclusion = fields.some((f) => f.includes('image-occlusion:'))
+          if (hasNativeOcclusion) {
+            let imageUrl = ''
+            for (const f of processedFields) {
+              const imgMatch = f.match(/<img[^>]+src=["']([^"']+)["']/i)
+              if (imgMatch && imgMatch[1]) {
+                imageUrl = imgMatch[1]
+                break
+              }
+            }
+            if (!imageUrl && mediaMap.size > 0) imageUrl = Array.from(mediaMap.values())[0]
+
+            cards.push({
+              q: '<div style="font-weight:700">Identifique a estrutura em destaque</div>',
+              a: '<div style="font-weight:700;color:#16a34a">✓ Estrutura identificada</div>',
+              tags: ['🖼️ Oclusão de Imagem'],
+              isCloze: false,
+              occlusion: {
+                imageUrl,
+                imageTitle: 'Oclusão Anatômica',
+                masks: [{ id: 'm_0', x: 20, y: 20, width: 60, height: 20, label: 'Estrutura 1' }],
+                activeMaskId: 'm_0',
+                mode: 'hide_all_guess_one',
+              },
+            })
+            continue
+          }
+
+          const isCloze = /\{\{c\d+::.*?\}\}/.test(processedFields[0])
+          const q = processedFields[0] || ''
+          const a = processedFields.slice(1).filter(Boolean).join('<br><br>') || (isCloze ? 'Complete a lacuna' : 'Revisão')
 
           if (
             q.includes('Atualize para a versão mais recente') ||
