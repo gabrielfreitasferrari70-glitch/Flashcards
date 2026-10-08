@@ -398,6 +398,10 @@ function parseManualInterval(raw: string): { days: number; label: string } | nul
   const amountLabel = String(amount).replace('.', ',')
   return { days, label: `${amountLabel}${isMinutes ? 'min' : 'd'}` }
 }
+
+// Cache global em memória para conteúdo completo dos cartões (carregamento sob demanda sem re-fetch)
+const fullCardsCache = new Map<string, Card>()
+
 function getSchedulerSettings(accountId?: string): SchedulerSettings {
   const defaults = {
     mode: 'automatic' as SchedulerMode,
@@ -2234,70 +2238,29 @@ export default function Index() {
     // Inicialização direta sem injeção de cartões legados
   }
 
-  const fetchFullCardsProgressively = useCallback(async () => {
-    const batchSize = 60
-    let from = 0
-    let hasMore = true
-    const allFull: Card[] = []
-    const deletedCardIds = getDeletedCardIds()
-
-    while (hasMore) {
-      let data: any[] | null = null
-      let error: any = null
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const res = await supabase
-          .from('mr_cards')
-          .select('*')
-          .order('id')
-          .range(from, from + batchSize - 1)
-        data = res.data
-        error = res.error
-        if (!error) break
-        await new Promise((r) => setTimeout(r, 400))
-      }
-
-      if (error || !data || data.length === 0) break
-
-      const mapped: Card[] = data
-        .filter((row: any) => !deletedCardIds.has(row.id))
-        .map((row: any) => ({
-          ...row,
-          created: row.created_at,
-          updated: row.updated_at,
-          deck: row.deck_id,
-        }))
-      allFull.push(...mapped)
-
-      setCards((prev) => {
-        const map = new Map(prev.map((c) => [c.id, c]))
-        for (const item of mapped) {
-          map.set(item.id, item)
-        }
-        return Array.from(map.values())
-      })
-
-      if (data.length < batchSize) {
-        hasMore = false
-      } else {
-        from += batchSize
-      }
-    }
-
-    if (allFull.length > 0) {
-      setLocalCache('mr_cached_cards', allFull)
-    }
-  }, [])
-
   const loadData = useCallback(async () => {
     try {
       // 1. Carrega todas as pastas do usuário instantaneamente (<450ms)
       const decksPromise = pb.collection('mr_decks').getFullList({ sort: 'order' })
 
-      // 2. Carrega metadados leves dos cartões (<750ms) e revisões em paralelo
-      const metaCardsPromise = supabase
-        .from('mr_cards')
-        .select('id, deck_id, suspended, clinical, created_at, tags')
-        .order('created_at', { ascending: false })
+      // 2. Carrega metadados leves dos cartões com paginação garantida (sem cortar no limite de 1000) e revisões em paralelo
+      const fetchAllMetaCards = async () => {
+        const pageSize = 1000
+        let from = 0
+        const all: any[] = []
+        while (true) {
+          const { data, error } = await supabase
+            .from('mr_cards')
+            .select('id, deck_id, suspended, clinical, created_at, tags')
+            .order('id')
+            .range(from, from + pageSize - 1)
+          if (error || !data || data.length === 0) break
+          all.push(...data)
+          if (data.length < pageSize) break
+          from += pageSize
+        }
+        return all
+      }
 
       const reviewsPromise = pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' })
 
@@ -2317,9 +2280,9 @@ export default function Index() {
       setLocalCache('mr_cached_decks', validDecks)
 
       // Recebe metadados dos cartões e revisões
-      const [metaRes, revs] = await Promise.all([metaCardsPromise, reviewsPromise])
+      const [metaRows, revs] = await Promise.all([fetchAllMetaCards(), reviewsPromise])
       const deletedCardIds = getDeletedCardIds()
-      const rawMeta = metaRes.data || []
+      const rawMeta = metaRows || []
       const validMetaCards: Card[] = rawMeta
         .filter((row: any) => !deletedCardIds.has(row.id))
         .map((row: any) => ({
@@ -2335,27 +2298,36 @@ export default function Index() {
           tags: row.tags || [],
         })) as any[]
 
-      // Atualiza cartões mantendo qualquer cartão já completo em memória
+      // Atualiza cartões mantendo qualquer cartão já completo em memória ou cache global
       setCards((prev) => {
-        if (prev.length > 0 && prev.some((c) => c.q && c.q !== 'Carregando cartão...')) {
-          const prevMap = new Map(prev.map((c) => [c.id, c]))
-          return validMetaCards.map((m) => prevMap.get(m.id) || m)
-        }
-        return validMetaCards
+        const prevMap = new Map(prev.map((c) => [c.id, c]))
+        return validMetaCards.map((m) => {
+          const existing = prevMap.get(m.id) || fullCardsCache.get(m.id)
+          if (existing && existing.q && existing.q !== 'Carregando cartão...') {
+            return {
+              ...existing,
+              suspended: m.suspended,
+              clinical: m.clinical,
+              tags: m.tags,
+              deck: m.deck,
+              deck_id: m.deck_id,
+            }
+          }
+          return m
+        })
       })
 
       const validReviews = (revs as any[]) || []
       setReviews(validReviews)
       setLocalCache('mr_cached_reviews', validReviews)
+      setLocalCache('mr_cached_meta_cards', validMetaCards)
 
-      // 3. Busca o conteúdo completo progressivamente em segundo plano sem travar nada
-      fetchFullCardsProgressively()
       return { decks: validDecks, cards: validMetaCards }
     } catch (e: any) {
       console.warn('Erro ao carregar dados do Supabase:', e)
       return null
     }
-  }, [fetchFullCardsProgressively])
+  }, [])
 
   const reviewsByCard = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -2376,8 +2348,53 @@ export default function Index() {
 
   useEffect(() => {
     if (route.view === 'study' && queue[qIdx]) {
-      const realId = queue[qIdx].id.replace(/::rev$/, '')
+      const cur = queue[qIdx]
+      const realId = cur.id.replace(/::rev$/, '')
       fetchCardNote(realId).then((n) => setCurrentCardNote(n || ''))
+
+      // Se o cartão atual ainda não teve o conteúdo completo carregado, busca sob demanda imediatamente
+      if (cur.q === 'Carregando cartão...' || !cur.a) {
+        const cached = fullCardsCache.get(realId)
+        if (cached && cached.a && cached.q !== 'Carregando cartão...') {
+          setQueue((prev) =>
+            prev.map((c) =>
+              c.id.replace(/::rev$/, '') === realId
+                ? c.id.endsWith('::rev')
+                  ? { ...cached, id: c.id, __reverse: true }
+                  : cached
+                : c,
+            ),
+          )
+        } else {
+          supabase
+            .from('mr_cards')
+            .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+            .eq('id', realId)
+            .single()
+            .then(({ data }) => {
+              if (data) {
+                const full: Card = {
+                  ...data,
+                  deck: data.deck_id,
+                  created: data.created_at,
+                  image: data.image_url || (data as any).image,
+                  imageUrl: data.image_url || (data as any).imageUrl,
+                }
+                fullCardsCache.set(realId, full)
+                setQueue((prev) =>
+                  prev.map((c) =>
+                    c.id.replace(/::rev$/, '') === realId
+                      ? c.id.endsWith('::rev')
+                        ? { ...full, id: c.id, __reverse: true }
+                        : full
+                      : c,
+                  ),
+                )
+                setCards((prev) => prev.map((c) => (c.id === realId ? full : c)))
+              }
+            })
+        }
+      }
     }
   }, [route.view, qIdx, queue])
 
@@ -2490,14 +2507,27 @@ export default function Index() {
 
         // 1. Carregamento ultra-rápido instantâneo do cache local (<20ms)
         try {
-          const [cachedDecks, cachedCards, cachedRevs] = await Promise.all([
+          const [cachedDecks, cachedMeta, cachedCards, cachedRevs] = await Promise.all([
             getLocalCache<Deck[]>('mr_cached_decks'),
+            getLocalCache<Card[]>('mr_cached_meta_cards'),
             getLocalCache<Card[]>('mr_cached_cards'),
             getLocalCache<any[]>('mr_cached_reviews'),
           ])
+          if (cachedCards && cachedCards.length > 0) {
+            for (const c of cachedCards) {
+              if (c.q && c.q !== 'Carregando cartão...') {
+                fullCardsCache.set(c.id, c)
+              }
+            }
+          }
           if (active) {
             if (cachedDecks && cachedDecks.length > 0) setDecks(cachedDecks)
-            if (cachedCards && cachedCards.length > 0) setCards(cachedCards)
+            if (cachedMeta && cachedMeta.length > 0) {
+              const merged = cachedMeta.map((m) => fullCardsCache.get(m.id) || m)
+              setCards(merged)
+            } else if (cachedCards && cachedCards.length > 0) {
+              setCards(cachedCards)
+            }
             if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
           }
         } catch {}
@@ -2577,8 +2607,12 @@ export default function Index() {
     const withVariants: Card[] = []
     for (const c of candidateCards) {
       if (c.suspended || c.deleted) continue
-      withVariants.push(c)
-      if (c.reverse && c.q && c.a && !c.occlusion) withVariants.push({ ...c, id: c.id + '::rev', __reverse: true })
+      const cached = fullCardsCache.get(c.id.replace(/::rev$/, ''))
+      const base = cached || c
+      withVariants.push(base)
+      if (base.reverse && base.q && base.a && !base.occlusion) {
+        withVariants.push({ ...base, id: base.id + '::rev', __reverse: true })
+      }
     }
     const studyCards = withVariants
     let sorted = studyCards
@@ -2606,6 +2640,66 @@ export default function Index() {
     setMcPicked(null)
     setStudySession({ startMs: Date.now(), again: 0, hard: 0, good: 0, easy: 0 })
     setRoute({ view: 'study', deckId, sessionTitle })
+
+    // Busca progressiva e assíncrona das cartas em lotes seguros de 15 (sem travar a tela e sem timeout)
+    const missingIds = Array.from(
+      new Set(
+        sorted
+          .map((c) => c.id.replace(/::rev$/, ''))
+          .filter((id) => {
+            const cached = fullCardsCache.get(id)
+            return !cached || !cached.a || cached.q === 'Carregando cartão...'
+          }),
+      ),
+    )
+
+    if (missingIds.length > 0) {
+      ;(async () => {
+        const batchSize = 15
+        for (let i = 0; i < missingIds.length; i += batchSize) {
+          const chunk = missingIds.slice(i, i + batchSize)
+          try {
+            const { data: chunkRows, error } = await supabase
+              .from('mr_cards')
+              .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .in('id', chunk)
+
+            if (!error && chunkRows && chunkRows.length > 0) {
+              const map = new Map<string, Card>()
+              for (const r of chunkRows) {
+                const cardObj: Card = {
+                  ...r,
+                  deck: r.deck_id,
+                  created: r.created_at,
+                  image: r.image_url || (r as any).image,
+                  imageUrl: r.image_url || (r as any).imageUrl,
+                }
+                fullCardsCache.set(r.id, cardObj)
+                map.set(r.id, cardObj)
+              }
+
+              // Atualiza fila de estudo ativa
+              setQueue((prevQueue) =>
+                prevQueue.map((c) => {
+                  const baseId = c.id.replace(/::rev$/, '')
+                  const full = map.get(baseId)
+                  if (full) {
+                    return c.id.endsWith('::rev') ? { ...full, id: c.id, __reverse: true } : full
+                  }
+                  return c
+                }),
+              )
+
+              // Atualiza estado global dos cartões
+              setCards((prevCards) =>
+                prevCards.map((c) => map.get(c.id) || c),
+              )
+            }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 60))
+        }
+      })()
+    }
   }
 
   // Normaliza texto para comparação no modo escrita (sem acentos/pontuação/caixa)
@@ -2642,7 +2736,7 @@ export default function Index() {
   }
 
   // ===== ⏱️ Quiz cronometrado =====
-  const startQuiz = (count: number, timerOn: boolean, kind: string) => {
+  const startQuiz = async (count: number, timerOn: boolean, kind: string) => {
     const pools: Record<string, string[]> = { all: [], tutoria: [], prova: [], custom: [] }
     for (const d of decks) {
       if (d.deleted) continue
@@ -2658,17 +2752,48 @@ export default function Index() {
     const shuffled = [...pool]
       .sort(() => Math.random() - 0.5)
       .slice(0, Math.min(count, pool.length))
+
+    // Carrega cartões completos para o quiz se necessário (<300ms para 10 cartas)
+    const missingQuizIds = shuffled
+      .map((c) => c.id)
+      .filter((id) => {
+        const cached = fullCardsCache.get(id)
+        return !cached || !cached.a || cached.q === 'Carregando cartão...'
+      })
+
+    if (missingQuizIds.length > 0) {
+      try {
+        const { data: qRows } = await supabase
+          .from('mr_cards')
+          .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+          .in('id', missingQuizIds)
+        if (qRows) {
+          for (const r of qRows) {
+            const cardObj: Card = {
+              ...r,
+              deck: r.deck_id,
+              created: r.created_at,
+              image: r.image_url || (r as any).image,
+              imageUrl: r.image_url || (r as any).imageUrl,
+            }
+            fullCardsCache.set(r.id, cardObj)
+          }
+        }
+      } catch {}
+    }
+
     const qs: QuizQ[] = shuffled.map((c) => {
-      const deck = decks.find((d) => d.id === c.deck)
+      const full = fullCardsCache.get(c.id) || c
+      const deck = decks.find((d) => d.id === full.deck)
       return {
-        id: c.id,
+        id: full.id,
         deckTitle: deck?.title || 'Carta',
-        q: c.q,
-        a: c.a,
-        choices: Array.isArray(c.choices) && c.choices.length ? c.choices : null,
-        image: c.image,
-        diagram_svg: c.diagram_svg,
-        diagram_title: c.diagram_title,
+        q: full.q,
+        a: full.a,
+        choices: Array.isArray(full.choices) && full.choices.length ? full.choices : null,
+        image: full.image || full.imageUrl,
+        diagram_svg: full.diagram_svg,
+        diagram_title: full.diagram_title,
       }
     })
     setQuizOpen(false)
@@ -2767,7 +2892,7 @@ export default function Index() {
   )
 
   const studyDeck = useCallback(
-    async (deckId: string) => {
+    (deckId: string) => {
       const deck = decks.find((d) => d.id === deckId)
       const targetCards = getSubtreeCardList(deckId)
       if (targetCards.length === 0) {
@@ -2775,32 +2900,9 @@ export default function Index() {
         setTimeout(() => setMsg(''), 3500)
         return
       }
-
-      // Se alguns cartões ainda não têm o texto/imagem completo baixado, busca-os imediatamente em lotes
-      let readyCards = targetCards
-      const needFull = targetCards.filter((c) => !c.a || c.q === 'Carregando cartão...')
-      if (needFull.length > 0) {
-        try {
-          const allIds = needFull.map((c) => c.id)
-          const fetchedFull: any[] = []
-          for (let i = 0; i < allIds.length; i += 100) {
-            const batchIds = allIds.slice(i, i + 100)
-            const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', batchIds)
-            if (fullRows) fetchedFull.push(...fullRows)
-          }
-          if (fetchedFull.length > 0) {
-            const fullMap = new Map(
-              fetchedFull.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
-            )
-            readyCards = targetCards.map((c) => fullMap.get(c.id) || c)
-            setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
-          }
-        } catch {}
-      }
-
-      startStudy(readyCards, deckId, deck?.title || 'Estudo da Pasta')
+      startStudy(targetCards, deckId, deck?.title || 'Estudo da Pasta')
     },
-    [decks, getSubtreeCardList],
+    [decks, getSubtreeCardList, startStudy],
   )
 
   const openDeck = (deckId: string, currentDecks = decks) => {
@@ -2816,7 +2918,7 @@ export default function Index() {
   const openFolderGroup = (folderKind: 'tutoria' | 'prova' | 'custom') =>
     setRoute({ view: 'home', folderKind })
 
-  const startStudyNow = async () => {
+  const startStudyNow = () => {
     const allCards = cards
     const dueOrNew = allCards.filter((c) => {
       if (c.suspended || c.deleted) return false
@@ -2824,27 +2926,7 @@ export default function Index() {
       return cs.state === 'new' || (cs.dueMs || 0) <= Date.now()
     })
     const candidates = dueOrNew.length ? dueOrNew : allCards.filter((c) => !c.suspended && !c.deleted)
-    let readyCards = candidates
-    const needFull = candidates.filter((c) => !c.a || c.q === 'Carregando cartão...')
-    if (needFull.length > 0) {
-      try {
-        const allIds = needFull.map((c) => c.id)
-        const fetchedFull: any[] = []
-        for (let i = 0; i < allIds.length; i += 100) {
-          const batchIds = allIds.slice(i, i + 100)
-          const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', batchIds)
-          if (fullRows) fetchedFull.push(...fullRows)
-        }
-        if (fetchedFull.length > 0) {
-          const fullMap = new Map(
-            fetchedFull.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
-          )
-          readyCards = candidates.map((c) => fullMap.get(c.id) || c)
-          setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
-        }
-      } catch {}
-    }
-    startStudy(readyCards, undefined, 'Todas as cartas')
+    startStudy(candidates, undefined, 'Todas as cartas')
   }
   const startClinicalMode = () => {
     const clinicalCards = cards.filter(
@@ -3454,27 +3536,50 @@ export default function Index() {
                 </select>
               </div>
             </div>
-            <h1
-              className="mr-legacy-question"
-              dangerouslySetInnerHTML={{
-                __html: currentOcclusionData
-                  ? (renderClozeHtml(card.q, flipped) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
-                  : card.__reverse
-                    ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
-                    : studyMode === 'reverse' && !flipped
-                      ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
-                      : (renderClozeHtml(card.q, flipped) || 'Card sem pergunta'),
-              }}
-            />
-            {currentOcclusionData && (
-              <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
-                <ImageOcclusionViewer
-                  data={currentOcclusionData}
-                  revealed={flipped}
-                  cardPrompt={card.q}
-                  cardAnswer={card.a}
+            {card.q === 'Carregando cartão...' ? (
+              <div style={{ padding: '3.5rem 1rem', textAlign: 'center' }}>
+                <div
+                  style={{
+                    display: 'inline-block',
+                    width: 38,
+                    height: 38,
+                    border: '3px solid #e2e8f0',
+                    borderTopColor: '#16a34a',
+                    borderRadius: '50%',
+                    animation: 'mrSpin 0.75s linear infinite',
+                    marginBottom: 12,
+                  }}
                 />
-              </ErrorBoundary>
+                <style>{`@keyframes mrSpin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{ color: '#64748b', fontSize: '0.95rem', fontWeight: 600 }}>
+                  Carregando conteúdo da carta...
+                </div>
+              </div>
+            ) : (
+              <>
+                <h1
+                  className="mr-legacy-question"
+                  dangerouslySetInnerHTML={{
+                    __html: currentOcclusionData
+                      ? (renderClozeHtml(card.q, flipped) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
+                      : card.__reverse
+                        ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
+                        : studyMode === 'reverse' && !flipped
+                          ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
+                          : (renderClozeHtml(card.q, flipped) || 'Card sem pergunta'),
+                  }}
+                />
+                {currentOcclusionData && (
+                  <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
+                    <ImageOcclusionViewer
+                      data={currentOcclusionData}
+                      revealed={flipped}
+                      cardPrompt={card.q}
+                      cardAnswer={card.a}
+                    />
+                  </ErrorBoundary>
+                )}
+              </>
             )}
             {!flipped &&
               studyMode === 'flip' &&
@@ -3571,6 +3676,7 @@ export default function Index() {
               </div>
             )}
             {!flipped &&
+              card.q !== 'Carregando cartão...' &&
               studyMode !== 'write' &&
               !(
                 studyMode === 'flip' &&
