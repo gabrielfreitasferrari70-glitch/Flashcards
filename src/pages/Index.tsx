@@ -24,6 +24,7 @@ import {
 } from '@/components/MedReviewLegacyLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ImageOcclusionViewer } from '@/components/ImageOcclusionViewer'
+import { ImageLightboxModal } from '@/components/ImageLightboxModal'
 import { parseOcclusion } from '@/services/imageOcclusion'
 import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
 import { extractCardTags } from '@/services/cardTags'
@@ -2132,10 +2133,16 @@ export default function Index() {
   const [ankiImportOpen, setAnkiImportOpen] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [speechRate, setSpeechRate] = useState(1.0)
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; title?: string } | null>(null)
 
   useEffect(() => {
     return speechService.subscribe(setIsSpeaking)
   }, [])
+
+  // Para a voz imediatamente ao trocar de cartão ou de rota
+  useEffect(() => {
+    speechService.stop()
+  }, [qIdx, route.view, flipped])
 
   const retention = useMemo(() => getRetention(), [route, retentionTick])
   const schedulerSettings = useMemo(() => getSchedulerSettings(user?.id), [user?.id, retentionTick])
@@ -2172,34 +2179,58 @@ async function getBaseCatalog() {
     if (!pb.authStore.isValid) return
 
     // 1. Carregamento instantâneo via Vercel Edge CDN (<50ms)
+    let baseData: { decks: any[]; cards: any[] } | null = null
     try {
-      const base = await getBaseCatalog()
-      if (base) {
-        setDecks((prev) => (prev.length === 0 ? base.decks : prev))
-        setCards((prev) => (prev.length === 0 ? base.cards : prev))
+      baseData = await getBaseCatalog()
+      if (baseData) {
+        setDecks((prev) => (prev.length === 0 ? baseData!.decks : prev))
+        setCards((prev) => (prev.length === 0 ? baseData!.cards : prev))
       }
     } catch {
       /* fallback */
     }
 
-    // 2. Sincronização em paralelo com Supabase para avaliações e cartões/pastas personalizados
+    // 2. Sincronização com Supabase (avaliações, novos decks e cards criados pelo usuário)
     try {
       const [d, c, r] = await Promise.all([
         pb.collection('mr_decks').getFullList({ sort: 'order' }),
         pb.collection('mr_cards').getFullList({ sort: '-created' }),
         pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' }),
       ])
-      const supaDecks = (d as any[])
+      const supaRawDecks = (d as any[]) || []
+      const supaRawCards = (c as any[]) || []
+
+      const supaDeletedDeckIds = new Set(supaRawDecks.filter((row) => row.deleted).map((row) => row.id))
+      const supaDeletedCardIds = new Set(supaRawCards.filter((row) => row.deleted).map((row) => row.id))
+
+      const supaActiveDecks = supaRawDecks
         .filter((row) => !row.deleted)
         .map((row) => ({ ...row, description: row.description || '' }))
-      const supaCards = (c as any[]).filter((row) => !row.deleted)
+      const supaActiveCards = supaRawCards.filter((row) => !row.deleted)
 
-      if (supaDecks.length > 0) {
-        setDecks(supaDecks)
-      }
-      if (supaCards.length > 0) {
-        setCards(supaCards)
-      }
+      // Merge unificado: preserva catálogo base + incorpora novidades do Supabase sem zerar nada
+      setDecks((prev) => {
+        const map = new Map<string, any>()
+        if (baseData?.decks) {
+          for (const item of baseData.decks) map.set(item.id, item)
+        }
+        for (const item of prev) map.set(item.id, item)
+        for (const item of supaActiveDecks) map.set(item.id, item)
+        for (const delId of supaDeletedDeckIds) map.delete(delId)
+        return Array.from(map.values())
+      })
+
+      setCards((prev) => {
+        const map = new Map<string, any>()
+        if (baseData?.cards) {
+          for (const item of baseData.cards) map.set(item.id, item)
+        }
+        for (const item of prev) map.set(item.id, item)
+        for (const item of supaActiveCards) map.set(item.id, item)
+        for (const delId of supaDeletedCardIds) map.delete(delId)
+        return Array.from(map.values())
+      })
+
       setReviews(r as any[])
     } catch (e: any) {
       console.warn('Erro ao carregar dados do Supabase:', e)
@@ -2408,7 +2439,7 @@ async function getBaseCatalog() {
     for (const c of candidateCards) {
       if (c.suspended || c.deleted) continue
       withVariants.push(c)
-      if (c.reverse && c.q && c.a) withVariants.push({ ...c, id: c.id + '::rev', __reverse: true })
+      if (c.reverse && c.q && c.a && !c.occlusion) withVariants.push({ ...c, id: c.id + '::rev', __reverse: true })
     }
     const studyCards = withVariants
     let sorted = studyCards
@@ -3042,7 +3073,19 @@ async function getBaseCatalog() {
               </span>
             </span>
           </div>
-          <article className="mr-legacy-study-card" onClick={() => setFlipped((f) => !f)}>
+          <article
+            className="mr-legacy-study-card"
+            onClick={(e) => {
+              const target = e.target as HTMLElement
+              if (target.tagName === 'IMG') {
+                e.stopPropagation()
+                const img = target as HTMLImageElement
+                setLightboxImage({ src: img.src, title: img.alt || 'Visualização Anatômica em Alta Resolução' })
+                return
+              }
+              setFlipped((f) => !f)
+            }}
+          >
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span className="mr-legacy-badge">
@@ -3056,6 +3099,24 @@ async function getBaseCatalog() {
                           ? '🩺 Cartão de Modo Clínico'
                           : '🩺 Cartão de revisão'}
                 </span>
+                {(card.q?.includes('<img') || card.a?.includes('<img') || card.image || card.diagram_svg) && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 9px',
+                      borderRadius: 999,
+                      background: '#eff6ff',
+                      color: '#1d4ed8',
+                      fontSize: '.72rem',
+                      fontWeight: 800,
+                    }}
+                    title="Imagens em alta definição. Clique na imagem para zoom 4K, arrastar e modo contraste."
+                  >
+                    🔍 Zoom 4K disponível (clique na imagem)
+                  </span>
+                )}
                 {extractCardTags(card).map((tag) => (
                   <span
                     key={tag}
@@ -3132,9 +3193,9 @@ async function getBaseCatalog() {
               className="mr-legacy-question"
               dangerouslySetInnerHTML={{
                 __html: card.__reverse
-                  ? renderClozeHtml(card.a, flipped)
-                  : studyMode === 'reverse' && !flipped
-                    ? renderClozeHtml(card.a, false)
+                  ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
+                  : studyMode === 'reverse' && !flipped && !currentOcclusionData
+                    ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
                     : renderClozeHtml(card.q, flipped),
               }}
             />
@@ -4315,6 +4376,13 @@ async function getBaseCatalog() {
             </div>
           </div>
         </div>
+      )}
+      {lightboxImage && (
+        <ImageLightboxModal
+          src={lightboxImage.src}
+          title={lightboxImage.title}
+          onClose={() => setLightboxImage(null)}
+        />
       )}
     </>
   )

@@ -153,10 +153,12 @@ function parseMediaProtobuf(bytes: Uint8Array): string[] {
 }
 
 /**
- * Otimiza data URLs no navegador para carregar instantaneamente e não pesar no Supabase
+ * Preserva máxima fidelidade visual para diagramas anatômicos e alta nitidez de texto.
+ * Só otimiza arquivos excessivamente grandes (> 1.5MB), mantendo resolução Full HD / 2K e qualidade 92%.
  */
-async function optimizeDataUrl(dataUrl: string, maxDim = 850, quality = 0.65): Promise<string> {
-  if (!dataUrl || dataUrl.length < 25000) return dataUrl
+async function optimizeDataUrl(dataUrl: string, maxDim = 2560, quality = 0.92): Promise<string> {
+  // Mantém 100% original qualquer imagem razoável para nunca perder legibilidade médica
+  if (!dataUrl || dataUrl.length < 1500000) return dataUrl
   if (typeof window === 'undefined' || typeof document === 'undefined') return dataUrl
   return new Promise((resolve) => {
     const img = new Image()
@@ -181,6 +183,8 @@ async function optimizeDataUrl(dataUrl: string, maxDim = 850, quality = 0.65): P
           resolve(dataUrl)
           return
         }
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
         ctx.drawImage(img, 0, 0, w, h)
         let optimized = ''
         try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import type { OcclusionData, OcclusionMask } from '@/services/imageOcclusion'
 
 interface Props {
@@ -21,10 +21,15 @@ export const ImageOcclusionViewer = React.memo<Props>(({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [manuallyRevealed, setManuallyRevealed] = useState<Record<string, boolean>>({})
   const [imgError, setImgError] = useState(false)
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
-  // Reseta erro de imagem se a URL mudar
+  // Reseta erro de imagem e pan se a URL mudar
   useEffect(() => {
     setImgError(false)
+    setPan({ x: 0, y: 0 })
   }, [data?.imageUrl])
 
   // Tecla ESC para sair de tela cheia
@@ -106,26 +111,56 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     setManuallyRevealed((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
-  // Cálculo de zoom e ponto focal
+  // Cálculo de zoom e ponto focal com suporte a pan suave
   let transformStyle = 'none'
   let transformOrigin = 'center center'
   if (zoomToMask && activeMask && typeof activeMask.x === 'number' && typeof activeMask.y === 'number') {
     const centerX = activeMask.x + (activeMask.width || 0) / 2
     const centerY = activeMask.y + (activeMask.height || 0) / 2
     transformOrigin = `${centerX}% ${centerY}%`
-    transformStyle = 'scale(2.2)'
+    transformStyle = `translate(${pan.x}px, ${pan.y}px) scale(2.2)`
   } else if (userZoom !== 1) {
     transformOrigin = 'center center'
-    transformStyle = `scale(${userZoom})`
+    transformStyle = `translate(${pan.x}px, ${pan.y}px) scale(${userZoom})`
+  } else if (pan.x !== 0 || pan.y !== 0) {
+    transformStyle = `translate(${pan.x}px, ${pan.y}px)`
+  }
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (userZoom <= 1 && !zoomToMask) return
+    setIsDragging(true)
+    dragStartRef.current = { x: e.clientX, y: e.clientY }
+    panStartRef.current = { ...pan }
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return
+    const dx = e.clientX - dragStartRef.current.x
+    const dy = e.clientY - dragStartRef.current.y
+    setPan({ x: panStartRef.current.x + dx, y: panStartRef.current.y + dy })
+  }
+
+  const handleMouseUp = () => setIsDragging(false)
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (userZoom !== 1 || zoomToMask) {
+      setUserZoom(1)
+      setZoomToMask(false)
+      setPan({ x: 0, y: 0 })
+    } else {
+      setUserZoom(2.2)
+      setZoomToMask(false)
+    }
   }
 
   // Renderizador comum da imagem com máscaras
   const renderImageCanvas = (fullMode = false) => {
     const maxHeight = fullMode
-      ? '88vh'
+      ? '90vh'
       : isExpanded
-        ? 'min(80vh, 780px)'
-        : 'min(55vh, 480px)'
+        ? 'min(85vh, 850px)'
+        : 'min(65vh, 600px)'
 
     return (
       <div
@@ -135,7 +170,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
           maxWidth: '100%',
           maxHeight,
           borderRadius: 14,
-          overflow: fullMode ? 'auto' : 'hidden',
+          overflow: fullMode || userZoom > 1 ? 'auto' : 'hidden',
           boxShadow: '0 8px 30px rgba(0,0,0,0.14)',
           background: '#0f172a',
           border: '1.5px solid #334155',
@@ -143,12 +178,18 @@ export const ImageOcclusionViewer = React.memo<Props>(({
         onClick={(e) => e.stopPropagation()}
       >
         <div
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onDoubleClick={handleDoubleClick}
           style={{
             position: 'relative',
             transform: transformStyle,
             transformOrigin,
-            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             willChange: 'transform',
+            cursor: isDragging ? 'grabbing' : (userZoom > 1 || zoomToMask) ? 'grab' : 'zoom-in',
           }}
         >
           {imgError ? (
@@ -371,6 +412,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                 e.stopPropagation()
                 setZoomToMask(false)
                 setUserZoom(1)
+                setPan({ x: 0, y: 0 })
               }}
               title="Clique para voltar a 100%"
               style={{
@@ -391,7 +433,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
               onClick={(e) => {
                 e.stopPropagation()
                 setZoomToMask(false)
-                setUserZoom((z) => Math.min(2.5, Number((z + 0.25).toFixed(2))))
+                setUserZoom((z) => Math.min(3.5, Number((z + 0.25).toFixed(2))))
               }}
               style={{
                 border: 'none',

@@ -116,6 +116,8 @@ const legacyCss = `
 .mr-legacy-control.exit{border-color:#e5e7eb;color:#475569}
 .mr-legacy-study-main{max-width:960px;margin:0 auto;padding:12px 22px 55px}
 .mr-legacy-study-card{background:#fff;border:1.5px solid #d1fae5;border-radius:21px;padding:clamp(22px,4vw,42px);box-shadow:0 10px 30px rgba(20,83,45,.07);cursor:pointer}
+.mr-legacy-study-card img{cursor:zoom-in;border-radius:10px;max-width:100%;max-height:520px;display:block;margin:12px auto;object-fit:contain;transition:transform .16s ease,box-shadow .16s ease}
+.mr-legacy-study-card img:hover{box-shadow:0 6px 18px rgba(0,0,0,.15);transform:scale(1.012)}
 .mr-legacy-progress{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 16px;color:#15803d;font-size:.83rem;font-weight:800}
 .mr-legacy-question{margin:9px 0 0;color:#1f2937;font-size:clamp(1.3rem,2.7vw,1.8rem);line-height:1.45}
 .mr-legacy-answer{margin-top:20px;padding-top:18px;border-top:1px solid #d1fae5;color:#334155;font-size:1rem;line-height:1.7;white-space:pre-wrap}
