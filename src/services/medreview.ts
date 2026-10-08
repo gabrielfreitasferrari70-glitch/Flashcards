@@ -556,9 +556,38 @@ export const restoreBackupData = async (force = false) => {
   return { ok: true, restoredDecks: idMap.size, restoredCards: cardPayloads.length }
 }
 
+export const purgeLegacyBloatedCards = async () => {
+  try {
+    const { data: userAuth } = await supabase.auth.getUser()
+    if (!userAuth.user) return
+    const userId = userAuth.user.id
+
+    // Busca IDs dos cartões antigos criados antes de 12:00
+    const { data: oldRows } = await supabase
+      .from('mr_cards')
+      .select('id')
+      .eq('user_id', userId)
+      .lt('created_at', '2026-10-08T12:00:00Z')
+      .limit(100)
+
+    if (oldRows && oldRows.length > 0) {
+      const ids = oldRows.map((r) => r.id)
+      for (let i = 0; i < ids.length; i += 25) {
+        const chunk = ids.slice(i, i + 25)
+        await supabase.from('mr_cards').delete().in('id', chunk)
+      }
+    }
+  } catch (e) {
+    console.warn('Erro ao purgar cartões legados:', e)
+  }
+}
+
 export const applyInitialSeed = async () => {
   try {
-    return await restoreBackupData(false)
+    const res = await restoreBackupData(false)
+    // Dispara a limpeza dos registros legados em background sem travar o boot
+    purgeLegacyBloatedCards().catch(() => {})
+    return res
   } catch (err) {
     console.error('Falha na inicialização da seed:', err)
     return { ok: false, error: err }
