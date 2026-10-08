@@ -165,11 +165,36 @@ export const createCardsBatch = async (
     }
   })
 
-  // Insere em lotes de no máximo 15 registros para garantir envio ultra-leve e rápido ao Supabase
-  const CHUNK_SIZE = 15
+  // Insere em lotes adaptativos para garantir envio rápido e não estourar limite de payload HTTP
   const results: any[] = []
-  for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
-    const chunk = payloads.slice(i, i + CHUNK_SIZE)
+  const MAX_BYTES_PER_CHUNK = 1_200_000
+  const MAX_CARDS_PER_CHUNK = 20
+
+  const chunks: Array<typeof payloads> = []
+  let currentChunk: typeof payloads = []
+  let currentBytes = 0
+
+  for (const item of payloads) {
+    const itemBytes =
+      (item.q?.length || 0) +
+      (item.a?.length || 0) +
+      (item.occlusion ? JSON.stringify(item.occlusion).length : 0)
+
+    if (
+      currentChunk.length >= MAX_CARDS_PER_CHUNK ||
+      (currentBytes + itemBytes > MAX_BYTES_PER_CHUNK && currentChunk.length > 0)
+    ) {
+      chunks.push(currentChunk)
+      currentChunk = [item]
+      currentBytes = itemBytes
+    } else {
+      currentChunk.push(item)
+      currentBytes += itemBytes
+    }
+  }
+  if (currentChunk.length > 0) chunks.push(currentChunk)
+
+  for (const chunk of chunks) {
     const { data, error } = await supabase.from('mr_cards').insert(chunk).select('id')
     if (error) {
       if (error.code === '42703' || error.message?.includes('column')) {
@@ -185,7 +210,15 @@ export const createCardsBatch = async (
         if (fbErr) throw fbErr
         if (fbData) results.push(...fbData)
       } else {
-        throw error
+        // Fallback resiliente: insere um a um para salvar o máximo possível de cartas
+        for (const single of chunk) {
+          try {
+            const { data: sData } = await supabase.from('mr_cards').insert([single]).select('id')
+            if (sData) results.push(...sData)
+          } catch (singleErr) {
+            console.warn('Erro ao inserir cartão individual:', singleErr)
+          }
+        }
       }
     } else if (data) {
       results.push(...data)
@@ -392,7 +425,33 @@ export const moveCard = async (cardId: string, deckId: string) => {
   if (error) throw error
   return true
 }
-export const importCards = async () => {}
+export const importCards = async (
+  deckId: string,
+  cards: Array<{
+    q: string
+    a: string
+    ref?: string
+    group?: string
+    clinical?: boolean
+    imageUrl?: string
+    tags?: string[]
+    occlusion?: any
+  }>,
+) => {
+  return createCardsBatch(
+    deckId,
+    cards.map((c) => ({
+      q: c.q,
+      a: c.a,
+      ref: c.ref,
+      group: c.group,
+      clinical: c.clinical,
+      tags: c.tags,
+      occlusion: c.occlusion,
+      imageUrl: c.imageUrl,
+    })),
+  )
+}
 export const restoreBackupData = async (force = false) => {
   const { data: userAuth } = await supabase.auth.getUser()
   if (!userAuth.user) return { ok: false, error: 'Usuário não autenticado' }
@@ -633,7 +692,52 @@ export const applyInitialSeed = async () => {
   }
 }
 
-export const importCardsAuto = async () => {}
+export const importCardsAuto = async (
+  cards: Array<{
+    q: string
+    a: string
+    ref?: string
+    group?: string
+    folder?: string
+    clinical?: boolean
+    imageUrl?: string
+    tags?: string[]
+    occlusion?: any
+  }>,
+) => {
+  const { data: userAuth } = await supabase.auth.getUser()
+  if (!userAuth.user) throw new Error('Usuário não autenticado')
+  const userId = userAuth.user.id
+
+  const { data: existingDecks } = await supabase
+    .from('mr_decks')
+    .select('id, title')
+    .eq('user_id', userId)
+
+  const deckMap = new Map<string, string>()
+  for (const d of existingDecks || []) {
+    deckMap.set(d.title.trim().toLowerCase(), d.id)
+  }
+
+  const byFolder = new Map<string, typeof cards>()
+  for (const c of cards) {
+    const folderName = c.folder?.trim() || 'Importação Geral'
+    const arr = byFolder.get(folderName) || []
+    arr.push(c)
+    byFolder.set(folderName, arr)
+  }
+
+  for (const [folderName, folderCards] of byFolder.entries()) {
+    let targetDeckId = deckMap.get(folderName.toLowerCase())
+    if (!targetDeckId) {
+      const created = await createDeck(folderName, 'custom')
+      targetDeckId = created.id
+      deckMap.set(folderName.toLowerCase(), targetDeckId)
+    }
+    await createCardsBatch(targetDeckId, folderCards)
+  }
+  return true
+}
 export const uploadCardImage = async () => {}
 
 

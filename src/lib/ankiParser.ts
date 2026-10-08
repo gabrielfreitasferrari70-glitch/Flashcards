@@ -11,6 +11,7 @@
 import JSZip from 'jszip'
 import initSqlJs from 'sql.js'
 import { decompress } from 'fzstd'
+import { parseCardsFromCsv } from './csvImport'
 
 export interface ParsedAnkiCard {
   q: string
@@ -859,6 +860,50 @@ export async function parseAnkiFile(file: File): Promise<AnkiPackageResult> {
   if (isApkg) {
     const buffer = await file.arrayBuffer()
     return parseAnkiApkg(buffer, name)
+  }
+
+  // Suporte a arquivos JSON (exportação MedReview, Anki JSON ou array de cartas)
+  if (name.toLowerCase().endsWith('.json')) {
+    const textContent = await file.text()
+    try {
+      const data = JSON.parse(textContent)
+      const rawCards = Array.isArray(data) ? data : data.cards || []
+      const cards: ParsedAnkiCard[] = []
+      for (const item of rawCards) {
+        const q = item.q || item.front || item.pergunta || item.frente || ''
+        const a = item.a || item.back || item.resposta || item.verso || ''
+        if (q) {
+          cards.push({
+            q,
+            a,
+            tags: item.tags || [],
+            occlusion: item.occlusion || undefined,
+            isCloze: /\{\{c\d+::.*?\}\}/.test(q),
+          })
+        }
+      }
+      const deckName = data.deckName || data.title || name.replace(/\.json$/i, '')
+      if (cards.length > 0) {
+        return { deckName, cards }
+      }
+    } catch {
+      /* fallback to text */
+    }
+  }
+
+  // Suporte a arquivos CSV / TSV
+  if (name.toLowerCase().endsWith('.csv')) {
+    const textContent = await file.text()
+    const result = parseCardsFromCsv(textContent)
+    const cards: ParsedAnkiCard[] = result.cards.map((c) => ({
+      q: c.q,
+      a: c.a,
+      isCloze: /\{\{c\d+::.*?\}\}/.test(c.q),
+    }))
+    const deckName = name.replace(/\.csv$/i, '')
+    if (cards.length > 0) {
+      return { deckName, cards }
+    }
   }
 
   const textContent = await file.text()
