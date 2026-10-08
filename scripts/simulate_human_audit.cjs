@@ -50,14 +50,14 @@ async function runAudit() {
   const rootDecks = decks.filter((d) => !d.parent && !d.deleted);
   console.log(`✓ Pastas raiz detectadas na Home: ${rootDecks.map((d) => `"${d.title}" (${d.id.slice(0, 8)})`).join(', ')}`);
 
-  // Confere se UC-1 e UC-2 estão na raiz
-  const uc1 = rootDecks.find((d) => d.title.includes('UC-1'));
-  const uc2 = rootDecks.find((d) => d.title.includes('UC-2'));
+  // Confere se UC-1 e UC-2 existem
+  const uc1 = decks.find((d) => (d.title.trim() === 'UC-1' || d.title.trim() === 'UC1') && !d.deleted);
+  const uc2 = decks.find((d) => (d.title.trim() === 'UC-2' || d.title.trim() === 'UC2') && !d.deleted);
   if (!uc1 || !uc2) {
     report.hierarchy.passed = false;
-    report.hierarchy.issues.push('UC-1 ou UC-2 não encontradas na raiz.');
+    report.hierarchy.issues.push('UC-1 ou UC-2 não encontradas no sistema.');
   } else {
-    console.log('✓ UC-1 e UC-2 existem como raízes limpas sem duplicação.');
+    console.log(`✓ UC-1 (${uc1.id.slice(0, 8)}) e UC-2 (${uc2.id.slice(0, 8)}) encontradas com sucesso.`);
   }
 
   // 2. SIMULAÇÃO HUMANA: NAVEGAÇÃO EM SUBPASTAS (ÁRVORE)

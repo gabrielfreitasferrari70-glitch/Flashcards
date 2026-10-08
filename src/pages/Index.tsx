@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState, useMemo, useCallback, lazy, Suspense } f
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
-import { getLocalCache, setLocalCache } from '@/lib/cache/localCache'
+import { getLocalCache, setLocalCache, clearLocalCache } from '@/lib/cache/localCache'
 
 import {
   applyInitialSeed,
@@ -179,9 +179,10 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
   if (studyMode === 'reverse') {
     return renderClozeHtml(card.q, true)
   }
-  // Se for oclusão de imagem e a resposta for apenas a tag da imagem sem texto adicional,
+  // Se for oclusão de imagem e houver um visualizador de oclusão válido,
   // evita duplicar a imagem embaixo do visualizador de oclusão
-  if (card.occlusion || (card.q && card.q.includes('image-occlusion:'))) {
+  const validOcclusion = parseOcclusion(card.occlusion, card.a, card.q)
+  if (validOcclusion) {
     const rawNoImg = (card.a || '').replace(/<img[^>]*>/gi, '').trim()
     const isGeneric =
       !rawNoImg ||
@@ -221,6 +222,10 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
 
 function getCardImage(card: Card): string {
   if ((card as any).image_url) return (card as any).image_url
+  if ((card as any).imageUrl) return (card as any).imageUrl
+  if (card.occlusion?.imageUrl && typeof card.occlusion.imageUrl === 'string') {
+    return card.occlusion.imageUrl
+  }
   if (card.image) {
     return pb.files.getURL({ collectionId: 'pbc_709748442', id: card.id.replace(/::rev$/, '') }, card.image)
   }
@@ -2267,8 +2272,9 @@ export default function Index() {
       // Recebe pastas e renderiza imediatamente na tela
       const rawDecks = ((await decksPromise) as any[]) || []
       const frontlineDeckIds = getFrontlineDeckIds()
+      const seenDeckIds = new Set<string>()
       const validDecks = rawDecks
-        .filter((row) => !row.deleted)
+        .filter((row) => !row.deleted && !seenDeckIds.has(row.id) && seenDeckIds.add(row.id))
         .map((row) => {
           const isFrontline =
             !!row.frontline ||
@@ -2400,8 +2406,18 @@ export default function Index() {
 
   const stateKey = (card: Card) => card.id.replace(/::rev$/, '')
 
-  const allCards = cards
-  const totalCards = allCards.length
+  const validCards = useMemo(() => {
+    const seen = new Set<string>()
+    return cards.filter((c) => {
+      const baseId = c.id.replace(/::rev$/, '')
+      if (seen.has(baseId)) return false
+      seen.add(baseId)
+      return !c.deleted
+    })
+  }, [cards])
+
+  const allCards = validCards
+  const totalCards = validCards.length
 
   const { dueCount, masteredCount, streakDays } = useMemo(() => {
     let due = 0
@@ -2448,8 +2464,12 @@ export default function Index() {
   // Cálculo O(N) memoizado de contagem de cartões por subárvore de pastas (elimina loops aninhados)
   const cardsInSubtree = useMemo(() => {
     const directCounts = new Map<string, number>()
+    const seenBaseIds = new Set<string>()
     for (const c of cards) {
       if (!c.deleted) {
+        const baseId = c.id.replace(/::rev$/, '')
+        if (seenBaseIds.has(baseId)) continue
+        seenBaseIds.add(baseId)
         directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
       }
     }
@@ -2505,6 +2525,21 @@ export default function Index() {
           setAuth('in')
         }
 
+        // Invalidação global de cache para sincronizar 1.352 cartas e eliminar pastas duplicadas em todos os dispositivos
+        const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_clean_v2'
+        if (localStorage.getItem('mr_cache_version') !== CURRENT_APP_CACHE_VERSION) {
+          await clearLocalCache()
+          localStorage.removeItem('mr_cached_decks')
+          localStorage.removeItem('mr_cached_cards')
+          localStorage.removeItem('mr_cached_meta_cards')
+          localStorage.removeItem('mr_cached_reviews')
+          localStorage.removeItem('mr_restored_clean_v6')
+          localStorage.removeItem('mr_frontline_decks_v1')
+          localStorage.removeItem('mr_deleted_cards_v1')
+          localStorage.removeItem('mr_deleted_decks_v1')
+          localStorage.setItem('mr_cache_version', CURRENT_APP_CACHE_VERSION)
+        }
+
         // 1. Carregamento ultra-rápido instantâneo do cache local (<20ms)
         try {
           const [cachedDecks, cachedMeta, cachedCards, cachedRevs] = await Promise.all([
@@ -2521,7 +2556,17 @@ export default function Index() {
             }
           }
           if (active) {
-            if (cachedDecks && cachedDecks.length > 0) setDecks(cachedDecks)
+            if (cachedDecks && cachedDecks.length > 0) {
+              const seenTitles = new Set<string>()
+              const dedupedDecks = cachedDecks.filter((d) => {
+                if (d.parent) return true
+                const norm = d.title.trim().toLowerCase()
+                if (seenTitles.has(norm)) return false
+                seenTitles.add(norm)
+                return true
+              })
+              setDecks(dedupedDecks)
+            }
             if (cachedMeta && cachedMeta.length > 0) {
               const merged = cachedMeta.map((m) => fullCardsCache.get(m.id) || m)
               setCards(merged)
@@ -2655,9 +2700,47 @@ export default function Index() {
 
     if (missingIds.length > 0) {
       ;(async () => {
-        const batchSize = 15
-        for (let i = 0; i < missingIds.length; i += batchSize) {
-          const chunk = missingIds.slice(i, i + batchSize)
+        // 1. Busca imediatamente os primeiros 3 cartões prioritários para renderização instantânea
+        const priorityIds = missingIds.slice(0, 3)
+        if (priorityIds.length > 0) {
+          try {
+            const { data: pRows } = await supabase
+              .from('mr_cards')
+              .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .in('id', priorityIds)
+            if (pRows && pRows.length > 0) {
+              const pMap = new Map<string, Card>()
+              for (const r of pRows) {
+                const cardObj: Card = {
+                  ...r,
+                  deck: r.deck_id,
+                  created: r.created_at,
+                  image: r.image_url || (r as any).image,
+                  imageUrl: r.image_url || (r as any).imageUrl,
+                }
+                fullCardsCache.set(r.id, cardObj)
+                pMap.set(r.id, cardObj)
+              }
+              setQueue((prevQueue) =>
+                prevQueue.map((c) => {
+                  const baseId = c.id.replace(/::rev$/, '')
+                  const full = pMap.get(baseId)
+                  if (full) {
+                    return c.id.endsWith('::rev') ? { ...full, id: c.id, __reverse: true } : full
+                  }
+                  return c
+                }),
+              )
+              setCards((prevCards) => prevCards.map((c) => pMap.get(c.id) || c))
+            }
+          } catch {}
+        }
+
+        // 2. Busca o restante em lotes leves de 8 cartões para prevenir timeouts com imagens pesadas
+        const remainingIds = missingIds.slice(3)
+        const batchSize = 8
+        for (let i = 0; i < remainingIds.length; i += batchSize) {
+          const chunk = remainingIds.slice(i, i + batchSize)
           try {
             const { data: chunkRows, error } = await supabase
               .from('mr_cards')
@@ -2696,7 +2779,7 @@ export default function Index() {
               )
             }
           } catch {}
-          await new Promise((r) => setTimeout(r, 60))
+          await new Promise((r) => setTimeout(r, 40))
         }
       })()
     }
@@ -3963,14 +4046,23 @@ export default function Index() {
   const customs = decks.filter((d) => d.kind === 'custom')
   // Contagem de SEÇÃO = soma das subárvores das pastas de NÍVEL INICIAL apenas.
   // Somar todas as pastas do kind contava carta 2x (bloco + filhas dentro dele).
-  const rootsOfKind = (kind: string) =>
-    decks.filter((d) => d.kind === kind && !d.parent && !d.deleted)
+  const rootsOfKind = (kind: string) => {
+    const seenTitles = new Set<string>()
+    return decks.filter((d) => {
+      if (d.kind !== kind || d.parent || d.deleted) return false
+      const norm = d.title.trim().toLowerCase()
+      if (seenTitles.has(norm)) return false
+      seenTitles.add(norm)
+      return true
+    })
+  }
   // Pastas criadas pela usuária (sem seed_key) — aparecem como cards no grid
   // "Pastas de Estudo" da home, no mesmo estilo das seções.
   // Cards do grid da home = pastas "🎯 Na tela inicial" (frontline). As demais
   // ficam no portal Minhas Pastas (feedback: pasta criada lá dentro aparecia
   // duplicada na tela inicial).
   const frontlineIds = getFrontlineDeckIds()
+  const seenUserDeckTitles = new Set<string>()
   const userDecks = decks
     .filter(
       (d) =>
@@ -3978,6 +4070,12 @@ export default function Index() {
         !d.parent &&
         !d.deleted,
     )
+    .filter((d) => {
+      const norm = d.title.trim().toLowerCase()
+      if (seenUserDeckTitles.has(norm)) return false
+      seenUserDeckTitles.add(norm)
+      return true
+    })
     .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
   // seção foi movida (Anki: mover = some da origem), o card some da home.

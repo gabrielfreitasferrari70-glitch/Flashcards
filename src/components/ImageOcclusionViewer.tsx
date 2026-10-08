@@ -27,13 +27,15 @@ export const ImageOcclusionViewer = React.memo<Props>(({
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   const cleanImageUrl = useMemo(() => {
-    let url =
-      typeof data?.imageUrl === 'string' && data.imageUrl.startsWith('<img')
-        ? data.imageUrl.match(/src=["']([^"']+)["']/i)?.[1] || data.imageUrl
-        : data?.imageUrl || ''
-    if (typeof url !== 'string') return ''
-    return url.trim()
-  }, [data?.imageUrl])
+    let raw = data?.imageUrl || (data as any)?.image || (data as any)?.imageSrc || ''
+    if (typeof raw !== 'string') return ''
+    raw = raw.trim()
+    if (raw.toLowerCase().includes('<img')) {
+      const match = raw.match(/src=["']([^"']+)["']/i)
+      if (match) raw = match[1]
+    }
+    return raw.trim()
+  }, [data?.imageUrl, (data as any)?.image, (data as any)?.imageSrc])
 
   const [currentImgSrc, setCurrentImgSrc] = useState(cleanImageUrl)
   const [fallbackAttempt, setFallbackAttempt] = useState(0)
@@ -47,14 +49,15 @@ export const ImageOcclusionViewer = React.memo<Props>(({
   }, [cleanImageUrl])
 
   const handleImageError = () => {
-    if (fallbackAttempt === 0 && cleanImageUrl.startsWith('/cards-media/')) {
+    const isLocalMedia = cleanImageUrl.includes('cards-media/')
+    if (fallbackAttempt === 0 && isLocalMedia) {
       setFallbackAttempt(1)
-      const filename = cleanImageUrl.replace('/cards-media/', '')
+      const filename = cleanImageUrl.split('cards-media/').pop()?.split('?')[0] || ''
       // Tier 1 CDN: jsDelivr Global Edge CDN (Cloudflare edge)
       setCurrentImgSrc(`https://cdn.jsdelivr.net/gh/gabrielfreitasferrari70-glitch/Flashcards@main/public/cards-media/${filename}`)
-    } else if (fallbackAttempt === 1 && cleanImageUrl.startsWith('/cards-media/')) {
+    } else if (fallbackAttempt === 1 && isLocalMedia) {
       setFallbackAttempt(2)
-      const filename = cleanImageUrl.replace('/cards-media/', '')
+      const filename = cleanImageUrl.split('cards-media/').pop()?.split('?')[0] || ''
       // Tier 2 CDN: GitHub Raw direto
       setCurrentImgSrc(`https://raw.githubusercontent.com/gabrielfreitasferrari70-glitch/Flashcards/main/public/cards-media/${filename}`)
     } else {

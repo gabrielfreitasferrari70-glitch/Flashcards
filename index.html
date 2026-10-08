@@ -20,6 +20,28 @@
     <!-- @skip-protected: Do not remove. App entrypoint. -->
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Invalidação global de cache para sincronizar 1.352 cartas e eliminar pastas duplicadas em todos os dispositivos
+      const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_clean_v2';
+      try {
+        if (localStorage.getItem('mr_cache_version') !== CURRENT_APP_CACHE_VERSION) {
+          if (window.indexedDB) {
+            window.indexedDB.deleteDatabase('medreview_cache_db');
+          }
+          const keysToRemove = [
+            'mr_cached_decks',
+            'mr_cached_cards',
+            'mr_cached_meta_cards',
+            'mr_cached_reviews',
+            'mr_restored_clean_v6',
+            'mr_frontline_decks_v1',
+            'mr_deleted_cards_v1',
+            'mr_deleted_decks_v1',
+          ];
+          keysToRemove.forEach((k) => localStorage.removeItem(k));
+          localStorage.setItem('mr_cache_version', CURRENT_APP_CACHE_VERSION);
+        }
+      } catch (e) {}
+
       // Desregistra Service Workers antigos e limpa caches defasados para eliminar tela branca permanentemente
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((registrations) => {
