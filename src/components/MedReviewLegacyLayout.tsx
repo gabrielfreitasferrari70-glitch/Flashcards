@@ -896,8 +896,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   const cardsInSubtree = useMemo(() => {
     const directCounts = new Map<string, number>()
     for (const c of cards) {
-      if (!c.deleted && c.deck) {
-        directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
+      const dId = c.deck || (c as any).deck_id
+      if (!c.deleted && dId) {
+        directCounts.set(dId, (directCounts.get(dId) || 0) + 1)
       }
     }
     const childrenMap = new Map<string, string[]>()
@@ -1317,7 +1318,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             ) : null}
 
             {openDeckId && (() => {
-              const directCards = cards.filter((c) => c.deck === openDeckId && !c.deleted)
+              const directCards = cards.filter(
+                (c) => (c.deck === openDeckId || (c as any).deck_id === openDeckId) && !c.deleted,
+              )
               if (directCards.length === 0) return null
               return (
                 <div style={{ marginTop: 24 }}>
@@ -1406,7 +1409,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             })()}
 
             {!folderDecks.length &&
-              (!openDeckId || !cards.some((c) => c.deck === openDeckId && !c.deleted)) && (
+              (!openDeckId ||
+                !cards.some(
+                  (c) => (c.deck === openDeckId || (c as any).deck_id === openDeckId) && !c.deleted,
+                )) && (
                 <div className="mr-legacy-empty">
                   {openDeckId
                     ? 'Nenhuma pasta ou carta dentro desta ainda — use "＋ Nova Pasta" ou "＋ Carta" para começar.'

@@ -318,7 +318,8 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     const directCounts = new Map<string, number>()
     for (const c of localCards) {
       if (!c.deleted) {
-        directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
+        const deckKey = c.deck || (c as any).deck_id
+        if (deckKey) directCounts.set(deckKey, (directCounts.get(deckKey) || 0) + 1)
       }
     }
     const memo = new Map<string, number>()

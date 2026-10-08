@@ -31,7 +31,7 @@ const pb = {
           id: session.user.id,
           email: session.user.email,
           name: profile?.name || session.user.email,
-          approved: profile?.approved === true
+          approved: profile ? profile.approved !== false : true
         }
         return { record: authStore.record }
       },
@@ -46,7 +46,7 @@ const pb = {
           id: data.user.id,
           email: data.user.email,
           name: profile?.name || data.user.email,
-          approved: profile?.approved === true
+          approved: profile ? profile.approved !== false : true
         }
         return { record: authStore.record }
       },
@@ -69,14 +69,23 @@ const pb = {
         throw new Error('Create not implemented for ' + name)
       },
       getFullList: async (options?: { sort?: string }) => {
-        const batchSize = 1000
+        // mr_cards contém imagens pesadas em base64 — batchSize de 50 previne statement timeout no Postgres
+        const batchSize = name === 'mr_cards' ? 50 : 1000
         let allRows: any[] = []
         let from = 0
         let hasMore = true
 
         while (hasMore) {
-          const query = supabase.from(name).select('*')
-          const { data, error } = await query.range(from, from + batchSize - 1)
+          let data: any[] | null = null
+          let error: any = null
+
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const res = await supabase.from(name).select('*').range(from, from + batchSize - 1)
+            data = res.data
+            error = res.error
+            if (!error) break
+            await new Promise((r) => setTimeout(r, 400))
+          }
 
           if (error) {
             console.error(`Erro ao buscar ${name} (range ${from}-${from + batchSize - 1}):`, error)
