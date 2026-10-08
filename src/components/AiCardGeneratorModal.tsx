@@ -6,9 +6,10 @@ import {
   type GeneratedCard,
 } from '@/services/aiGenerator'
 import { createCard } from '@/services/medreview'
+import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Props {
-  decks: Array<{ id: string; title: string }>
+  decks: Array<{ id: string; title: string; kind?: string; parent?: string; deleted?: boolean }>
   initialDeckId?: string
   onClose: () => void
   onSuccess: () => void
@@ -249,23 +250,12 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
                   <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>
                     Pasta de destino
                   </label>
-                  <select
-                    value={deckId}
-                    onChange={(e) => setDeckId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: 10,
-                      border: '1.5px solid #cbd5e1',
-                      background: '#fff',
-                    }}
-                  >
-                    {decks.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                  </select>
+                  <FolderTreeSelect
+                    decks={decks}
+                    selectedDeckId={deckId}
+                    onSelect={(id) => setDeckId(id)}
+                    style={{ width: '100%' }}
+                  />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { OcclusionMask } from '@/services/imageOcclusion'
 import { createCard } from '@/services/medreview'
+import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Props {
-  decks: Array<{ id: string; title: string }>
+  decks: Array<{ id: string; title: string; kind?: string; parent?: string; deleted?: boolean }>
   initialDeckId?: string
   onClose: () => void
   onSuccess: () => void
@@ -497,25 +498,13 @@ export const ImageOcclusionModal: React.FC<Props> = ({
             <span style={{ color: '#555' }}>|</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: '.78rem', color: '#94a3b8', fontWeight: 700 }}>Baralho:</span>
-              <select
-                value={deckId}
-                onChange={(e) => setDeckId(e.target.value)}
-                style={{
-                  background: '#383838',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: 6,
-                  padding: '4px 8px',
-                  fontSize: '.8rem',
-                  outline: 'none',
-                }}
-              >
-                {decks.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.title}
-                  </option>
-                ))}
-              </select>
+              <FolderTreeSelect
+                decks={decks}
+                selectedDeckId={deckId}
+                onSelect={(id) => setDeckId(id)}
+                darkMode
+                style={{ minWidth: 220 }}
+              />
             </div>
           </div>
 

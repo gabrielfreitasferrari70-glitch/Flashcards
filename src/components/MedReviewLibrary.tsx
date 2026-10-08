@@ -5,17 +5,22 @@ import {
   createCard,
   createDeck,
   deleteCard,
+  deleteCardsBatch,
   deleteDeck,
+  deleteDecksBatch,
   importCards,
   importCardsAuto,
   moveCard,
+  moveCardsBatch,
   moveDeck,
   renameDeck,
   resetDeck,
   setCardSuspended,
+  setCardsSuspendedBatch,
   updateCard,
   uploadCardImage,
 } from '@/services/medreview'
+import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 type Deck = { id: string; title: string; kind: string; order: number; parent?: string }
 type Card = {
@@ -48,6 +53,7 @@ type ModalState =
   | { type: 'import'; deckId: string }
   | { type: 'importAuto' }
   | { type: 'move'; card: Card }
+  | { type: 'moveCardsBatch'; cardIds: string[] }
   | { type: 'moveDeck'; deckId: string }
   | { type: 'export' }
 
@@ -129,7 +135,10 @@ const libCss = `
 .mr-lib-modal h3{margin:0 0 4px;color:#14532d;font-size:1.1rem;font-weight:900}
 .mr-lib-modal p{margin:0 0 14px;color:#64748b;font-size:.83rem}
 .mr-lib-label{display:block;font-size:.8rem;font-weight:700;color:#475569;margin-bottom:4px}
-.mr-lib-notice{padding:0.7rem 0.9rem;border-radius:9px;margin-bottom:10px;font-size:.88rem}
+.mr-lib-checkbox{width:18px;height:18px;border-radius:5px;accent-color:#16a34a;cursor:pointer;flex-shrink:0;margin-top:2px}
+.mr-lib-bulk-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:12px;background:#f0fdf4;border:1.5px solid #86efac;margin-bottom:12px;flex-wrap:wrap;box-shadow:0 2px 8px rgba(22,163,74,.08)}
+.mr-lib-card-row.is-selected{border-color:#16a34a!important;background:#f0fdf4!important;box-shadow:0 0 0 1px #16a34a}
+.mr-lib-deck.is-selected{background:#f0fdf4!important;outline:2px solid #16a34a;outline-offset:-2px}
 @media(max-width:720px){.mr-lib-main{padding:16px 12px 48px}.mr-lib-deck{padding:11px 12px}.mr-lib-deck.is-child{padding-left:34px}.mr-lib-deck-actions{width:100%;padding-left:30px}.mr-lib-panel{padding:16px 14px}.mr-lib-panel-head h2{font-size:1.08rem}}
 `
 
@@ -215,11 +224,16 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
+  const [deckSelectionMode, setDeckSelectionMode] = useState(false)
+  const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set())
+  const [batchMoveTarget, setBatchMoveTarget] = useState('')
 
   useEffect(() => {
     if (selectedDeckId && !decks.some((deck) => deck.id === selectedDeckId)) {
       setSelectedDeckId('')
     }
+    setSelectedCardIds(new Set())
   }, [decks, selectedDeckId])
 
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId)
@@ -355,6 +369,91 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       await deleteDeck(deck.id)
       if (selectedDeckId === deck.id) setSelectedDeckId('')
     }, 'Pasta excluída.')
+  }
+
+  const toggleSelectCard = (id: string) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllCards = () => {
+    const allIds = deckCards.map((c) => c.id)
+    const isAllSelected = allIds.length > 0 && allIds.every((id) => selectedCardIds.has(id))
+    if (isAllSelected) {
+      setSelectedCardIds(new Set())
+    } else {
+      setSelectedCardIds(new Set(allIds))
+    }
+  }
+
+  const handleBatchDeleteCards = async () => {
+    const count = selectedCardIds.size
+    if (count === 0) return
+    if (
+      !window.confirm(
+        `Tem certeza que deseja excluir ${count} carta(s) selecionada(s)? Esta ação não pode ser desfeita.`,
+      )
+    )
+      return
+    await run(async () => {
+      await deleteCardsBatch(Array.from(selectedCardIds))
+      setSelectedCardIds(new Set())
+    }, `${count} carta(s) excluída(s).`)
+  }
+
+  const handleBatchSuspendCards = async (suspend: boolean) => {
+    const count = selectedCardIds.size
+    if (count === 0) return
+    await run(async () => {
+      await setCardsSuspendedBatch(Array.from(selectedCardIds), suspend)
+      setSelectedCardIds(new Set())
+    }, `${count} carta(s) ${suspend ? 'suspensas' : 'reativadas'}.`)
+  }
+
+  const submitBatchMoveCards = async () => {
+    if (modal.type !== 'moveCardsBatch' || !batchMoveTarget) return
+    const count = modal.cardIds.length
+    const done = await run(async () => {
+      await moveCardsBatch(modal.cardIds, batchMoveTarget)
+      setSelectedCardIds(new Set())
+      setSelectedDeckId(batchMoveTarget)
+    }, `${count} carta(s) movida(s).`)
+    if (done) {
+      setBatchMoveTarget('')
+      setModal({ type: 'none' })
+    }
+  }
+
+  const toggleSelectDeck = (id: string) => {
+    setSelectedDeckIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleBatchDeleteDecks = async () => {
+    const count = selectedDeckIds.size
+    if (count === 0) return
+    if (
+      !window.confirm(
+        `Excluir as ${count} pasta(s) selecionada(s) e todas as suas cartas e subpastas? Esta ação não pode ser desfeita.`,
+      )
+    )
+      return
+    await run(async () => {
+      await deleteDecksBatch(Array.from(selectedDeckIds))
+      if (selectedDeckId && selectedDeckIds.has(selectedDeckId)) {
+        setSelectedDeckId('')
+      }
+      setSelectedDeckIds(new Set())
+      setDeckSelectionMode(false)
+    }, `${count} pasta(s) excluída(s).`)
   }
   const resetDeckProgress = async (deck: Deck) => {
     const count = countOf(deck.id)
@@ -703,14 +802,16 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     const count = countOf(deck.id)
     const isOpen = !!expanded[deck.id]
     const isSeed = !!deck.title.match(/Tutoria \\\d+/) && deck.kind === 'tutoria'
+    const isDeckSelected = selectedDeckIds.has(deck.id)
 
     return (
       <div
         key={deck.id}
-        className={`mr-lib-deck${isChild ? ' is-child' : ''}${dragDeckId === deck.id ? ' is-dragging' : ''}`}
+        className={`mr-lib-deck${isChild ? ' is-child' : ''}${dragDeckId === deck.id ? ' is-dragging' : ''}${isDeckSelected ? ' is-selected' : ''}`}
         style={isChild ? { paddingLeft: 44 + (Number(isChild) - 1) * 22 } : undefined}
-        draggable
+        draggable={!deckSelectionMode}
         onDragStart={(e) => {
+          if (deckSelectionMode) return
           setDragDeckId(deck.id)
           e.dataTransfer.effectAllowed = 'move'
           try {
@@ -731,10 +832,26 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           if (dragOverOk(deck.id)) submitDragDeck(deck.id)
         }}
       >
+        {deckSelectionMode && (
+          <input
+            type="checkbox"
+            className="mr-lib-checkbox"
+            style={{ marginRight: 4 }}
+            checked={isDeckSelected}
+            onChange={(e) => {
+              e.stopPropagation()
+              toggleSelectDeck(deck.id)
+            }}
+          />
+        )}
         <button
           type="button"
           className="mr-lib-deck-name"
           onClick={() => {
+            if (deckSelectionMode) {
+              toggleSelectDeck(deck.id)
+              return
+            }
             setSelectedDeckId(deck.id)
             if (kids.length) setExpanded((e) => ({ ...e, [deck.id]: !e[deck.id] }))
           }}
@@ -800,6 +917,21 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
         </button>
         <strong className="mr-lib-title">📚 Biblioteca</strong>
         <span className="mr-lib-spacer" />
+        <button
+          className="mr-lib-mini"
+          style={
+            deckSelectionMode
+              ? { background: '#16a34a', color: '#fff', borderColor: '#15803d', fontWeight: 800 }
+              : undefined
+          }
+          onClick={() => {
+            const nextMode = !deckSelectionMode
+            setDeckSelectionMode(nextMode)
+            if (!nextMode) setSelectedDeckIds(new Set())
+          }}
+        >
+          {deckSelectionMode ? '✓ Sair da seleção' : '☑️ Selecionar pastas'}
+        </button>
         <button className="mr-lib-mini" onClick={() => setModal({ type: 'importAuto' })}>
           📥 Importar
         </button>
@@ -825,6 +957,49 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           </div>
         )}
 
+        {/* Barra de ação em lote para pastas */}
+        {deckSelectionMode && (
+          <div className="mr-lib-bulk-bar" style={{ background: '#ecfdf5', borderColor: '#6ee7b7', margin: '0 0 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '.88rem', fontWeight: 800, color: '#065f46' }}>
+                📁 Modo de Seleção de Pastas: {selectedDeckIds.size} pasta{selectedDeckIds.size > 1 ? 's' : ''} marcada{selectedDeckIds.size > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                className="mr-lib-mini danger"
+                disabled={selectedDeckIds.size === 0}
+                style={{
+                  fontWeight: 800,
+                  background: selectedDeckIds.size > 0 ? '#fee2e2' : '#f1f5f9',
+                  borderColor: selectedDeckIds.size > 0 ? '#fca5a5' : '#e2e8f0',
+                  cursor: selectedDeckIds.size > 0 ? 'pointer' : 'not-allowed',
+                }}
+                onClick={handleBatchDeleteDecks}
+              >
+                🗑️ Excluir Pastas Marcadas ({selectedDeckIds.size})
+              </button>
+              <button
+                className="mr-lib-mini"
+                style={{ background: '#fff' }}
+                onClick={() => setSelectedDeckIds(new Set())}
+              >
+                Desmarcar todas
+              </button>
+              <button
+                className="mr-lib-mini"
+                style={{ background: '#fff' }}
+                onClick={() => {
+                  setDeckSelectionMode(false)
+                  setSelectedDeckIds(new Set())
+                }}
+              >
+                ✕ Sair da seleção
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mr-lib-notice" style={{ background: '#f0fdf4', color: '#166534' }}>
           Os cartões-base ficam disponíveis na sua Biblioteca. Seu progresso e suas revisões são
           pessoais.
@@ -838,8 +1013,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
                   {selectedDeck.kind === 'prova' ? '📝' : '🩺'} {selectedDeck.title}
                 </h2>
                 <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: '.82rem' }}>
-                  {deckCards.length} cartas
-                  {selectedDeck.suspended !== undefined ? '' : ''} · gerencie as cartas desta pasta
+                  {deckCards.length} cartas · gerencie as cartas desta pasta
                 </p>
               </div>
               <button className="mr-lib-mini" onClick={() => setSelectedDeckId('')}>
@@ -866,41 +1040,122 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
                 ＋ Subpasta
               </button>
             </div>
+
+            {/* Ações em lote para Cartas */}
+            {deckCards.length > 0 && (
+              <div style={{ margin: '14px 0 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '.84rem', fontWeight: 700, color: '#334155' }}>
+                    <input
+                      type="checkbox"
+                      className="mr-lib-checkbox"
+                      style={{ marginTop: 0 }}
+                      checked={deckCards.length > 0 && deckCards.every((c) => selectedCardIds.has(c.id))}
+                      onChange={toggleSelectAllCards}
+                    />
+                    <span>Selecionar todas ({deckCards.length})</span>
+                  </label>
+                  {selectedCardIds.size > 0 && (
+                    <span style={{ fontSize: '.82rem', color: '#16a34a', fontWeight: 800 }}>
+                      {selectedCardIds.size} de {deckCards.length} selecionada{selectedCardIds.size > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+
+                {selectedCardIds.size > 0 && (
+                  <div className="mr-lib-bulk-bar">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: '.86rem', fontWeight: 800, color: '#15803d' }}>
+                        ✓ {selectedCardIds.size} carta{selectedCardIds.size > 1 ? 's' : ''} selecionada{selectedCardIds.size > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        className="mr-lib-mini danger"
+                        style={{ fontWeight: 800, background: '#fee2e2', borderColor: '#fca5a5' }}
+                        onClick={handleBatchDeleteCards}
+                      >
+                        🗑️ Excluir Selecionadas ({selectedCardIds.size})
+                      </button>
+                      <button
+                        className="mr-lib-mini"
+                        onClick={() => handleBatchSuspendCards(true)}
+                      >
+                        ⏸ Suspender ({selectedCardIds.size})
+                      </button>
+                      <button
+                        className="mr-lib-mini"
+                        onClick={() => handleBatchSuspendCards(false)}
+                      >
+                        ▶ Retomar ({selectedCardIds.size})
+                      </button>
+                      <button
+                        className="mr-lib-mini"
+                        onClick={() => setModal({ type: 'moveCardsBatch', cardIds: Array.from(selectedCardIds) })}
+                      >
+                        ➡️ Mover ({selectedCardIds.size})
+                      </button>
+                      <button
+                        className="mr-lib-mini"
+                        style={{ background: '#fff' }}
+                        onClick={() => setSelectedCardIds(new Set())}
+                      >
+                        Desmarcar todas
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {deckCards.length === 0 ? (
               <div className="mr-lib-empty">
                 Nenhuma carta nesta pasta ainda. Crie a primeira com “＋ Nova carta” ou importe um
                 CSV/JSON.
               </div>
             ) : (
-              deckCards.map((card) => (
-                <article key={card.id} className="mr-lib-card-row">
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div className="mr-lib-card-q">{card.q}</div>
-                    <div className="mr-lib-card-chips">
-                      {card.group && <span className="mr-lib-card-chip">{card.group}</span>}
-                      {card.ref && <span className="mr-lib-card-chip">📚 {card.ref}</span>}
-                      {card.suspended && <span className="mr-lib-card-chip susp">⏸ suspensa</span>}
+              deckCards.map((card) => {
+                const isSelected = selectedCardIds.has(card.id)
+                return (
+                  <article
+                    key={card.id}
+                    className={`mr-lib-card-row${isSelected ? ' is-selected' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mr-lib-checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectCard(card.id)}
+                      style={{ marginTop: 2, marginRight: 2 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div className="mr-lib-card-q">{card.q}</div>
+                      <div className="mr-lib-card-chips">
+                        {card.group && <span className="mr-lib-card-chip">{card.group}</span>}
+                        {card.ref && <span className="mr-lib-card-chip">📚 {card.ref}</span>}
+                        {card.suspended && <span className="mr-lib-card-chip susp">⏸ suspensa</span>}
+                      </div>
                     </div>
-                  </div>
-                  <div className="mr-lib-card-actions">
-                    <button
-                      className="mr-lib-mini"
-                      onClick={() => openCardModal(selectedDeck.id, card)}
-                    >
-                      ✏️ Editar
-                    </button>
-                    <button className="mr-lib-mini" onClick={() => openMoveModal(card)}>
-                      ➡️ Mover
-                    </button>
-                    <button className="mr-lib-mini" onClick={() => toggleSuspended(card)}>
-                      {card.suspended ? '▶ Retomar' : '⏸ Suspender'}
-                    </button>
-                    <button className="mr-lib-mini danger" onClick={() => removeCard(card)}>
-                      🗑️
-                    </button>
-                  </div>
-                </article>
-              ))
+                    <div className="mr-lib-card-actions">
+                      <button
+                        className="mr-lib-mini"
+                        onClick={() => openCardModal(selectedDeck.id, card)}
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button className="mr-lib-mini" onClick={() => openMoveModal(card)}>
+                        ➡️ Mover
+                      </button>
+                      <button className="mr-lib-mini" onClick={() => toggleSuspended(card)}>
+                        {card.suspended ? '▶ Retomar' : '⏸ Suspender'}
+                      </button>
+                      <button className="mr-lib-mini danger" onClick={() => removeCard(card)}>
+                        🗑️
+                      </button>
+                    </div>
+                  </article>
+                )
+              })
             )}
           </section>
         )}
@@ -1215,6 +1470,34 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button style={actionStyle} disabled={busy} onClick={submitMove}>
                 {busy ? 'Movendo…' : 'Mover'}
+              </button>
+              <button style={secondaryStyle} onClick={() => setModal({ type: 'none' })}>
+                Cancelar
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {modal.type === 'moveCardsBatch' && (
+          <Modal
+            title={`Mover ${modal.cardIds.length} carta(s)`}
+            subtitle="Escolha a pasta de destino para transferir as cartas selecionadas."
+            onClose={() => setModal({ type: 'none' })}
+          >
+            <label className="mr-lib-label">Pasta de destino</label>
+            <FolderTreeSelect
+              decks={decks}
+              selectedDeckId={batchMoveTarget}
+              onSelect={setBatchMoveTarget}
+              style={{ width: '100%', marginBottom: 12 }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button
+                style={actionStyle}
+                disabled={busy || !batchMoveTarget}
+                onClick={submitBatchMoveCards}
+              >
+                {busy ? 'Movendo…' : `Mover ${modal.cardIds.length} carta(s)`}
               </button>
               <button style={secondaryStyle} onClick={() => setModal({ type: 'none' })}>
                 Cancelar

@@ -237,6 +237,50 @@ export const deleteCard = async (cardId: string) => {
   return true
 }
 
+export const deleteCardsBatch = async (cardIds: string[]) => {
+  if (cardIds.length === 0) return true
+  const { error } = await supabase.from('mr_cards').delete().in('id', cardIds)
+  if (error) throw error
+  return true
+}
+
+export const setCardsSuspendedBatch = async (cardIds: string[], suspended: boolean) => {
+  if (cardIds.length === 0) return true
+  const { error } = await supabase.from('mr_cards').update({ suspended }).in('id', cardIds)
+  if (error) throw error
+  return true
+}
+
+export const moveCardsBatch = async (cardIds: string[], deckId: string) => {
+  if (cardIds.length === 0) return true
+  const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).in('id', cardIds)
+  if (error) throw error
+  return true
+}
+
+export const deleteDecksBatch = async (deckIds: string[]) => {
+  if (deckIds.length === 0) return true
+  const { data: allDecks } = await supabase.from('mr_decks').select('id, parent')
+  const toDelete = new Set<string>(deckIds)
+  if (allDecks) {
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const d of allDecks) {
+        if (d.parent && toDelete.has(d.parent) && !toDelete.has(d.id)) {
+          toDelete.add(d.id)
+          changed = true
+        }
+      }
+    }
+  }
+  const deleteArray = Array.from(toDelete)
+  await supabase.from('mr_cards').delete().in('deck_id', deleteArray)
+  const { error } = await supabase.from('mr_decks').delete().in('id', deleteArray)
+  if (error) throw error
+  return true
+}
+
 // Stubs for complex operations that we are simplifying
 export const moveDeck = async (deckId: string, parent: string, rootKind?: string) => {
   const updates: any = {}
@@ -262,7 +306,11 @@ export const moveDeckSection = async (fromKind: string, parent: string, rootKind
 export const undoMoveSection = async () => {}
 export const repairSection = async () => {}
 export const resetDeck = async () => {}
-export const moveCard = async () => {}
+export const moveCard = async (cardId: string, deckId: string) => {
+  const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).eq('id', cardId)
+  if (error) throw error
+  return true
+}
 export const importCards = async () => {}
 export const importCardsAuto = async () => {}
 export const uploadCardImage = async () => {}

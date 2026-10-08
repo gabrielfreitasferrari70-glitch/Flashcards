@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { parseAnkiFile, type AnkiPackageResult } from '@/lib/ankiParser'
 import { createDeck, createCardsBatch } from '@/services/medreview'
+import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Deck {
   id: string
@@ -340,25 +341,12 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                     }}
                   />
                 ) : (
-                  <select
-                    value={targetDeckOption}
-                    onChange={(e) => setTargetDeckOption(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '.88rem',
-                      fontFamily: 'inherit',
-                      outline: 'none',
-                    }}
-                  >
-                    {decks.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.title}
-                      </option>
-                    ))}
-                  </select>
+                  <FolderTreeSelect
+                    decks={decks}
+                    selectedDeckId={targetDeckOption}
+                    onSelect={(id) => setTargetDeckOption(id)}
+                    style={{ width: '100%' }}
+                  />
                 )}
               </div>
 

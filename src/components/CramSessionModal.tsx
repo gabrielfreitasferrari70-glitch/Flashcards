@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Deck {
   id: string
@@ -81,6 +82,11 @@ export const CramSessionModal: React.FC<Props> = ({
     }
     return Array.from(tagsSet).sort()
   }, [cards])
+
+  const cramDecks = useMemo(() => [
+    { id: 'all', title: `📚 Todas as cartas da biblioteca médica (${cards.filter(c => !c.deleted).length} cartas)` },
+    ...decks,
+  ], [decks, cards])
 
   // Filtra e ordena as cartas com base nas escolhas
   const filteredAndSortedCards = useMemo(() => {
@@ -223,32 +229,12 @@ export const CramSessionModal: React.FC<Props> = ({
             <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 800, color: '#1e293b', marginBottom: 6 }}>
               📁 Escolha a Pasta ou Conteúdo
             </label>
-            <select
-              value={selectedDeckId}
-              onChange={(e) => setSelectedDeckId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1.5px solid #cbd5e1',
-                fontSize: '.88rem',
-                fontFamily: 'inherit',
-                outline: 'none',
-                background: '#f8fafc',
-              }}
-            >
-              <option value="all">📚 Todas as cartas da biblioteca médica ({cards.filter(c => !c.deleted).length} cartas)</option>
-              {decks
-                .filter((d) => !d.parent)
-                .map((d) => {
-                  const count = cards.filter((c) => c.deck === d.id && !c.deleted).length
-                  return (
-                    <option key={d.id} value={d.id}>
-                      {d.title} ({count} cartas)
-                    </option>
-                  )
-                })}
-            </select>
+            <FolderTreeSelect
+              decks={cramDecks}
+              selectedDeckId={selectedDeckId}
+              onSelect={(id) => setSelectedDeckId(id)}
+              style={{ width: '100%' }}
+            />
           </div>
 
           {/* Filtro por Tag (se houver) */}
