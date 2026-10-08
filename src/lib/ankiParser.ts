@@ -1,13 +1,15 @@
 /**
- * MedReview Anki Universal Parser (Fidelidade Total com Imagens e Cloze)
- * 1. Arquivos de pacote Anki (*.apkg): Descompacta com JSZip, decodifica mídia em Base64 Data URLs
- *    e lê o banco SQLite nativo (collection.anki2) usando sql.js (WebAssembly).
- * 2. Suporta notas com Imagens (PNG, JPG, SVG, WebP), Cloze Deletion e Image Occlusion.
- * 3. Arquivos de texto (*.txt, *.tsv, *.csv) exportados do Anki.
+ * MedReview Anki Universal Parser (Compatibilidade com Anki Moderno 2.1.50+, 23+, 24+)
+ * 1. Descompacta pacotes .apkg com JSZip.
+ * 2. Suporta descompressão de bancos Zstandard (Zstd) em collection.anki21b usando fzstd.
+ * 3. Ignora os cartões dummy ("Atualize para a versão mais recente do Anki...") inseridos pelo Anki moderno em collection.anki2.
+ * 4. Decodifica mapa de mídia (media ou media.zst) e converte fotos em Base64 Data URLs.
+ * 5. Abre a base de dados real com sql.js e extrai 100% dos cartões com suas imagens e formatação.
  */
 
 import JSZip from 'jszip'
 import initSqlJs from 'sql.js'
+import { decompress } from 'fzstd'
 
 export interface ParsedAnkiCard {
   q: string
@@ -41,6 +43,40 @@ function getMimeType(fileName: string): string {
 }
 
 /**
+ * Converte Uint8Array para Base64 de forma eficiente e segura para arquivos grandes
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const len = bytes.byteLength
+  const chunkSize = 8192
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len))
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
+  }
+  return btoa(binary)
+}
+
+/**
+ * Descompacta bytes caso comecem com o magic number do Zstandard (0xFD2FB528 -> [0x28, 0xb5, 0x2f, 0xfd])
+ */
+function decompressIfZstd(bytes: Uint8Array): Uint8Array {
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x28 &&
+    bytes[1] === 0xb5 &&
+    bytes[2] === 0x2f &&
+    bytes[3] === 0xfd
+  ) {
+    try {
+      return decompress(bytes)
+    } catch (e) {
+      console.warn('Falha na descompressão Zstd, tentando bytes brutos:', e)
+    }
+  }
+  return bytes
+}
+
+/**
  * Limpa HTML mantendo quebras de linha e estrutura legível
  */
 export function cleanAnkiHtml(html: string): string {
@@ -62,8 +98,7 @@ export function cleanAnkiHtml(html: string): string {
 }
 
 /**
- * Substitui caminhos de imagem locais do Anki (<img src="paste-123.png">)
- * pelos Data URLs em Base64 extraídos da pasta de mídia do .apkg
+ * Substitui tags de imagem (<img src="paste-123.png">) pelos Data URLs em Base64
  */
 function injectMediaIntoHtml(html: string, mediaMap: Map<string, string>): string {
   if (!html) return ''
@@ -79,8 +114,8 @@ function injectMediaIntoHtml(html: string, mediaMap: Map<string, string>): strin
 }
 
 /**
- * Para cartas Cloze com múltiplos índices (ex: c1, c2):
- * Apenas a lacuna alvo do card fica no formato {{c1::...}}; as demais são exibidas reveladas.
+ * Para cartas Cloze com múltiplos índices:
+ * Apenas a lacuna ativa do card vira {{c1::...}}; as demais são exibidas normalmente como no Anki.
  */
 function formatClozeForCard(text: string, targetIndex: number): string {
   return text.replace(/\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}/g, (_, numStr, term, tip) => {
@@ -93,39 +128,95 @@ function formatClozeForCard(text: string, targetIndex: number): string {
 }
 
 /**
- * Processa pacotes .apkg com sql.js e JSZip
+ * Processa pacotes .apkg com suporte total a Anki moderno (collection.anki21b / Zstd)
  */
 export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): Promise<AnkiPackageResult> {
   const zip = await JSZip.loadAsync(fileBuffer)
 
-  // 1. Extrai mapeamento de mídia
+  // 1. Extrai mapeamento de mídia (suporta 'media' ou 'media.zst')
   const mediaMap = new Map<string, string>()
+  let mediaJsonText = ''
+
+  const mediaZstFile = zip.file('media.zst')
   const mediaFile = zip.file('media')
-  if (mediaFile) {
+
+  if (mediaZstFile) {
     try {
-      const mediaJson = JSON.parse(await mediaFile.async('text')) as Record<string, string>
+      const raw = await mediaZstFile.async('uint8array')
+      const decompressed = decompressIfZstd(raw)
+      mediaJsonText = new TextDecoder('utf-8').decode(decompressed)
+    } catch (e) {
+      console.warn('Erro ao ler media.zst:', e)
+    }
+  } else if (mediaFile) {
+    try {
+      mediaJsonText = await mediaFile.async('text')
+    } catch (e) {
+      console.warn('Erro ao ler media:', e)
+    }
+  }
+
+  if (mediaJsonText) {
+    try {
+      const mediaJson = JSON.parse(mediaJsonText) as Record<string, string>
       for (const [zipKey, realName] of Object.entries(mediaJson)) {
         const entry = zip.file(zipKey)
         if (entry) {
-          const base64Data = await entry.async('base64')
+          let rawBytes = await entry.async('uint8array')
+          rawBytes = decompressIfZstd(rawBytes)
           const mime = getMimeType(realName)
+          const base64Data = uint8ArrayToBase64(rawBytes)
           const dataUrl = `data:${mime};base64,${base64Data}`
           mediaMap.set(realName, dataUrl)
           mediaMap.set(decodeURIComponent(realName), dataUrl)
         }
       }
     } catch (e) {
-      console.warn('Erro ao ler mapa de mídia do Anki:', e)
+      console.warn('Erro ao decodificar arquivos de mídia do Anki:', e)
     }
   }
 
-  // 2. Extrai banco SQLite (collection.anki2 ou collection.anki21)
-  const dbFile = zip.file('collection.anki2') || zip.file('collection.anki21')
-  if (!dbFile) {
-    throw new Error('Não foi possível encontrar a base de dados collection.anki2 dentro do arquivo .apkg.')
+  // 2. Localiza a base SQLite com a prioridade correta:
+  // Anki 2.1.50+ armazena o banco real em collection.anki21b compactado com Zstandard.
+  // collection.anki2 é apenas um placeholder de aviso de compatibilidade.
+  const zipFiles = Object.keys(zip.files)
+  let dbFileName = ''
+
+  // Prioridade 1: collection.anki21b
+  for (const f of zipFiles) {
+    if (f.toLowerCase().includes('anki21b')) {
+      dbFileName = f
+      break
+    }
   }
 
-  const dbBytes = await dbFile.async('uint8array')
+  // Prioridade 2: collection.anki21
+  if (!dbFileName) {
+    for (const f of zipFiles) {
+      if (f.toLowerCase().includes('anki21')) {
+        dbFileName = f
+        break
+      }
+    }
+  }
+
+  // Prioridade 3: collection.anki2
+  if (!dbFileName) {
+    for (const f of zipFiles) {
+      if (f.toLowerCase().includes('anki2')) {
+        dbFileName = f
+        break
+      }
+    }
+  }
+
+  if (!dbFileName) {
+    throw new Error('Nenhum banco de dados do Anki foi encontrado no arquivo .apkg.')
+  }
+
+  const rawDbBytes = await zip.file(dbFileName)!.async('uint8array')
+  // Descompacta Zstandard se necessário
+  const dbBytes = decompressIfZstd(rawDbBytes)
 
   // Inicializa o engine SQLite WebAssembly
   const SQL = await initSqlJs({
@@ -139,10 +230,8 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
     const colRes = db.exec('SELECT decks FROM col LIMIT 1;')
     if (colRes.length && colRes[0].values.length) {
       const decksJson = JSON.parse(colRes[0].values[0][0] as string)
-      // Pega o primeiro deck com nome diferente de "Default" se houver
       for (const d of Object.values(decksJson) as any[]) {
         if (d && d.name && d.name !== 'Default') {
-          // Em Anki, subdecks usam "::", ex: "Medicina::Cardiologia"
           const cleanName = d.name.replace(/::/g, ' — ').trim()
           if (!detectedDeckName || cleanName.length > detectedDeckName.length) {
             detectedDeckName = cleanName
@@ -162,7 +251,7 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
   const cards: ParsedAnkiCard[] = []
 
   try {
-    // Tenta join padrão cards + notes
+    // Join padrão cards + notes
     const res = db.exec(
       'SELECT c.id, c.nid, c.ord, n.flds, n.tags FROM cards c JOIN notes n ON c.nid = n.id ORDER BY c.id ASC;'
     )
@@ -184,22 +273,36 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
         let a = ''
 
         if (isCloze) {
-          // Carta Cloze: formata a lacuna correspondente a este card
           const targetIndex = ord + 1
           q = formatClozeForCard(processedFields[0], targetIndex)
-          // Verso contém o texto completo revelado + extras
-          const extra = processedFields[1] ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1">${processedFields[1]}</div>` : ''
+          const extra = processedFields[1]
+            ? `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1">${processedFields[1]}</div>`
+            : ''
           a = processedFields[0].replace(/\{\{c\d+::(.*?)(?:::(.*?))?\}\}/g, '$1') + extra
-        } else if (processedFields.length >= 4 && (processedFields[1].includes('<img') || processedFields[2].includes('<img'))) {
-          // Possível Image Occlusion Enhanced
-          // Field 0: Header, 1: Imagem original/pergunta, 2: Máscara pergunta, 3: Resposta, 4: Notas
-          const header = processedFields[0] ? `<div style="font-weight:700;margin-bottom:8px">${processedFields[0]}</div>` : ''
+        } else if (
+          processedFields.length >= 4 &&
+          (processedFields[1].includes('<img') || processedFields[2].includes('<img'))
+        ) {
+          // Image Occlusion Enhanced
+          const header = processedFields[0]
+            ? `<div style="font-weight:700;margin-bottom:8px">${processedFields[0]}</div>`
+            : ''
           q = header + processedFields[1] + (processedFields[2] ? processedFields[2] : '')
-          a = (processedFields[3] ? processedFields[3] : processedFields[1]) + (processedFields[4] ? `<div style="margin-top:10px">${processedFields[4]}</div>` : '')
+          a =
+            (processedFields[3] ? processedFields[3] : processedFields[1]) +
+            (processedFields[4] ? `<div style="margin-top:10px">${processedFields[4]}</div>` : '')
         } else {
-          // Carta básica tradicional
+          // Carta básica convencional
           q = processedFields[0]
           a = processedFields.slice(1).filter(Boolean).join('<br><br>') || 'Revisão'
+        }
+
+        // Filtra cartões de aviso dummy de atualização do Anki
+        if (
+          q.includes('Atualize para a versão mais recente') ||
+          q.includes('Please update to the latest Anki version')
+        ) {
+          continue
         }
 
         const tags = tagsRaw.trim().split(/\s+/).filter(Boolean)
@@ -215,10 +318,10 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
       }
     }
   } catch (err) {
-    console.warn('Join cards+notes falhou, tentando fallback direto em notes:', err)
+    console.warn('Join cards+notes falhou, tentando fallback em notes:', err)
   }
 
-  // Se o join falhou ou não retornou cartões, faz leitura direta da tabela notes
+  // Fallback se cards join não retornou cartões
   if (cards.length === 0) {
     try {
       const notesRes = db.exec('SELECT id, flds, tags FROM notes ORDER BY id ASC;')
@@ -231,6 +334,14 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
           const isCloze = /\{\{c\d+::.*?\}\}/.test(fields[0])
           const q = fields[0] || ''
           const a = fields.slice(1).filter(Boolean).join('<br><br>') || (isCloze ? 'Complete a lacuna' : 'Revisão')
+
+          if (
+            q.includes('Atualize para a versão mais recente') ||
+            q.includes('Please update to the latest Anki version')
+          ) {
+            continue
+          }
+
           const tags = tagsRaw.trim().split(/\s+/).filter(Boolean)
 
           if (q && q.trim()) {
@@ -244,11 +355,17 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
         }
       }
     } catch (e2) {
-      console.error('Fallback notes também falhou:', e2)
+      console.error('Fallback notes falhou:', e2)
     }
   }
 
   db.close()
+
+  if (cards.length === 0) {
+    throw new Error(
+      'Não foi possível encontrar cartões válidos no arquivo do Anki. Certifique-se de que o baralho exportado contém notas com conteúdo.'
+    )
+  }
 
   return {
     deckName: detectedDeckName,
@@ -313,6 +430,13 @@ export function parseAnkiText(content: string, fileName: string): AnkiPackageRes
       }
     }
 
+    if (
+      q.includes('Atualize para a versão mais recente') ||
+      q.includes('Please update to the latest Anki version')
+    ) {
+      continue
+    }
+
     if (q) {
       const isCloze = /\{\{c\d+::.*?\}\}/.test(q)
       cards.push({
@@ -329,11 +453,11 @@ export function parseAnkiText(content: string, fileName: string): AnkiPackageRes
 }
 
 /**
- * Função unificada chamada pela UI
+ * Função unificada chamada pela interface
  */
 export async function parseAnkiFile(file: File): Promise<AnkiPackageResult> {
   const name = file.name
-  const isApkg = name.toLowerCase().endsWith('.apkg')
+  const isApkg = name.toLowerCase().endsWith('.apkg') || name.toLowerCase().endsWith('.colpkg')
 
   if (isApkg) {
     const buffer = await file.arrayBuffer()
