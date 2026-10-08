@@ -71,6 +71,10 @@ const pb = {
       getFullList: async (options?: { sort?: string }) => {
         let query = supabase.from(name).select('*')
         
+        if (name === 'mr_decks' || name === 'mr_cards') {
+          query = query.or('deleted.is.null,deleted.eq.false')
+        }
+
         if (options?.sort) {
           const isDesc = options.sort.startsWith('-')
           let col = isDesc ? options.sort.substring(1) : options.sort
@@ -79,6 +83,8 @@ const pb = {
           query = query.order(col, { ascending: !isDesc })
         }
         
+        query = query.limit(10000)
+
         const { data, error } = await query
         if (error) {
           console.error(`Erro ao buscar ${name}:`, error)

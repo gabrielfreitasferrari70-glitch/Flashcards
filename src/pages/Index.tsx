@@ -2624,7 +2624,9 @@ export default function Index() {
         `Excluir “${deck.title}”? As cartas desta pasta também saem da sua biblioteca.`,
       )
     )
-      return
+    // Otimista: remove da tela imediatamente
+    setDecks((prev) => prev.filter((d) => d.id !== deckId && d.parent !== deckId))
+    setCards((prev) => prev.filter((c) => c.deck !== deckId))
     deleteDeck(deckId)
       .then(async () => {
         const parentId = deck.parent || ''

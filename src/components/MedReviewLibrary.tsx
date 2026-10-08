@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, useCallback } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import { parseCardsFromCsv, type ParsedCsvCard } from '@/lib/csvImport'
 import {
@@ -228,51 +228,93 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const [deckSelectionMode, setDeckSelectionMode] = useState(false)
   const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set())
   const [batchMoveTarget, setBatchMoveTarget] = useState('')
+  const [localCards, setLocalCards] = useState<Card[]>(cards)
+  const [localDecks, setLocalDecks] = useState<Deck[]>(decks)
+  const [cardDisplayLimit, setCardDisplayLimit] = useState(50)
 
   useEffect(() => {
-    if (selectedDeckId && !decks.some((deck) => deck.id === selectedDeckId)) {
+    setLocalCards(cards)
+  }, [cards])
+
+  useEffect(() => {
+    setLocalDecks(decks)
+  }, [decks])
+
+  useEffect(() => {
+    if (selectedDeckId && !localDecks.some((deck) => deck.id === selectedDeckId)) {
       setSelectedDeckId('')
     }
     setSelectedCardIds(new Set())
-  }, [decks, selectedDeckId])
+    setCardDisplayLimit(50)
+  }, [localDecks, selectedDeckId])
 
-  const selectedDeck = decks.find((deck) => deck.id === selectedDeckId)
+  const selectedDeck = localDecks.find((deck) => deck.id === selectedDeckId)
   const deckCards = useMemo(
-    () => cards.filter((card) => card.deck === selectedDeckId),
-    [cards, selectedDeckId],
+    () => localCards.filter((card) => card.deck === selectedDeckId && !card.deleted),
+    [localCards, selectedDeckId],
   )
-  // Contador por SUBÁRVORE: pasta organizadora tem as cartas nas filhas —
-  // contar a árvore inteira, não só cartas diretas.
-  const countOf = (deckId: string) => {
-    const seen = new Set<string>([deckId])
-    let grew = true
-    while (grew) {
-      grew = false
-      for (const d of decks) {
-        if (d.parent && seen.has(d.parent) && !seen.has(d.id) && !d.deleted) {
-          seen.add(d.id)
-          grew = true
-        }
+
+  // Mapa O(1) de subpastas (elimina filtros repetidos O(N) por pasta)
+  const childrenMap = useMemo(() => {
+    const map = new Map<string, Deck[]>()
+    for (const d of localDecks) {
+      if (d.parent && !d.deleted) {
+        const arr = map.get(d.parent)
+        if (arr) arr.push(d)
+        else map.set(d.parent, [d])
       }
     }
-    return cards.filter((c) => seen.has(c.deck) && !c.deleted).length
-  }
-  const childrenOf = (deckId: string) =>
-    decks.filter((d) => d.parent === deckId).sort((a, b) => compareDecks(a, b))
-  const subtreeIdsOf = (deckId: string) => {
-    const seen = new Set<string>([deckId])
-    let grew = true
-    while (grew) {
-      grew = false
-      for (const deck of decks) {
-        if (deck.parent && seen.has(deck.parent) && !seen.has(deck.id) && !deck.deleted) {
-          seen.add(deck.id)
-          grew = true
-        }
+    for (const [, arr] of map) {
+      arr.sort((a, b) => compareDecks(a, b))
+    }
+    return map
+  }, [localDecks])
+
+  const childrenOf = useCallback((deckId: string) => childrenMap.get(deckId) || [], [childrenMap])
+
+  // Contagem O(N) pré-calculada por subárvore (elimina loops aninhados pesados)
+  const cardsInSubtree = useMemo(() => {
+    const directCounts = new Map<string, number>()
+    for (const c of localCards) {
+      if (!c.deleted) {
+        directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
       }
     }
-    return [...seen].filter((id) => id !== deckId)
-  }
+    const memo = new Map<string, number>()
+    const countDeck = (id: string, visited = new Set<string>()): number => {
+      if (visited.has(id)) return 0
+      visited.add(id)
+      if (memo.has(id)) return memo.get(id)!
+      let sum = directCounts.get(id) || 0
+      const kids = childrenMap.get(id)
+      if (kids) {
+        for (const k of kids) sum += countDeck(k.id, visited)
+      }
+      memo.set(id, sum)
+      return sum
+    }
+    for (const d of localDecks) {
+      if (!d.deleted) countDeck(d.id)
+    }
+    return (id: string) => memo.get(id) || 0
+  }, [localDecks, localCards, childrenMap])
+
+  const countOf = (deckId: string) => cardsInSubtree(deckId)
+
+  const subtreeIdsOf = useCallback((deckId: string): string[] => {
+    const res: string[] = []
+    const queue = [deckId]
+    while (queue.length > 0) {
+      const cur = queue.pop()!
+      const kids = childrenMap.get(cur) || []
+      for (const k of kids) {
+        res.push(k.id)
+        queue.push(k.id)
+      }
+    }
+    return res
+  }, [childrenMap])
+
   const sections: {
     key: string
     icon: string
@@ -302,13 +344,13 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       kind: 'custom',
     },
   ]
-  const rootDecksOf = (kind: string) =>
-    decks
-      .filter((d) => d.kind === kind && !d.parent && !d.deleted)
-      .sort((a, b) => compareDecks(a, b))
-  // Só mostramos seções com conteúdo na raiz. O comando global "Nova pasta"
-  // abaixo continua oferecendo todas as três categorias, então uma seção vazia
-  // não vira um beco sem saída para criação.
+  const rootDecksOf = useCallback(
+    (kind: string) =>
+      localDecks
+        .filter((d) => d.kind === kind && !d.parent && !d.deleted)
+        .sort((a, b) => compareDecks(a, b)),
+    [localDecks],
+  )
   const visibleSections = sections.filter((section) => rootDecksOf(section.kind).length > 0)
 
   const run = async (task: () => Promise<void>, okMsg?: string) => {
@@ -365,9 +407,15 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       )
     )
       return
+    const idsToDelete = new Set([deck.id, ...subtreeIdsOf(deck.id)])
+    // Otimista: remove instantaneamente da interface
+    setLocalDecks((prev) => prev.filter((d) => !idsToDelete.has(d.id)))
+    setLocalCards((prev) => prev.filter((c) => !idsToDelete.has(c.deck)))
+    if (selectedDeckId && idsToDelete.has(selectedDeckId)) {
+      setSelectedDeckId('')
+    }
     await run(async () => {
       await deleteDeck(deck.id)
-      if (selectedDeckId === deck.id) setSelectedDeckId('')
     }, 'Pasta excluída.')
   }
 
@@ -399,33 +447,44 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       )
     )
       return
+    const idsToDelete = new Set(selectedCardIds)
+    // Otimista: remove instantaneamente da interface
+    setLocalCards((prev) => prev.filter((c) => !idsToDelete.has(c.id)))
+    setSelectedCardIds(new Set())
     await run(async () => {
-      await deleteCardsBatch(Array.from(selectedCardIds))
-      setSelectedCardIds(new Set())
+      await deleteCardsBatch(Array.from(idsToDelete))
     }, `${count} carta(s) excluída(s).`)
   }
 
   const handleBatchSuspendCards = async (suspend: boolean) => {
     const count = selectedCardIds.size
     if (count === 0) return
+    const ids = new Set(selectedCardIds)
+    // Otimista: atualiza status imediatamente
+    setLocalCards((prev) =>
+      prev.map((c) => (ids.has(c.id) ? { ...c, suspended: suspend } : c)),
+    )
+    setSelectedCardIds(new Set())
     await run(async () => {
-      await setCardsSuspendedBatch(Array.from(selectedCardIds), suspend)
-      setSelectedCardIds(new Set())
+      await setCardsSuspendedBatch(Array.from(ids), suspend)
     }, `${count} carta(s) ${suspend ? 'suspensas' : 'reativadas'}.`)
   }
 
   const submitBatchMoveCards = async () => {
     if (modal.type !== 'moveCardsBatch' || !batchMoveTarget) return
     const count = modal.cardIds.length
-    const done = await run(async () => {
-      await moveCardsBatch(modal.cardIds, batchMoveTarget)
-      setSelectedCardIds(new Set())
-      setSelectedDeckId(batchMoveTarget)
+    const ids = new Set(modal.cardIds)
+    // Otimista: move para o novo baralho na interface
+    setLocalCards((prev) =>
+      prev.map((c) => (ids.has(c.id) ? { ...c, deck: batchMoveTarget } : c)),
+    )
+    setSelectedCardIds(new Set())
+    setSelectedDeckId(batchMoveTarget)
+    setBatchMoveTarget('')
+    setModal({ type: 'none' })
+    await run(async () => {
+      await moveCardsBatch(Array.from(ids), batchMoveTarget)
     }, `${count} carta(s) movida(s).`)
-    if (done) {
-      setBatchMoveTarget('')
-      setModal({ type: 'none' })
-    }
   }
 
   const toggleSelectDeck = (id: string) => {
@@ -446,13 +505,24 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       )
     )
       return
-    await run(async () => {
-      await deleteDecksBatch(Array.from(selectedDeckIds))
-      if (selectedDeckId && selectedDeckIds.has(selectedDeckId)) {
-        setSelectedDeckId('')
+    const allIds = new Set<string>()
+    for (const id of selectedDeckIds) {
+      allIds.add(id)
+      for (const subId of subtreeIdsOf(id)) {
+        allIds.add(subId)
       }
-      setSelectedDeckIds(new Set())
-      setDeckSelectionMode(false)
+    }
+    const deckIdsArray = Array.from(selectedDeckIds)
+    // Otimista: remove instantaneamente da interface
+    setLocalDecks((prev) => prev.filter((d) => !allIds.has(d.id)))
+    setLocalCards((prev) => prev.filter((c) => !allIds.has(c.deck)))
+    if (selectedDeckId && allIds.has(selectedDeckId)) {
+      setSelectedDeckId('')
+    }
+    setSelectedDeckIds(new Set())
+    setDeckSelectionMode(false)
+    await run(async () => {
+      await deleteDecksBatch(deckIdsArray)
     }, `${count} pasta(s) excluída(s).`)
   }
   const resetDeckProgress = async (deck: Deck) => {
@@ -729,17 +799,29 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     )
     if (done) setModal({ type: 'none' })
   }
-  const toggleSuspended = (card: Card) =>
-    run(
+  const toggleSuspended = (card: Card) => {
+    const nextSusp = !card.suspended
+    setLocalCards((prev) =>
+      prev.map((c) => (c.id === card.id ? { ...c, suspended: nextSusp } : c)),
+    )
+    return run(
       async () => {
-        await setCardSuspended(card.id, !card.suspended)
+        await setCardSuspended(card.id, nextSusp)
       },
       card.suspended ? 'Cartão reativado.' : 'Cartão suspenso (sai das sessões de estudo).',
     )
-  const removeCard = (card: Card) => {
+  }
+  const removeCard = async (card: Card) => {
     if (!window.confirm('Excluir este cartão? O histórico de revisões será preservado no banco.'))
       return
-    run(async () => {
+    // Otimista: remove instantaneamente da tela em 0ms
+    setLocalCards((prev) => prev.filter((c) => c.id !== card.id))
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev)
+      next.delete(card.id)
+      return next
+    })
+    await run(async () => {
       await deleteCard(card.id)
     }, 'Cartão excluído.')
   }
@@ -1114,48 +1196,87 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
                 CSV/JSON.
               </div>
             ) : (
-              deckCards.map((card) => {
-                const isSelected = selectedCardIds.has(card.id)
-                return (
-                  <article
-                    key={card.id}
-                    className={`mr-lib-card-row${isSelected ? ' is-selected' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mr-lib-checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelectCard(card.id)}
-                      style={{ marginTop: 2, marginRight: 2 }}
-                    />
-                    <div style={{ flex: 1, minWidth: 200 }}>
-                      <div className="mr-lib-card-q">{card.q}</div>
-                      <div className="mr-lib-card-chips">
-                        {card.group && <span className="mr-lib-card-chip">{card.group}</span>}
-                        {card.ref && <span className="mr-lib-card-chip">📚 {card.ref}</span>}
-                        {card.suspended && <span className="mr-lib-card-chip susp">⏸ suspensa</span>}
+              <>
+                {deckCards.slice(0, cardDisplayLimit).map((card) => {
+                  const isSelected = selectedCardIds.has(card.id)
+                  return (
+                    <article
+                      key={card.id}
+                      className={`mr-lib-card-row${isSelected ? ' is-selected' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mr-lib-checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectCard(card.id)}
+                        style={{ marginTop: 2, marginRight: 2 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div className="mr-lib-card-q">{card.q}</div>
+                        <div className="mr-lib-card-chips">
+                          {card.group && <span className="mr-lib-card-chip">{card.group}</span>}
+                          {card.ref && <span className="mr-lib-card-chip">📚 {card.ref}</span>}
+                          {card.suspended && <span className="mr-lib-card-chip susp">⏸ suspensa</span>}
+                        </div>
                       </div>
-                    </div>
-                    <div className="mr-lib-card-actions">
+                      <div className="mr-lib-card-actions">
+                        <button
+                          className="mr-lib-mini"
+                          onClick={() => openCardModal(selectedDeck.id, card)}
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button className="mr-lib-mini" onClick={() => openMoveModal(card)}>
+                          ➡️ Mover
+                        </button>
+                        <button className="mr-lib-mini" onClick={() => toggleSuspended(card)}>
+                          {card.suspended ? '▶ Retomar' : '⏸ Suspender'}
+                        </button>
+                        <button className="mr-lib-mini danger" onClick={() => removeCard(card)}>
+                          🗑️
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+
+                {deckCards.length > cardDisplayLimit && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '16px',
+                      background: '#f8fafc',
+                      borderRadius: 12,
+                      border: '1px dashed #cbd5e1',
+                      marginTop: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: '.84rem', color: '#64748b', fontWeight: 600 }}>
+                      Mostrando {cardDisplayLimit} de {deckCards.length} cartas
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <button
+                        type="button"
                         className="mr-lib-mini"
-                        onClick={() => openCardModal(selectedDeck.id, card)}
+                        onClick={() => setCardDisplayLimit((prev) => prev + 50)}
                       >
-                        ✏️ Editar
+                        ＋ Mostrar mais 50 cartas
                       </button>
-                      <button className="mr-lib-mini" onClick={() => openMoveModal(card)}>
-                        ➡️ Mover
-                      </button>
-                      <button className="mr-lib-mini" onClick={() => toggleSuspended(card)}>
-                        {card.suspended ? '▶ Retomar' : '⏸ Suspender'}
-                      </button>
-                      <button className="mr-lib-mini danger" onClick={() => removeCard(card)}>
-                        🗑️
+                      <button
+                        type="button"
+                        className="mr-lib-mini"
+                        style={{ background: '#f0fdf4', borderColor: '#86efac' }}
+                        onClick={() => setCardDisplayLimit(deckCards.length)}
+                      >
+                        Mostrar todas ({deckCards.length})
                       </button>
                     </div>
-                  </article>
-                )
-              })
+                  </div>
+                )}
+              </>
             )}
           </section>
         )}
