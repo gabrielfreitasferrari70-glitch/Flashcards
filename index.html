@@ -8,7 +8,9 @@
     <meta name="description" content="Flashcards de medicina com motor FSRS-5 de repetição espaçada" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#16a34a" />
-    <link rel="apple-touch-icon" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
   </head>
 
   <body>
@@ -18,10 +20,20 @@
     <!-- @skip-protected: Do not remove. App entrypoint. -->
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Desregistra Service Workers antigos e limpa caches defasados para eliminar tela branca permanentemente
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {})
-        })
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister().catch(() => {})
+          }
+        }).catch(() => {})
+      }
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          for (const key of keys) {
+            caches.delete(key).catch(() => {})
+          }
+        }).catch(() => {})
       }
     </script>
   </body>

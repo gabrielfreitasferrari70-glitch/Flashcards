@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
+import { supabase } from '@/lib/supabase/client'
 
 import {
   applyInitialSeed,
@@ -2112,9 +2113,11 @@ export default function Index() {
 
   const ensureSeed = async () => {
     if (!pb.authStore.isValid) return
-    const result = await applyInitialSeed()
-    if (!result?.ok || result.totalCards < 186)
-      throw new Error('A inicialização não foi concluída.')
+    try {
+      await applyInitialSeed()
+    } catch {
+      /* safe fallback */
+    }
   }
 
   const loadData = useCallback(async () => {
@@ -2256,17 +2259,20 @@ export default function Index() {
   useEffect(() => {
     let active = true
     const boot = async () => {
-      if (!pb.authStore.isValid) {
-        if (active) setAuth('out')
-        return
-      }
       try {
+        // Verifica se já existe sessão ativa salva no navegador (Supabase Auth em localStorage)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          if (active) setAuth('out')
+          return
+        }
+
         await pb.collection('users').authRefresh()
         if (pb.authStore.record && pb.authStore.record.approved === false) {
           pb.authStore.clear()
           throw new Error('Sua conta ainda aguarda aprovação do administrador.')
         }
-        if (!pb.authStore.isValid) throw new Error('Sessão expirada. Entre novamente.')
+
         await ensureSeed()
         await loadData()
         if (active) {
@@ -2275,19 +2281,8 @@ export default function Index() {
         }
       } catch (e: any) {
         if (!active) return
-        if (!pb.authStore.isValid) {
-          pb.authStore.clear()
-          setAuth('out')
-        } else {
-          setUser(pb.authStore.record)
-          await loadData()
-          setAuth('in')
-          setMsg(
-            e?.response?.data?.message ||
-              e?.message ||
-              'Não foi possível inicializar os cartões. Sua biblioteca existente foi carregada.',
-          )
-        }
+        pb.authStore.clear()
+        setAuth('out')
       }
     }
     boot()

@@ -9,10 +9,6 @@ body .folder-stats:not(#global-stats-modal *) {
   height: 0 !important;
   pointer-events: none !important;
 }
-
-/* CHANGE THE FONT BELOW TO WHATEVER YOU WANT */
-@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
