@@ -565,14 +565,13 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
             const topM = params.match(/top=([0-9.]+)/)
             const widthM = params.match(/width=([0-9.]+)/)
             const heightM = params.match(/height=([0-9.]+)/)
-            const oiM = params.match(/oi=([^:\s]+)/)
 
             if (leftM && topM && widthM && heightM) {
               const x = parseFloat(leftM[1]) * 100
               const y = parseFloat(topM[1]) * 100
               const width = parseFloat(widthM[1]) * 100
               const height = parseFloat(heightM[1]) * 100
-              const id = oiM ? `oi_${oiM[1]}` : `mask_${clozeNum}`
+              const id = `c_${clozeNum}`
 
               masks.push({
                 id,
@@ -587,10 +586,10 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
 
           const targetCloze = ord + 1
           const activeMask =
+            masks.find((m) => m.id === `c_${targetCloze}`) ||
             masks[ord] ||
-            masks.find((m) => m.id === `oi_${targetCloze}` || m.id === `mask_${targetCloze}`) ||
             masks[0]
-          const activeMaskId = activeMask ? activeMask.id : masks[0]?.id || 'm_0'
+          const activeMaskId = activeMask ? activeMask.id : `c_${targetCloze}`
 
           const occlusionData = {
             imageUrl,

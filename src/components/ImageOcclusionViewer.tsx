@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import type { OcclusionData, OcclusionMask } from '@/services/imageOcclusion'
 
 interface Props {
@@ -35,11 +35,44 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
       ? data.imageUrl.match(/src=["']([^"']+)["']/i)?.[1] || data.imageUrl
       : data?.imageUrl || ''
 
+  // Normaliza máscaras garantindo IDs únicos (caso cartões antigos tenham IDs duplicados)
+  const normalizedMasks = useMemo(() => {
+    if (!Array.isArray(data?.masks)) return []
+    const ids = data.masks.map((m) => m?.id)
+    const hasDuplicates = new Set(ids).size !== ids.length
+    if (!hasDuplicates) return data.masks
+
+    return data.masks.map((m, idx) => ({
+      ...m,
+      id: `m_${idx + 1}`,
+      __origId: m.id,
+    }))
+  }, [data?.masks])
+
+  // Identifica com precisão a máscara ativa desta carta
+  const activeMask = useMemo(() => {
+    if (normalizedMasks.length === 0) return null
+    // 1. Procura correspondência exata de ID
+    const found = normalizedMasks.find((m) => m.id === data?.activeMaskId)
+    if (found) return found
+    // 2. Se as máscaras foram reindexadas, procura por número de cloze ou ord
+    const clozeNumMatch = typeof data?.activeMaskId === 'string' ? data.activeMaskId.match(/\d+/) : null
+    if (clozeNumMatch) {
+      const idx = parseInt(clozeNumMatch[0], 10) - 1
+      if (normalizedMasks[idx]) return normalizedMasks[idx]
+    }
+    return normalizedMasks[0]
+  }, [normalizedMasks, data?.activeMaskId])
+
+  // Reseta revelações manuais quando trocar de carta ou máscara ativa
+  useEffect(() => {
+    setManuallyRevealed({})
+  }, [data?.activeMaskId, data?.imageUrl])
+
   if (!data || !cleanImageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
     return null
   }
 
-  const activeMask = data.masks.find((m) => m && m.id === data.activeMaskId) || data.masks[0]
   const isHideOne = data.mode === 'hide_one_guess_one'
 
   const toggleMask = (id: string, e: React.MouseEvent) => {
@@ -114,7 +147,7 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
           )}
 
           {/* Occlusion Rectangles (estilo clássico Anki com opacidade 100% sólida) */}
-          {data.masks.map((mask: OcclusionMask, idx: number) => {
+          {normalizedMasks.map((mask: OcclusionMask, idx: number) => {
             const isActive = mask.id === activeMask?.id
             if (isHideOne && !isActive) return null
 
