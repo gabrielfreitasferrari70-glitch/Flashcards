@@ -159,6 +159,53 @@ function renderClozeHtml(text: string, revealed: boolean): string {
   return out
 }
 
+function getAnswerDisplay(card: Card, studyMode: string): string {
+  if (card.__reverse) {
+    return renderClozeHtml(card.q, true)
+  }
+  if (studyMode === 'reverse') {
+    return renderClozeHtml(card.q, true)
+  }
+  if (isCloze(card.q)) {
+    const clozeMatches: string[] = []
+    const re = /\{\{c\d+::(.*?)(?:::(.*?))?\}\}/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(card.q))) {
+      clozeMatches.push(m[1])
+    }
+    const cleanA = (card.a || '').trim()
+    const isPlaceholder =
+      !cleanA ||
+      cleanA.toLowerCase() === 'sem resposta' ||
+      cleanA.toLowerCase() === 'complete a lacuna' ||
+      cleanA.toLowerCase() === 'card sem resposta' ||
+      cleanA === card.q
+
+    let out = ''
+    if (clozeMatches.length > 0) {
+      out += `<div style="margin-bottom:12px;font-weight:700;color:#15803d;font-size:1.05rem">🎯 Resposta da lacuna: <span style="background:#dcfce7;color:#14532d;padding:3px 10px;border-radius:6px;border:1px solid #86efac;font-weight:800">${clozeMatches.join('; ')}</span></div>`
+    }
+    if (!isPlaceholder) {
+      out += `<div style="margin-top:6px;color:#334155">${renderClozeHtml(card.a, true)}</div>`
+    }
+    return out || renderClozeHtml(card.q, true)
+  }
+  return renderClozeHtml(card.a, true)
+}
+
+function getCardImage(card: Card): string {
+  if ((card as any).image_url) return (card as any).image_url
+  if (card.image) {
+    return pb.files.getURL({ collectionId: 'pbc_709748442', id: card.id.replace(/::rev$/, '') }, card.image)
+  }
+  if (card.diagram_svg) {
+    return /^https?:\/\//i.test(card.diagram_svg)
+      ? card.diagram_svg
+      : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(card.diagram_svg)}`
+  }
+  return ''
+}
+
 type Quality = 'again' | 'hard' | 'good' | 'easy'
 interface CardState {
   s: number | null
@@ -264,12 +311,19 @@ interface Review {
   reviewed_at: string
 }
 
-function parsePbDate(value?: string): number | null {
+function parsePbDate(value?: string | number | null): number | null {
   if (!value) return null
-  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
-  const withZone = /(?:Z|[+-]\\d{2}:?\\d{2})$/i.test(normalized) ? normalized : `${normalized}Z`
-  const ms = new Date(withZone).getTime()
-  return Number.isFinite(ms) ? ms : null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const clean = String(value).trim()
+  if (!clean) return null
+  const direct = new Date(clean).getTime()
+  if (Number.isFinite(direct)) return direct
+  const normalized = clean.includes('T') ? clean : clean.replace(' ', 'T')
+  const directNorm = new Date(normalized).getTime()
+  if (Number.isFinite(directNorm)) return directNorm
+  const withZ = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(normalized) ? normalized : `${normalized}Z`
+  const msZ = new Date(withZ).getTime()
+  return Number.isFinite(msZ) ? msZ : null
 }
 
 // Estado FSRS derivado do histórico de revisões (fonte única: banco)
@@ -2245,10 +2299,8 @@ export default function Index() {
     const reviewDays = new Set(
       reviews
         .map((r) => {
-          const raw = typeof r.reviewed_at === 'string' ? r.reviewed_at : ''
-          if (!raw) return ''
-          const date = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'))
-          return Number.isNaN(date.getTime()) ? '' : dayKey(date)
+          const ms = parsePbDate(r.reviewed_at)
+          return ms ? dayKey(new Date(ms)) : ''
         })
         .filter(Boolean),
     )
@@ -2564,20 +2616,52 @@ export default function Index() {
     return () => clearTimeout(t)
   }, [quiz?.i, quiz?.revealed, quiz?.endsMs, quiz?.timerOn, quiz?.done])
 
+  const getSubtreeCardList = useCallback(
+    (rootDeckId: string): Card[] => {
+      const deckIds = new Set<string>([rootDeckId])
+      let added = true
+      while (added) {
+        added = false
+        for (const d of decks) {
+          if (!d.deleted && d.parent && deckIds.has(d.parent) && !deckIds.has(d.id)) {
+            deckIds.add(d.id)
+            added = true
+          }
+        }
+      }
+      return cards.filter(
+        (c) =>
+          !c.deleted &&
+          !c.suspended &&
+          (deckIds.has(c.deck) || deckIds.has((c as any).deck_id)),
+      )
+    },
+    [decks, cards],
+  )
+
+  const studyDeck = useCallback(
+    (deckId: string) => {
+      const deck = decks.find((d) => d.id === deckId)
+      const targetCards = getSubtreeCardList(deckId)
+      if (targetCards.length === 0) {
+        setMsg(`A pasta "${deck?.title || 'selecionada'}" e suas subpastas ainda não têm cartas cadastradas.`)
+        setTimeout(() => setMsg(''), 3500)
+        return
+      }
+      startStudy(targetCards, deckId, deck?.title || 'Estudo da Pasta')
+    },
+    [decks, getSubtreeCardList],
+  )
+
   const openDeck = (deckId: string) => {
     const deck = decks.find((d) => d.id === deckId)
-    // Pasta organizadora: abre a view com as pastas dentro (como a Tutoria).
-    // Pasta de estudo: inicia a sessão de flashcards direto.
+    // Se for pasta organizadora ou tiver subpastas, abre a navegação da pasta
     const hasChildren = decks.some((d) => d.parent === deckId && !d.deleted)
     if (deck && ((deck as any).mode === 'organizer' || hasChildren)) {
       setRoute({ view: 'home', folderKind: 'custom', deckId })
       return
     }
-    startStudy(
-      cards.filter((c) => c.deck === deckId),
-      deckId,
-      deck?.title,
-    )
+    studyDeck(deckId)
   }
   const openFolderGroup = (folderKind: 'tutoria' | 'prova' | 'custom') =>
     setRoute({ view: 'home', folderKind })
@@ -2809,7 +2893,6 @@ export default function Index() {
     }
     const now = new Date()
     const dueDate = new Date(now.getTime() + chosen.value * 86400000)
-    const fmt = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 19)
     try {
       const reviewInput = {
         card_id: realId,
@@ -2827,8 +2910,8 @@ export default function Index() {
         elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
         scheduled_days: chosen.value,
         state: chosen.state,
-        due: fmt(dueDate),
-        reviewed_at: fmt(now),
+        due: dueDate.toISOString(),
+        reviewed_at: now.toISOString(),
       }
       const created = await createReview(reviewInput)
       const savedReview = { ...(created as any), ...reviewInput, card_id: realId, card_ref: realId, card: realId }
@@ -2836,8 +2919,16 @@ export default function Index() {
       setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
       setMsg(`Carta agendada para daqui ${chosen.label}`)
       setTimeout(() => setMsg(''), 2500)
+
+      // No Anki, se errar a carta ('again'), ela é reinserida no fim da fila para fixação
+      if (quality === 'again') {
+        setQueue((q) => [...q, card])
+      }
+
       setFlipped(false)
       setMcPicked(null)
+      setTypedAnswer('')
+      setWriteFeedback(null)
       setQIdx((i) => i + 1)
     } catch (e: any) {
       setMsg('Erro ao salvar revisão: ' + (e?.message || e))
@@ -3156,7 +3247,7 @@ export default function Index() {
                   ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
                   : studyMode === 'reverse' && !flipped && !currentOcclusionData
                     ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
-                    : renderClozeHtml(card.q, flipped),
+                    : (renderClozeHtml(card.q, flipped) || (currentOcclusionData ? '🎯 Identifique a estrutura oculta na imagem:' : 'Card sem pergunta')),
               }}
             />
             {currentOcclusionData && (
@@ -3331,70 +3422,43 @@ export default function Index() {
                   className="mr-legacy-answer-body"
                   style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#1e293b' }}
                   dangerouslySetInnerHTML={{
-                    __html: renderClozeHtml(
-                      card.__reverse ? card.q : studyMode === 'reverse' ? card.q : card.a,
-                      true,
-                    ),
+                    __html: getAnswerDisplay(card, studyMode),
                   }}
                 />
-                {card.__reverse && (card.diagram_svg || card.image) && (
-                  <figure style={{ margin: '18px 0 0' }}>
-                    {card.diagram_title && (
-                      <figcaption style={{ color: '#64748b', fontSize: '.8rem', marginBottom: 5 }}>
-                        {card.diagram_title}
-                      </figcaption>
-                    )}
-                    <img
-                      src={
-                        card.image
-                          ? pb.files.getURL(
-                              { collectionId: 'pbc_709748442', id: card.id.replace(/::rev$/, '') },
-                              card.image,
-                            )
-                          : /^https?:\/\//i.test(card.diagram_svg)
-                            ? card.diagram_svg
-                            : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(card.diagram_svg)}`
-                      }
-                      alt={card.diagram_title || 'Diagrama do cartão'}
-                      style={{
-                        display: 'block',
-                        maxWidth: '100%',
-                        maxHeight: 320,
-                        margin: '0 auto',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </figure>
-                )}
-                {(card.diagram_svg || card.image) && !card.__reverse && (
-                  <figure style={{ margin: '18px 0 0' }}>
-                    {card.diagram_title && (
-                      <figcaption style={{ color: '#64748b', fontSize: '.8rem', marginBottom: 5 }}>
-                        {card.diagram_title}
-                      </figcaption>
-                    )}
-                    <img
-                      src={
-                        card.image
-                          ? pb.files.getURL(
-                              { collectionId: 'pbc_709748442', id: card.id },
-                              card.image,
-                            )
-                          : /^https?:\/\//i.test(card.diagram_svg)
-                            ? card.diagram_svg
-                            : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(card.diagram_svg)}`
-                      }
-                      alt={card.diagram_title || 'Diagrama do cartão'}
-                      style={{
-                        display: 'block',
-                        maxWidth: '100%',
-                        maxHeight: 320,
-                        margin: '0 auto',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </figure>
-                )}
+                {(() => {
+                  const cardImg = getCardImage(card)
+                  if (!cardImg) return null
+                  return (
+                    <figure style={{ margin: '18px 0 0' }}>
+                      {card.diagram_title && (
+                        <figcaption style={{ color: '#64748b', fontSize: '.8rem', marginBottom: 5 }}>
+                          {card.diagram_title}
+                        </figcaption>
+                      )}
+                      <img
+                        src={cardImg}
+                        alt={card.diagram_title || 'Imagem do cartão'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setLightboxImage({
+                            src: cardImg,
+                            title: card.diagram_title || 'Visualização Anatômica em Alta Resolução',
+                          })
+                        }}
+                        style={{
+                          display: 'block',
+                          maxWidth: '100%',
+                          maxHeight: 340,
+                          margin: '0 auto',
+                          objectFit: 'contain',
+                          borderRadius: 12,
+                          cursor: 'zoom-in',
+                          boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+                        }}
+                      />
+                    </figure>
+                  )
+                })()}
                 {card.ref && (
                   <div style={{ color: '#64748b', fontSize: '.78rem', marginTop: 12 }}>
                     📚 {card.ref}
@@ -3637,6 +3701,7 @@ export default function Index() {
         onOpenGroup={openFolderGroup}
         onHome={() => setRoute({ view: 'home' })}
         onOpenDeck={openDeck}
+        onStudyDeck={studyDeck}
         onClinical={startClinicalMode}
         onStudyNow={startStudyNow}
         onSessionBuilder={() => setSessionBuilderOpen(true)}

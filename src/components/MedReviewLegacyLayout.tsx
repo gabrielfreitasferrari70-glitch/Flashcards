@@ -813,9 +813,9 @@ type HomeProps = {
   onOpenExamPlan?: (deckId: string, deckTitle: string) => void
   onOpenMasterReports?: () => void
   onOpenMasterAnalytics?: () => void
-  reviews?: any[]
   onOpenCramMode?: (deckId?: string) => void
   onOpenAnkiImport?: () => void
+  onStudyDeck?: (deckId: string) => void
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -831,6 +831,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     folderKind,
     onHome,
     onOpenDeck,
+    onStudyDeck,
     onClinical,
     onStudyNow,
     onSessionBuilder,
@@ -1150,6 +1151,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             {openDeckId && (
               <div className="mr-legacy-folder-manage" aria-label="Gerenciar a pasta aberta">
                 <span className="mr-legacy-folder-manage-label">Gerenciar esta pasta</span>
+                {cardsInSubtree(openDeckId) > 0 && (
+                  <button
+                    className="mr-legacy-button primary"
+                    onClick={() => (onStudyDeck ? onStudyDeck(openDeckId) : onOpenDeck(openDeckId))}
+                    style={{ background: '#16a34a', color: '#fff', fontWeight: 800 }}
+                  >
+                    ⚡ Estudar ({cardsInSubtree(openDeckId)} cartas)
+                  </button>
+                )}
                 <button
                   className="mr-legacy-button"
                   onClick={() => onOpenExamPlan?.(openDeckId, title)}
@@ -1327,7 +1337,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
                         className="mr-legacy-button primary"
-                        onClick={() => onOpenDeck(openDeckId)}
+                        onClick={() => (onStudyDeck ? onStudyDeck(openDeckId) : onOpenDeck(openDeckId))}
                         style={{ fontSize: '.82rem', padding: '6px 14px' }}
                       >
                         ⚡ Estudar estas cartas

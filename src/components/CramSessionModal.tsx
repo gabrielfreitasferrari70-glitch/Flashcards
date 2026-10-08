@@ -110,7 +110,7 @@ export const CramSessionModal: React.FC<Props> = ({
     // 2. Filtra cartas válidas
     let pool = cards.filter((c) => {
       if (c.deleted || c.suspended) return false
-      if (allowedDeckIds && !allowedDeckIds.has(c.deck)) return false
+      if (allowedDeckIds && !allowedDeckIds.has(c.deck) && !allowedDeckIds.has((c as any).deck_id)) return false
       if (selectedTag !== 'all') {
         if (!c.tags || !c.tags.includes(selectedTag)) return false
       }
