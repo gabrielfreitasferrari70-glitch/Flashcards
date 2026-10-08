@@ -9,6 +9,8 @@ import {
   createDeck,
   createReview,
   deleteDeck,
+  getDeletedCardIds,
+  getDeletedDeckIds,
   moveDeck,
   moveDeckSection,
   renameDeck,
@@ -2178,19 +2180,30 @@ async function getBaseCatalog() {
   const loadData = useCallback(async () => {
     if (!pb.authStore.isValid) return
 
-    // 1. Carregamento instantâneo via Vercel Edge CDN (<50ms)
+    const deletedCards = getDeletedCardIds()
+    const deletedDecks = getDeletedDeckIds()
+
+    // 1. Carregamento instantâneo via Vercel Edge CDN (<50ms) caso a tela ainda não tenha dados
     let baseData: { decks: any[]; cards: any[] } | null = null
     try {
       baseData = await getBaseCatalog()
       if (baseData) {
-        setDecks((prev) => (prev.length === 0 ? baseData!.decks : prev))
-        setCards((prev) => (prev.length === 0 ? baseData!.cards : prev))
+        setDecks((prev) =>
+          prev.length === 0
+            ? baseData!.decks.filter((d) => !deletedDecks.has(d.id))
+            : prev
+        )
+        setCards((prev) =>
+          prev.length === 0
+            ? baseData!.cards.filter((c) => !deletedCards.has(c.id))
+            : prev
+        )
       }
     } catch {
       /* fallback */
     }
 
-    // 2. Sincronização com Supabase (avaliações, novos decks e cards criados pelo usuário)
+    // 2. Sincronização em tempo real com Supabase (fonte canônica de dados)
     try {
       const [d, c, r] = await Promise.all([
         pb.collection('mr_decks').getFullList({ sort: 'order' }),
@@ -2200,36 +2213,23 @@ async function getBaseCatalog() {
       const supaRawDecks = (d as any[]) || []
       const supaRawCards = (c as any[]) || []
 
-      const supaDeletedDeckIds = new Set(supaRawDecks.filter((row) => row.deleted).map((row) => row.id))
-      const supaDeletedCardIds = new Set(supaRawCards.filter((row) => row.deleted).map((row) => row.id))
+      if (supaRawDecks.length > 0) {
+        const filteredDecks = supaRawDecks.filter(
+          (row) => !row.deleted && !deletedDecks.has(row.id)
+        )
+        setDecks(filteredDecks)
+      } else if (baseData?.decks) {
+        setDecks(baseData.decks.filter((row) => !deletedDecks.has(row.id)))
+      }
 
-      const supaActiveDecks = supaRawDecks
-        .filter((row) => !row.deleted)
-        .map((row) => ({ ...row, description: row.description || '' }))
-      const supaActiveCards = supaRawCards.filter((row) => !row.deleted)
-
-      // Merge unificado: preserva catálogo base + incorpora novidades do Supabase sem zerar nada
-      setDecks((prev) => {
-        const map = new Map<string, any>()
-        if (baseData?.decks) {
-          for (const item of baseData.decks) map.set(item.id, item)
-        }
-        for (const item of prev) map.set(item.id, item)
-        for (const item of supaActiveDecks) map.set(item.id, item)
-        for (const delId of supaDeletedDeckIds) map.delete(delId)
-        return Array.from(map.values())
-      })
-
-      setCards((prev) => {
-        const map = new Map<string, any>()
-        if (baseData?.cards) {
-          for (const item of baseData.cards) map.set(item.id, item)
-        }
-        for (const item of prev) map.set(item.id, item)
-        for (const item of supaActiveCards) map.set(item.id, item)
-        for (const delId of supaDeletedCardIds) map.delete(delId)
-        return Array.from(map.values())
-      })
+      if (supaRawCards.length > 0) {
+        const filteredCards = supaRawCards.filter(
+          (row) => !row.deleted && !deletedCards.has(row.id)
+        )
+        setCards(filteredCards)
+      } else if (baseData?.cards) {
+        setCards(baseData.cards.filter((row) => !deletedCards.has(row.id)))
+      }
 
       setReviews(r as any[])
     } catch (e: any) {

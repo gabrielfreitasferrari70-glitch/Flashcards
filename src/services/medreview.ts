@@ -212,6 +212,53 @@ export const updateCard = async (
   return data
 }
 
+const DELETED_CARDS_KEY = 'mr_deleted_cards_v1'
+const DELETED_DECKS_KEY = 'mr_deleted_decks_v1'
+
+export const getDeletedCardIds = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(DELETED_CARDS_KEY)
+    return new Set(raw ? JSON.parse(raw) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+export const recordDeletedCardId = (id: string | string[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getDeletedCardIds()
+    const ids = Array.isArray(id) ? id : [id]
+    for (const item of ids) {
+      if (item) set.add(item)
+    }
+    localStorage.setItem(DELETED_CARDS_KEY, JSON.stringify(Array.from(set)))
+  } catch {}
+}
+
+export const getDeletedDeckIds = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(DELETED_DECKS_KEY)
+    return new Set(raw ? JSON.parse(raw) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+export const recordDeletedDeckId = (id: string | string[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getDeletedDeckIds()
+    const ids = Array.isArray(id) ? id : [id]
+    for (const item of ids) {
+      if (item) set.add(item)
+    }
+    localStorage.setItem(DELETED_DECKS_KEY, JSON.stringify(Array.from(set)))
+  } catch {}
+}
+
 export const setCardSuspended = async (cardId: string, suspended: boolean) => {
   const { data, error } = await supabase.from('mr_cards').update({ suspended }).eq('id', cardId).select().single()
   if (error) throw error
@@ -219,6 +266,7 @@ export const setCardSuspended = async (cardId: string, suspended: boolean) => {
 }
 
 export const deleteCard = async (cardId: string) => {
+  recordDeletedCardId(cardId)
   await supabase.from('mr_reviews').delete().eq('card_id', cardId)
   await supabase.from('mr_card_reports').delete().eq('card_id', cardId)
   await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
@@ -229,6 +277,7 @@ export const deleteCard = async (cardId: string) => {
 
 export const deleteCardsBatch = async (cardIds: string[]) => {
   if (cardIds.length === 0) return true
+  recordDeletedCardId(cardIds)
   for (let i = 0; i < cardIds.length; i += 100) {
     const chunk = cardIds.slice(i, i + 100)
     await supabase.from('mr_reviews').delete().in('card_id', chunk)
@@ -304,6 +353,7 @@ export const deleteDecksBatch = async (deckIds: string[]) => {
   }
 
   // 3. Deleta as pastas com 100% de sucesso na primeira tentativa
+  recordDeletedDeckId(deleteArray)
   for (let i = 0; i < deleteArray.length; i += 50) {
     const chunk = deleteArray.slice(i, i + 50)
     const { error } = await supabase.from('mr_decks').delete().in('id', chunk)
