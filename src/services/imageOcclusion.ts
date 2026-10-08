@@ -15,7 +15,11 @@ export interface OcclusionData {
   mode?: 'hide_all_guess_one' | 'hide_one_guess_one'
 }
 
-export function parseOcclusion(raw: any, fallbackText?: string): OcclusionData | null {
+export function parseOcclusion(
+  raw: any,
+  fallbackText?: string,
+  promptText?: string,
+): OcclusionData | null {
   if (!raw && fallbackText) {
     const match = fallbackText.match(/<!--occlusion:([A-Za-z0-9+/=]+)-->/)
     if (match) {
@@ -42,7 +46,7 @@ export function parseOcclusion(raw: any, fallbackText?: string): OcclusionData |
     const validMasks: OcclusionMask[] = rawMasks
       .filter((m: any) => m && typeof m === 'object')
       .map((m: any, idx: number) => ({
-        id: String(m.id || `m_${idx}`),
+        id: String(m.id || `c_${idx + 1}`),
         x: Math.max(0, Math.min(100, typeof m.x === 'number' && !isNaN(m.x) ? m.x : 0)),
         y: Math.max(0, Math.min(100, typeof m.y === 'number' && !isNaN(m.y) ? m.y : 0)),
         width: Math.max(0.5, Math.min(100, typeof m.width === 'number' && !isNaN(m.width) ? m.width : 10)),
@@ -52,11 +56,34 @@ export function parseOcclusion(raw: any, fallbackText?: string): OcclusionData |
 
     if (validMasks.length === 0) return null
 
+    // Verifica se as máscaras possuem IDs duplicados (ex: todas 'oi_1')
+    const maskIds = validMasks.map((m) => m.id)
+    const hasDuplicateIds = new Set(maskIds).size !== maskIds.length
+
+    // Normaliza para IDs únicos c_1, c_2, ... se houver IDs duplicados ou genéricos
+    const normalizedMasks = hasDuplicateIds
+      ? validMasks.map((m, idx) => ({ ...m, id: `c_${idx + 1}` }))
+      : validMasks
+
+    // Descobre o número do cartão alvo a partir do prompt ("Carta X de Y") ou da resposta ("Estrutura X")
+    const cardMatch =
+      promptText?.match(/Carta\s+(\d+)\s+de/i) ||
+      fallbackText?.match(/Estrutura\s+(\d+)/i)
+
+    let activeMaskId = typeof data.activeMaskId === 'string' ? data.activeMaskId : ''
+
+    if (cardMatch) {
+      const targetNum = parseInt(cardMatch[1], 10)
+      activeMaskId = `c_${targetNum}`
+    } else if (!activeMaskId || activeMaskId === 'oi_1' || hasDuplicateIds) {
+      activeMaskId = normalizedMasks[0]?.id || 'c_1'
+    }
+
     return {
       imageUrl: rawUrl,
       imageTitle: typeof data.imageTitle === 'string' ? data.imageTitle : '',
-      masks: validMasks,
-      activeMaskId: typeof data.activeMaskId === 'string' ? data.activeMaskId : validMasks[0]?.id,
+      masks: normalizedMasks,
+      activeMaskId,
       mode: data.mode === 'hide_one_guess_one' ? 'hide_one_guess_one' : 'hide_all_guess_one',
     }
   } catch {

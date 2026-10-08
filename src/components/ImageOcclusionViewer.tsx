@@ -5,9 +5,16 @@ interface Props {
   data: OcclusionData
   revealed: boolean
   onToggleReveal?: () => void
+  cardPrompt?: string
+  cardAnswer?: string
 }
 
-export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
+export const ImageOcclusionViewer: React.FC<Props> = ({
+  data,
+  revealed,
+  cardPrompt,
+  cardAnswer,
+}) => {
   const [zoomToMask, setZoomToMask] = useState(false)
   const [userZoom, setUserZoom] = useState(1)
   const [isExpanded, setIsExpanded] = useState(true)
@@ -44,7 +51,7 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
 
     return data.masks.map((m, idx) => ({
       ...m,
-      id: `m_${idx + 1}`,
+      id: `c_${idx + 1}`,
       __origId: m.id,
     }))
   }, [data?.masks])
@@ -52,22 +59,41 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
   // Identifica com precisão a máscara ativa desta carta
   const activeMask = useMemo(() => {
     if (normalizedMasks.length === 0) return null
-    // 1. Procura correspondência exata de ID
-    const found = normalizedMasks.find((m) => m.id === data?.activeMaskId)
-    if (found) return found
-    // 2. Se as máscaras foram reindexadas, procura por número de cloze ou ord
-    const clozeNumMatch = typeof data?.activeMaskId === 'string' ? data.activeMaskId.match(/\d+/) : null
-    if (clozeNumMatch) {
-      const idx = parseInt(clozeNumMatch[0], 10) - 1
-      if (normalizedMasks[idx]) return normalizedMasks[idx]
+
+    // 1. Tenta identificar o número da carta diretamente do prompt ("Carta 2 de 4") ou resposta ("Estrutura 2")
+    const cardMatch =
+      cardPrompt?.match(/Carta\s+(\d+)\s+de/i) ||
+      cardAnswer?.match(/Estrutura\s+(\d+)/i)
+
+    if (cardMatch) {
+      const targetOrd = parseInt(cardMatch[1], 10) - 1
+      if (normalizedMasks[targetOrd]) {
+        return normalizedMasks[targetOrd]
+      }
     }
+
+    // 2. Se data.activeMaskId foi definido e não é o ID genérico 'oi_1'
+    if (data?.activeMaskId && data.activeMaskId !== 'oi_1') {
+      const exactMatch = normalizedMasks.find((m) => m.id === data.activeMaskId)
+      if (exactMatch) return exactMatch
+
+      const clozeNumMatch =
+        data.activeMaskId.match(/(?:c_|mask_|ord_)(\d+)/i) ||
+        data.activeMaskId.match(/\d+/)
+      if (clozeNumMatch) {
+        const idx = parseInt(clozeNumMatch[1] || clozeNumMatch[0], 10) - 1
+        if (normalizedMasks[idx]) return normalizedMasks[idx]
+      }
+    }
+
+    // 3. Fallback: primeira máscara
     return normalizedMasks[0]
-  }, [normalizedMasks, data?.activeMaskId])
+  }, [normalizedMasks, data?.activeMaskId, cardPrompt, cardAnswer])
 
   // Reseta revelações manuais quando trocar de carta ou máscara ativa
   useEffect(() => {
     setManuallyRevealed({})
-  }, [data?.activeMaskId, data?.imageUrl])
+  }, [activeMask?.id, data?.activeMaskId, data?.imageUrl, cardPrompt])
 
   if (!data || !cleanImageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
     return null

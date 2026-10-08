@@ -3015,7 +3015,7 @@ export default function Index() {
                 <span className="mr-legacy-badge">
                   {card.__reverse
                     ? '🔁 Cartão reverso (verso → frente)'
-                    : parseOcclusion(card.occlusion, card.a)
+                    : parseOcclusion(card.occlusion, card.a, card.q)
                       ? '🎯 Oclusão de Imagem (Anatomia)'
                       : isCloze(card.q)
                         ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
@@ -3105,11 +3105,13 @@ export default function Index() {
                     : renderClozeHtml(card.q, flipped),
               }}
             />
-            {parseOcclusion(card.occlusion, card.a) && (
+            {parseOcclusion(card.occlusion, card.a, card.q) && (
               <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
                 <ImageOcclusionViewer
-                  data={parseOcclusion(card.occlusion, card.a)!}
+                  data={parseOcclusion(card.occlusion, card.a, card.q)!}
                   revealed={flipped}
+                  cardPrompt={card.q}
+                  cardAnswer={card.a}
                 />
               </ErrorBoundary>
             )}
