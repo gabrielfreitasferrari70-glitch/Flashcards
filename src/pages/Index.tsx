@@ -138,8 +138,21 @@ function renderClozeHtml(text: string, revealed: boolean): string {
     .replace(/(?:\{\{c\d+::)?image-occlusion:[^}\s<]+(?:\}\})?/gi, '')
     .trim()
   if (!sanitized) return ''
-  const hasHtml = /<[a-z][\s\S]*>/i.test(sanitized)
-  const baseText = hasHtml ? sanitized : sanitized.replace(/\n/g, '<br/>')
+
+  // Se após remover oclusões só restaram quebras de linha <br> ou espaços vazios, retorna vazio
+  const textWithoutBr = sanitized.replace(/<br\s*\/?>/gi, '').trim()
+  if (!textWithoutBr && !sanitized.includes('<img')) return ''
+
+  // Limpa excesso de quebras no início e fim
+  const cleaned = sanitized
+    .replace(/^(?:\s*<br\s*\/?>\s*)+/gi, '')
+    .replace(/(?:\s*<br\s*\/?>\s*)+$/gi, '')
+    .replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>')
+    .trim()
+  if (!cleaned) return ''
+
+  const hasHtml = /<[a-z][\s\S]*>/i.test(cleaned)
+  const baseText = hasHtml ? cleaned : cleaned.replace(/\n/g, '<br/>')
 
   CLOZE_RE.lastIndex = 0
   let out = ''
@@ -170,7 +183,11 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
   // evita duplicar a imagem embaixo do visualizador de oclusão
   if (card.occlusion || (card.q && card.q.includes('image-occlusion:'))) {
     const rawNoImg = (card.a || '').replace(/<img[^>]*>/gi, '').trim()
-    if (!rawNoImg) {
+    const isGeneric =
+      !rawNoImg ||
+      /^Estrutura\s+\d+$/i.test(rawNoImg) ||
+      rawNoImg.includes('✓ Estrutura identificada')
+    if (isGeneric) {
       return '<div style="color:#15803d;font-weight:700">🎯 Resposta revelada na imagem acima.</div>'
     }
     return renderClozeHtml(rawNoImg, true)
@@ -3085,6 +3102,38 @@ export default function Index() {
     }
   }
 
+  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar)
+  useEffect(() => {
+    if (route.view !== 'study' || studyMode === 'write') return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault()
+        if (!flipped) {
+          setFlipped(true)
+        }
+      } else if (flipped) {
+        if (e.key === '1') {
+          e.preventDefault()
+          rate('again')
+        } else if (e.key === '2') {
+          e.preventDefault()
+          rate('hard')
+        } else if (e.key === '3') {
+          e.preventDefault()
+          rate('good')
+        } else if (e.key === '4') {
+          e.preventDefault()
+          rate('easy')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [route.view, flipped, studyMode, rate])
+
   // ===== Tela: loading =====
   if (auth === 'loading') return <div style={center}>Carregando…</div>
 
@@ -3393,11 +3442,13 @@ export default function Index() {
             <h1
               className="mr-legacy-question"
               dangerouslySetInnerHTML={{
-                __html: card.__reverse
-                  ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
-                  : studyMode === 'reverse' && !flipped && !currentOcclusionData
-                    ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
-                    : (renderClozeHtml(card.q, flipped) || (currentOcclusionData ? '🎯 Identifique a estrutura oculta na imagem:' : 'Card sem pergunta')),
+                __html: currentOcclusionData
+                  ? (renderClozeHtml(card.q, flipped) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
+                  : card.__reverse
+                    ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
+                    : studyMode === 'reverse' && !flipped
+                      ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
+                      : (renderClozeHtml(card.q, flipped) || 'Card sem pergunta'),
               }}
             />
             {currentOcclusionData && (
@@ -3512,11 +3563,39 @@ export default function Index() {
                 Array.isArray(card.choices) &&
                 card.choices.length > 0
               ) && (
-                <p className="mr-legacy-hint">
-                  {isCloze(card.q)
-                    ? 'Pense na lacuna e toque no cartão para conferir'
-                    : 'Toque no cartão para revelar a resposta'}
-                </p>
+                <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setFlipped(true)
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #16a34a, #22c55e)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 12,
+                      padding: '12px 28px',
+                      fontSize: '1rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
+                      transition: 'all 0.15s ease',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span>👁️</span>
+                    <span>Mostrar Resposta / Virar Cartão</span>
+                    <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
+                  </button>
+                  <p className="mr-legacy-hint" style={{ margin: 0 }}>
+                    {isCloze(card.q)
+                      ? 'Pense na lacuna e toque para conferir'
+                      : 'Ou clique em qualquer parte do cartão para virar'}
+                  </p>
+                </div>
               )}
             {flipped && (
               <div className="mr-legacy-answer">

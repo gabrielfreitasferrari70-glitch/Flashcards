@@ -100,7 +100,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     setManuallyRevealed({})
   }, [activeMask?.id, data?.activeMaskId, data?.imageUrl, cardPrompt])
 
-  if (!data || !cleanImageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
+  if (!data || !Array.isArray(data.masks) || data.masks.length === 0) {
     return null
   }
 
@@ -192,7 +192,11 @@ export const ImageOcclusionViewer = React.memo<Props>(({
             cursor: isDragging ? 'grabbing' : (userZoom > 1 || zoomToMask) ? 'grab' : 'zoom-in',
           }}
         >
-          {imgError ? (
+          {!cleanImageUrl ? (
+            <div style={{ padding: '50px 20px', color: '#fca5a5', textAlign: 'center', fontSize: '.88rem' }}>
+              ⚠️ Imagem da oclusão não encontrada.
+            </div>
+          ) : imgError ? (
             <div style={{ padding: '50px 20px', color: '#fca5a5', textAlign: 'center', fontSize: '.88rem' }}>
               ⚠️ Não foi possível carregar a imagem da oclusão.
             </div>
@@ -226,7 +230,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                 onClick={(e) => toggleMask(mask.id, e)}
                 title={
                   isShown
-                    ? `${mask.label} (clique para ocultar)`
+                    ? 'Estrutura revelada (clique para ocultar)'
                     : isActive
                       ? 'Pergunta atual (clique para espiar)'
                       : 'Clique para espiar'
@@ -502,7 +506,9 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                 Gabarito Anatômico
               </span>
               <strong style={{ fontSize: '1.05rem', color: '#14532d', fontWeight: 900 }}>
-                {activeMask?.label || 'Estrutura Identificada'}
+                {activeMask?.label && !/^Estrutura\s+\d+$/i.test(activeMask.label.trim())
+                  ? activeMask.label
+                  : 'Estrutura revelada na imagem'}
               </strong>
             </div>
           </div>
