@@ -106,6 +106,10 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             q: c.q,
             a: c.a,
             tags: c.tags,
+            group: (c as any).group,
+            ref: (c as any).ref,
+            clinical: (c as any).clinical,
+            imageUrl: (c as any).imageUrl,
             occlusion: (c as any).occlusion,
           })),
         )

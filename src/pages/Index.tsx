@@ -2151,32 +2151,8 @@ export default function Index() {
   const schedulerSettings = useMemo(() => getSchedulerSettings(user?.id), [user?.id, retentionTick])
 
   const ensureSeed = async () => {
-    if (!pb.authStore.isValid) return
-    try {
-      await applyInitialSeed()
-    } catch {
-      /* safe fallback */
-    }
+    // Inicialização direta sem injeção de cartões legados
   }
-
-let catalogMemoryCache: { decks: any[]; cards: any[] } | null = null
-
-async function getBaseCatalog() {
-  if (catalogMemoryCache) return catalogMemoryCache
-  try {
-    const res = await fetch('/catalog.json')
-    if (res.ok) {
-      const data = await res.json()
-      if (data && Array.isArray(data.decks) && Array.isArray(data.cards)) {
-        catalogMemoryCache = { decks: data.decks, cards: data.cards }
-        return catalogMemoryCache
-      }
-    }
-  } catch (err) {
-    console.warn('Falha ao obter catalog.json:', err)
-  }
-  return null
-}
 
   const loadData = useCallback(async () => {
     if (!pb.authStore.isValid) return
@@ -2184,27 +2160,7 @@ async function getBaseCatalog() {
     const deletedCards = getDeletedCardIds()
     const deletedDecks = getDeletedDeckIds()
 
-    // 1. Carregamento instantâneo via Vercel Edge CDN (<50ms) caso a tela ainda não tenha dados
-    let baseData: { decks: any[]; cards: any[] } | null = null
-    try {
-      baseData = await getBaseCatalog()
-      if (baseData) {
-        setDecks((prev) =>
-          prev.length === 0
-            ? baseData!.decks.filter((d) => !deletedDecks.has(d.id))
-            : prev
-        )
-        setCards((prev) =>
-          prev.length === 0
-            ? baseData!.cards.filter((c) => !deletedCards.has(c.id))
-            : prev
-        )
-      }
-    } catch {
-      /* fallback */
-    }
-
-    // 2. Sincronização em tempo real com Supabase (fonte canônica de dados)
+    // Sincronização em tempo real direta com Supabase (fonte única e canônica de dados do usuário)
     try {
       const [d, c, r] = await Promise.all([
         pb.collection('mr_decks').getFullList({ sort: 'order' }),
@@ -2216,50 +2172,26 @@ async function getBaseCatalog() {
 
       const frontlineDeckIds = getFrontlineDeckIds()
 
-      // MERGE DE PASTAS: base catalog + Supabase custom decks
-      const decksMap = new Map<string, any>()
-      if (baseData?.decks) {
-        for (const row of baseData.decks) {
-          if (!deletedDecks.has(row.id)) {
-            decksMap.set(row.id, row)
-          }
-        }
-      }
-      for (const row of supaRawDecks) {
-        if (row.deleted || deletedDecks.has(row.id)) {
-          decksMap.delete(row.id)
-        } else {
+      // Pastas do usuário no Supabase
+      const validDecks = supaRawDecks
+        .filter((row) => !row.deleted && !deletedDecks.has(row.id))
+        .map((row) => {
           const isFrontline =
             !!row.frontline ||
             frontlineDeckIds.has(row.id) ||
-            (!row.parent &&
-              row.kind === 'custom' &&
-              row.id !== 'e9a9a8c3-c38f-45d8-9989-a887281172ff' &&
-              row.id !== '32353b13-4f84-41f5-be8b-2dafb1798278')
-          decksMap.set(row.id, { ...row, frontline: isFrontline })
-        }
-      }
-      setDecks(Array.from(decksMap.values()))
+            (!row.parent && row.kind === 'custom')
+          return { ...row, frontline: isFrontline }
+        })
 
-      // MERGE DE CARTAS: base catalog (1.352) + Supabase new & imported cards
-      const cardsMap = new Map<string, any>()
-      if (baseData?.cards) {
-        for (const row of baseData.cards) {
-          if (!deletedCards.has(row.id)) {
-            cardsMap.set(row.id, row)
-          }
-        }
-      }
-      for (const row of supaRawCards) {
-        if (row.deleted || deletedCards.has(row.id)) {
-          cardsMap.delete(row.id)
-        } else {
-          cardsMap.set(row.id, row)
-        }
-      }
-      setCards(Array.from(cardsMap.values()))
+      setDecks(validDecks)
 
-      setReviews(r as any[])
+      // Cartões reais do usuário no Supabase
+      const validCards = supaRawCards.filter(
+        (row) => !row.deleted && !deletedCards.has(row.id),
+      )
+      setCards(validCards)
+
+      setReviews((r as any[]) || [])
     } catch (e: any) {
       console.warn('Erro ao carregar dados do Supabase:', e)
     }
@@ -3630,10 +3562,7 @@ async function getBaseCatalog() {
       (d) =>
         d.kind === 'custom' &&
         !d.parent &&
-        (d.frontline ||
-          frontlineIds.has(d.id) ||
-          (d.id !== 'e9a9a8c3-c38f-45d8-9989-a887281172ff' &&
-            d.id !== '32353b13-4f84-41f5-be8b-2dafb1798278')),
+        !d.deleted,
     )
     .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
@@ -3695,50 +3624,6 @@ async function getBaseCatalog() {
   ]
   return (
     <>
-      {decks.length === 0 && (
-        <div
-          style={{
-            background: '#eff6ff',
-            borderBottom: '1.5px solid #93c5fd',
-            padding: '14px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-            gap: '14px',
-            zIndex: 50,
-          }}
-        >
-          <span style={{ fontSize: '.92rem', color: '#1e40af', fontWeight: 600 }}>
-            Pastas ou cartões sumiram? Restaure sua biblioteca completa (34 pastas e 1.352 cartões):
-          </span>
-          <button
-            style={{
-              background: '#2563eb',
-              color: '#fff',
-              border: 'none',
-              padding: '8px 18px',
-              borderRadius: '8px',
-              fontWeight: 800,
-              fontSize: '.88rem',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
-            }}
-            onClick={async () => {
-              setMsg('Restaurando suas 34 pastas e 1.352 cartões do backup...')
-              try {
-                await restoreBackupData(true)
-                await loadData()
-                setMsg('Sucesso! 34 pastas e 1.352 cartões restaurados com perfeição.')
-              } catch (e: any) {
-                setMsg('Erro ao restaurar: ' + (e?.message || e))
-              }
-            }}
-          >
-            🚀 Restaurar 1.352 Cartões Agora
-          </button>
-        </div>
-      )}
       <MedReviewLegacyHome
         userEmail={user?.email}
         totalCards={totalCards}

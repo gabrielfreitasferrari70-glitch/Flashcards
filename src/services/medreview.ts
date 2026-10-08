@@ -689,13 +689,8 @@ export const restoreBackupData = async (force = false) => {
 }
 
 export const applyInitialSeed = async () => {
-  try {
-    const res = await restoreBackupData(false)
-    return res
-  } catch (err) {
-    console.error('Falha na inicialização da seed:', err)
-    return { ok: false, error: err }
-  }
+  // Não realiza mais inserção automática de cartões legados
+  return { ok: true }
 }
 
 export const importCardsAuto = async (
@@ -716,7 +711,7 @@ export const importCardsAuto = async (
   if (!userAuth.user) throw new Error('Usuário não autenticado')
   const userId = userAuth.user.id
 
-  // 1. Busca todas as pastas existentes
+  // 1. Busca todas as pastas existentes do usuário
   const { data: existingDecks } = await supabase
     .from('mr_decks')
     .select('id, title, parent')
@@ -729,6 +724,8 @@ export const importCardsAuto = async (
   for (const d of currentDecks) {
     deckMap.set(d.title.trim().toLowerCase(), d.id)
   }
+
+  let rootDeckId = ''
 
   // 2. Se temos deckTree (árvore completa de pastas com pais/filhos), cria na ordem correta
   if (deckTree && deckTree.length > 0) {
@@ -743,20 +740,46 @@ export const importCardsAuto = async (
         deckMap.set(lower, existingId)
       }
       if (r.id) idMap.set(r.id, existingId)
+      if (!rootDeckId) rootDeckId = existingId
+      recordFrontlineDeckId(existingId)
     }
 
-    // 2.2 Filhas
-    const children = deckTree.filter((d) => !!d.parent)
-    for (const ch of children) {
-      const parentId = (ch.parent && idMap.get(ch.parent)) || undefined
-      const lower = ch.title.trim().toLowerCase()
-      let existingId = deckMap.get(lower)
-      if (!existingId) {
-        const created = await createDeck(ch.title, (ch.kind as any) || 'custom', parentId, 'study', false)
-        existingId = created.id
-        deckMap.set(lower, existingId)
+    // 2.2 Filhas: resolve em múltiplas passadas garantindo que o pai já exista no idMap
+    const remaining = [...deckTree.filter((d) => !!d.parent)]
+    let maxRounds = 10
+    while (remaining.length > 0 && maxRounds-- > 0) {
+      let createdAny = false
+      for (let i = remaining.length - 1; i >= 0; i--) {
+        const ch = remaining[i]
+        const parentId = ch.parent ? idMap.get(ch.parent) : undefined
+        // Só cria se o pai já foi resolvido no idMap
+        if (parentId) {
+          const lower = ch.title.trim().toLowerCase()
+          let existingId = deckMap.get(lower)
+          if (!existingId) {
+            const created = await createDeck(ch.title, (ch.kind as any) || 'custom', parentId, 'study', false)
+            existingId = created.id
+            deckMap.set(lower, existingId)
+          }
+          if (ch.id) idMap.set(ch.id, existingId)
+          remaining.splice(i, 1)
+          createdAny = true
+        }
       }
-      if (ch.id) idMap.set(ch.id, existingId)
+      if (!createdAny) {
+        // Se sobrou algum órfão cujo pai não estava no deckTree, cria no nível inicial
+        for (const ch of remaining) {
+          const lower = ch.title.trim().toLowerCase()
+          let existingId = deckMap.get(lower)
+          if (!existingId) {
+            const created = await createDeck(ch.title, (ch.kind as any) || 'custom', undefined, 'study', false)
+            existingId = created.id
+            deckMap.set(lower, existingId)
+          }
+          if (ch.id) idMap.set(ch.id, existingId)
+        }
+        break
+      }
     }
   }
 
@@ -770,19 +793,19 @@ export const importCardsAuto = async (
   }
 
   // 4. Insere cartões nas pastas correspondentes
-  let firstDeckId = ''
   for (const [folderName, folderCards] of byFolder.entries()) {
     let targetDeckId = deckMap.get(folderName.toLowerCase())
     if (!targetDeckId) {
       const created = await createDeck(folderName, 'custom', undefined, 'study', true)
       targetDeckId = created.id
       deckMap.set(folderName.toLowerCase(), targetDeckId)
+      recordFrontlineDeckId(targetDeckId)
     }
-    if (!firstDeckId) firstDeckId = targetDeckId
+    if (!rootDeckId) rootDeckId = targetDeckId
     await createCardsBatch(targetDeckId, folderCards)
   }
 
-  return { ok: true, firstDeckId }
+  return { ok: true, firstDeckId: rootDeckId }
 }
 export const uploadCardImage = async (cardId: string, file: File): Promise<string> => {
   return new Promise((resolve, reject) => {

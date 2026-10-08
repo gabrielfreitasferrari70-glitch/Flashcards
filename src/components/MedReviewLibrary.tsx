@@ -1168,45 +1168,17 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
               margin: '20px 0 28px',
               padding: '24px',
               borderRadius: '16px',
-              background: '#eff6ff',
-              border: '1.5px solid #93c5fd',
+              background: '#f8fafc',
+              border: '1.5px dashed #cbd5e1',
               textAlign: 'center',
             }}
           >
-            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem', color: '#1e3a8a', fontWeight: 800 }}>
-              Recuperar Pastas e Cartões
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.05rem', color: '#334155', fontWeight: 800 }}>
+              Nenhuma pasta encontrada
             </h3>
-            <p style={{ margin: '0 auto 16px', maxWidth: 640, color: '#3b82f6', fontSize: '.92rem', lineHeight: 1.5 }}>
-              Detectamos seu backup completo de <strong>34 pastas</strong> e <strong>1.352 cartões</strong> (incluindo UC-2 Tutorias, Módulos e UC-1 Anatomia, Músculos e Neuro Provas Práticas 1 e 2 com imagens leves). Clique abaixo para restaurar imediatamente:
+            <p style={{ margin: '0 auto', maxWidth: 480, color: '#64748b', fontSize: '.88rem', lineHeight: 1.5 }}>
+              Crie uma nova pasta ou importe seus baralhos pelo botão <strong>Importar Baralho</strong> acima.
             </p>
-            <button
-              style={{
-                background: '#2563eb',
-                color: '#fff',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '10px',
-                fontWeight: 800,
-                fontSize: '.98rem',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-              }}
-              onClick={async () => {
-                try {
-                  setBusy(true)
-                  setMessage('Restaurando suas 34 pastas e 1.352 cartões do backup...')
-                  await restoreBackupData(true)
-                  await onRefresh()
-                  setMessage('Sucesso! 34 pastas e 1.352 cartões restaurados com perfeição.')
-                } catch (e: any) {
-                  setError('Erro ao restaurar: ' + (e?.message || e))
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              🚀 Restaurar Todas as 34 Pastas e 1.352 Cartões
-            </button>
           </div>
         )}
 
