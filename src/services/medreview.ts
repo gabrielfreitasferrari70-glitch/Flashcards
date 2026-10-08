@@ -151,20 +151,11 @@ export const createCardsBatch = async (
   if (!user.user) throw new Error('Not authenticated')
 
   const payloads = cards.map((c) => {
-    let finalA = c.a
-    if (c.occlusion) {
-      try {
-        const occStr = btoa(unescape(encodeURIComponent(JSON.stringify(c.occlusion))))
-        finalA = `${c.a}\n<!--occlusion:${occStr}-->`
-      } catch {
-        /* ignore */
-      }
-    }
     return {
       user_id: user.user!.id,
       deck_id: deckId,
       q: c.q,
-      a: finalA,
+      a: c.a,
       clinical: !!c.clinical,
       suspended: false,
       tags: c.tags || [],
@@ -174,35 +165,33 @@ export const createCardsBatch = async (
     }
   })
 
-  const { data, error } = await supabase.from('mr_cards').insert(payloads).select('id')
-  if (!error) return data
-
-  // Fallback se colunas extras não existirem
-  if (error.code === '42703' || error.message?.includes('column')) {
-    const basicPayloads = cards.map((c) => {
-      let finalA = c.a
-      if (c.occlusion) {
-        try {
-          const occStr = btoa(unescape(encodeURIComponent(JSON.stringify(c.occlusion))))
-          finalA = `${c.a}\n<!--occlusion:${occStr}-->`
-        } catch {
-          /* ignore */
-        }
+  // Insere em lotes de no máximo 15 registros para garantir envio ultra-leve e rápido ao Supabase
+  const CHUNK_SIZE = 15
+  const results: any[] = []
+  for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
+    const chunk = payloads.slice(i, i + CHUNK_SIZE)
+    const { data, error } = await supabase.from('mr_cards').insert(chunk).select('id')
+    if (error) {
+      if (error.code === '42703' || error.message?.includes('column')) {
+        const basicPayloads = chunk.map((c) => ({
+          user_id: c.user_id,
+          deck_id: c.deck_id,
+          q: c.q,
+          a: c.a,
+          clinical: c.clinical,
+          suspended: false,
+        }))
+        const { data: fbData, error: fbErr } = await supabase.from('mr_cards').insert(basicPayloads).select('id')
+        if (fbErr) throw fbErr
+        if (fbData) results.push(...fbData)
+      } else {
+        throw error
       }
-      return {
-        user_id: user.user!.id,
-        deck_id: deckId,
-        q: c.q,
-        a: finalA,
-        clinical: !!c.clinical,
-        suspended: false,
-      }
-    })
-    const { data: fbData, error: fbErr } = await supabase.from('mr_cards').insert(basicPayloads).select('id')
-    if (fbErr) throw fbErr
-    return fbData
+    } else if (data) {
+      results.push(...data)
+    }
   }
-  throw error
+  return results
 }
 
 

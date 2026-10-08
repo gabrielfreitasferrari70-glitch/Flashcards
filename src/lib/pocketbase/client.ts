@@ -69,20 +69,13 @@ const pb = {
         throw new Error('Create not implemented for ' + name)
       },
       getFullList: async (options?: { sort?: string }) => {
-        const batchSize = name === 'mr_cards' ? 250 : 1000
+        const batchSize = 1000
         let allRows: any[] = []
         let from = 0
         let hasMore = true
 
         while (hasMore) {
-          let query = supabase.from(name).select('*')
-
-          if (name === 'mr_cards') {
-            // Ignora os registros legados pesados com Base64 (que causam statement timeout)
-            // e carrega apenas os 1.352 cartões limpos e otimizados
-            query = query.gte('created_at', '2026-10-08T12:00:00Z')
-          }
-
+          const query = supabase.from(name).select('*')
           const { data, error } = await query.range(from, from + batchSize - 1)
 
           if (error) {

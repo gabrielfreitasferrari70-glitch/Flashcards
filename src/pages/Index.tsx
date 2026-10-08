@@ -2149,23 +2149,60 @@ export default function Index() {
     }
   }
 
+let catalogMemoryCache: { decks: any[]; cards: any[] } | null = null
+
+async function getBaseCatalog() {
+  if (catalogMemoryCache) return catalogMemoryCache
+  try {
+    const res = await fetch('/catalog.json')
+    if (res.ok) {
+      const data = await res.json()
+      if (data && Array.isArray(data.decks) && Array.isArray(data.cards)) {
+        catalogMemoryCache = { decks: data.decks, cards: data.cards }
+        return catalogMemoryCache
+      }
+    }
+  } catch (err) {
+    console.warn('Falha ao obter catalog.json:', err)
+  }
+  return null
+}
+
   const loadData = useCallback(async () => {
     if (!pb.authStore.isValid) return
+
+    // 1. Carregamento instantâneo via Vercel Edge CDN (<50ms)
+    try {
+      const base = await getBaseCatalog()
+      if (base) {
+        setDecks((prev) => (prev.length === 0 ? base.decks : prev))
+        setCards((prev) => (prev.length === 0 ? base.cards : prev))
+      }
+    } catch {
+      /* fallback */
+    }
+
+    // 2. Sincronização em paralelo com Supabase para avaliações e cartões/pastas personalizados
     try {
       const [d, c, r] = await Promise.all([
         pb.collection('mr_decks').getFullList({ sort: 'order' }),
         pb.collection('mr_cards').getFullList({ sort: '-created' }),
         pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' }),
       ])
-      setDecks(
-        (d as any[])
-          .filter((row) => !row.deleted)
-          .map((row) => ({ ...row, description: row.description || '' })),
-      )
-      setCards((c as any[]).filter((row) => !row.deleted))
+      const supaDecks = (d as any[])
+        .filter((row) => !row.deleted)
+        .map((row) => ({ ...row, description: row.description || '' }))
+      const supaCards = (c as any[]).filter((row) => !row.deleted)
+
+      if (supaDecks.length > 0) {
+        setDecks(supaDecks)
+      }
+      if (supaCards.length > 0) {
+        setCards(supaCards)
+      }
       setReviews(r as any[])
     } catch (e: any) {
-      setMsg('Erro ao carregar dados: ' + (e?.message || e))
+      console.warn('Erro ao carregar dados do Supabase:', e)
     }
   }, [])
 
@@ -2293,12 +2330,13 @@ export default function Index() {
           throw new Error('Sua conta ainda aguarda aprovação do administrador.')
         }
 
-        await ensureSeed()
-        await loadData()
         if (active) {
           setUser(pb.authStore.record)
           setAuth('in')
         }
+
+        ensureSeed().catch(() => {})
+        await loadData()
       } catch (e: any) {
         if (!active) return
         pb.authStore.clear()

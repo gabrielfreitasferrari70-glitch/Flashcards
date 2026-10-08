@@ -76,7 +76,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
 
       const total = result.cards.length
       // Importa em lotes seguros via createCardsBatch
-      const BATCH_SIZE = 5
+      const BATCH_SIZE = 15
       for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = result.cards.slice(i, i + BATCH_SIZE)
         setProgress({
