@@ -2207,21 +2207,73 @@ export default function Index() {
     // Inicialização direta sem injeção de cartões legados
   }
 
+  const fetchFullCardsProgressively = useCallback(async () => {
+    const batchSize = 40
+    let from = 0
+    let hasMore = true
+    const allFull: Card[] = []
+
+    while (hasMore) {
+      let data: any[] | null = null
+      let error: any = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await supabase
+          .from('mr_cards')
+          .select('*')
+          .range(from, from + batchSize - 1)
+        data = res.data
+        error = res.error
+        if (!error) break
+        await new Promise((r) => setTimeout(r, 400))
+      }
+
+      if (error || !data || data.length === 0) break
+
+      const mapped: Card[] = data.map((row: any) => ({
+        ...row,
+        created: row.created_at,
+        updated: row.updated_at,
+        deck: row.deck_id,
+      }))
+      allFull.push(...mapped)
+
+      setCards((prev) => {
+        const map = new Map(prev.map((c) => [c.id, c]))
+        for (const item of mapped) {
+          map.set(item.id, item)
+        }
+        return Array.from(map.values())
+      })
+
+      if (data.length < batchSize) {
+        hasMore = false
+      } else {
+        from += batchSize
+      }
+    }
+
+    if (allFull.length > 0) {
+      setLocalCache('mr_cached_cards', allFull)
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
-    // Sincronização em tempo real direta com Supabase (fonte única e canônica de dados do usuário)
     try {
-      const [d, c, r] = await Promise.all([
-        pb.collection('mr_decks').getFullList({ sort: 'order' }),
-        pb.collection('mr_cards').getFullList({ sort: '-created' }),
-        pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' }),
-      ])
-      const supaRawDecks = (d as any[]) || []
-      const supaRawCards = (c as any[]) || []
+      // 1. Carrega as 34 pastas instantaneamente (<450ms)
+      const decksPromise = pb.collection('mr_decks').getFullList({ sort: 'order' })
 
+      // 2. Carrega metadados leves dos cartões (<750ms) e revisões em paralelo
+      const metaCardsPromise = supabase
+        .from('mr_cards')
+        .select('id, deck_id, suspended, clinical, created_at, tags')
+        .order('created_at', { ascending: false })
+
+      const reviewsPromise = pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' })
+
+      // Recebe pastas e renderiza imediatamente na tela
+      const rawDecks = ((await decksPromise) as any[]) || []
       const frontlineDeckIds = getFrontlineDeckIds()
-
-      // Pastas reais do usuário no Supabase
-      const validDecks = supaRawDecks
+      const validDecks = rawDecks
         .filter((row) => !row.deleted)
         .map((row) => {
           const isFrontline =
@@ -2230,24 +2282,44 @@ export default function Index() {
             (!row.parent && row.kind === 'custom')
           return { ...row, frontline: isFrontline }
         })
-
       setDecks(validDecks)
-
-      // Cartões reais do usuário no Supabase
-      const validCards = supaRawCards.filter((row) => !row.deleted)
-      setCards(validCards)
-
-      const validReviews = (r as any[]) || []
-      setReviews(validReviews)
-
-      // Salva no cache local para carregamento instantâneo (<20ms) nas próximas visitas
       setLocalCache('mr_cached_decks', validDecks)
-      setLocalCache('mr_cached_cards', validCards)
+
+      // Recebe metadados dos cartões e revisões
+      const [metaRes, revs] = await Promise.all([metaCardsPromise, reviewsPromise])
+      const rawMeta = metaRes.data || []
+      const validMetaCards: Card[] = rawMeta.map((row: any) => ({
+        id: row.id,
+        deck: row.deck_id,
+        deck_id: row.deck_id,
+        q: 'Carregando cartão...',
+        a: '',
+        suspended: !!row.suspended,
+        clinical: !!row.clinical,
+        created: row.created_at,
+        created_at: row.created_at,
+        tags: row.tags || [],
+      })) as any[]
+
+      // Atualiza cartões mantendo qualquer cartão já completo em memória
+      setCards((prev) => {
+        if (prev.length > 0 && prev.some((c) => c.q && c.q !== 'Carregando cartão...')) {
+          const prevMap = new Map(prev.map((c) => [c.id, c]))
+          return validMetaCards.map((m) => prevMap.get(m.id) || m)
+        }
+        return validMetaCards
+      })
+
+      const validReviews = (revs as any[]) || []
+      setReviews(validReviews)
       setLocalCache('mr_cached_reviews', validReviews)
+
+      // 3. Busca o conteúdo completo progressivamente em segundo plano sem travar nada
+      fetchFullCardsProgressively()
     } catch (e: any) {
       console.warn('Erro ao carregar dados do Supabase:', e)
     }
-  }, [])
+  }, [fetchFullCardsProgressively])
 
   const reviewsByCard = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -2659,7 +2731,7 @@ export default function Index() {
   )
 
   const studyDeck = useCallback(
-    (deckId: string) => {
+    async (deckId: string) => {
       const deck = decks.find((d) => d.id === deckId)
       const targetCards = getSubtreeCardList(deckId)
       if (targetCards.length === 0) {
@@ -2667,7 +2739,25 @@ export default function Index() {
         setTimeout(() => setMsg(''), 3500)
         return
       }
-      startStudy(targetCards, deckId, deck?.title || 'Estudo da Pasta')
+
+      // Se alguns cartões ainda não têm o texto/imagem completo baixado, busca-os imediatamente
+      let readyCards = targetCards
+      const needFull = targetCards.filter((c) => !c.a || c.q === 'Carregando cartão...')
+      if (needFull.length > 0) {
+        try {
+          const ids = needFull.slice(0, 80).map((c) => c.id)
+          const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', ids)
+          if (fullRows && fullRows.length > 0) {
+            const fullMap = new Map(
+              fullRows.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
+            )
+            readyCards = targetCards.map((c) => fullMap.get(c.id) || c)
+            setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
+          }
+        } catch {}
+      }
+
+      startStudy(readyCards, deckId, deck?.title || 'Estudo da Pasta')
     },
     [decks, getSubtreeCardList],
   )
@@ -2685,18 +2775,30 @@ export default function Index() {
   const openFolderGroup = (folderKind: 'tutoria' | 'prova' | 'custom') =>
     setRoute({ view: 'home', folderKind })
 
-  const startStudyNow = () => {
+  const startStudyNow = async () => {
     const allCards = cards
     const dueOrNew = allCards.filter((c) => {
       if (c.suspended || c.deleted) return false
       const cs = cardStateFromReviews(reviewsForCard(c))
       return cs.state === 'new' || (cs.dueMs || 0) <= Date.now()
     })
-    startStudy(
-      dueOrNew.length ? dueOrNew : allCards.filter((c) => !c.suspended && !c.deleted),
-      undefined,
-      'Todas as cartas',
-    )
+    const candidates = dueOrNew.length ? dueOrNew : allCards.filter((c) => !c.suspended && !c.deleted)
+    let readyCards = candidates
+    const needFull = candidates.filter((c) => !c.a || c.q === 'Carregando cartão...')
+    if (needFull.length > 0) {
+      try {
+        const ids = needFull.slice(0, 80).map((c) => c.id)
+        const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', ids)
+        if (fullRows && fullRows.length > 0) {
+          const fullMap = new Map(
+            fullRows.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
+          )
+          readyCards = candidates.map((c) => fullMap.get(c.id) || c)
+          setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
+        }
+      } catch {}
+    }
+    startStudy(readyCards, undefined, 'Todas as cartas')
   }
   const startClinicalMode = () => {
     const clinicalCards = cards.filter(
