@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { StudyHeatmap } from './StudyHeatmap'
 import {
   compareDecks,
   DECK_SORT_EVENT,
@@ -186,6 +187,9 @@ type HomeProps = {
   onOpenExamPlan?: (deckId: string, deckTitle: string) => void
   onOpenMasterReports?: () => void
   onOpenMasterAnalytics?: () => void
+  reviews?: any[]
+  onOpenCramMode?: (deckId?: string) => void
+  onOpenAnkiImport?: () => void
 }
 
 export function MedReviewLegacyHome(props: HomeProps) {
@@ -228,6 +232,9 @@ export function MedReviewLegacyHome(props: HomeProps) {
     onOpenExamPlan,
     onOpenMasterReports,
     onOpenMasterAnalytics,
+    reviews,
+    onOpenCramMode,
+    onOpenAnkiImport,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
   // Quando um deck específico é aberto (pasta organizadora), mostra só a subárvore dele;
@@ -325,6 +332,21 @@ export function MedReviewLegacyHome(props: HomeProps) {
             </button>
             <button className="mr-legacy-button" onClick={onClinical}>
               📋 Modo Clínico
+            </button>
+            <button
+              className="mr-legacy-button"
+              onClick={() => onOpenCramMode?.()}
+              style={{ background: '#fffbeb', borderColor: '#fde68a', color: '#b45309', fontWeight: 800 }}
+              title="Revisão Intensiva de Véspera de Prova (Cram Mode)"
+            >
+              ⚡ Véspera
+            </button>
+            <button
+              className="mr-legacy-button"
+              onClick={onOpenAnkiImport}
+              title="Importar baralhos do Anki (.apkg, .txt, .csv)"
+            >
+              📥 Importar Anki
             </button>
             <button className="mr-legacy-button primary" onClick={onNewFrontlineFolder}>
               ＋ Nova Pasta
@@ -483,6 +505,14 @@ export function MedReviewLegacyHome(props: HomeProps) {
                       >
                         <button
                           type="button"
+                          title="Revisão intensiva de véspera nesta pasta"
+                          onClick={() => onOpenCramMode?.(deck.id)}
+                          style={{ color: '#b45309', fontWeight: 800 }}
+                        >
+                          ⚡ Véspera
+                        </button>
+                        <button
+                          type="button"
                           title="Criar carta nesta pasta"
                           onClick={() => onDeckAddCard?.(deck.id)}
                         >
@@ -599,11 +629,27 @@ export function MedReviewLegacyHome(props: HomeProps) {
                 <button className="mr-legacy-button" onClick={onOpenImageOcclusion}>
                   🖼️ Oclusão
                 </button>
+                <button
+                  className="mr-legacy-button"
+                  onClick={() => onOpenCramMode?.()}
+                  style={{ background: '#fffbeb', borderColor: '#fde68a', color: '#b45309', fontWeight: 800 }}
+                  title="Revisão Intensiva Pré-Prova (Cram Mode)"
+                >
+                  ⚡ Véspera de Prova
+                </button>
+                <button
+                  className="mr-legacy-button"
+                  onClick={onOpenAnkiImport}
+                  title="Importar baralhos do Anki (.apkg, .txt, .csv)"
+                >
+                  📥 Importar Anki
+                </button>
                 <button className="mr-legacy-button" onClick={() => onNewFolderIn('custom')}>
                   ＋ Nova pasta
                 </button>
               </div>
             </section>
+            <StudyHeatmap reviews={reviews || []} cards={cards} />
             <section>
               <header className="mr-legacy-section-head">
                 <div>

@@ -47,6 +47,13 @@ const MasterAnalyticsModal = lazy(() =>
 const AiCardGeneratorModal = lazy(() =>
   import('@/components/AiCardGeneratorModal').then((m) => ({ default: m.AiCardGeneratorModal })),
 )
+const CramSessionModal = lazy(() =>
+  import('@/components/CramSessionModal').then((m) => ({ default: m.CramSessionModal })),
+)
+const AnkiImportModal = lazy(() =>
+  import('@/components/AnkiImportModal').then((m) => ({ default: m.AnkiImportModal })),
+)
+import { speechService } from '@/services/speech'
 
 // ==================== Motor FSRS-5 (portado do MedReview original) ====================
 const FSRS_W = [
@@ -116,7 +123,7 @@ function clozeCount(text: string): number {
   while ((m = CLOZE_RE.exec(text || ''))) set.add(m[1])
   return set.size
 }
-// Renderiza o texto com as lacunas: antes de virar, oculta; depois, destaca.
+// Renderiza o texto com as lacunas: antes de virar, oculta com dica ou numeração; depois, destaca com esmeralda.
 function renderClozeHtml(text: string, revealed: boolean): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   CLOZE_RE.lastIndex = 0
@@ -126,9 +133,10 @@ function renderClozeHtml(text: string, revealed: boolean): string {
   while ((m = CLOZE_RE.exec(text || ''))) {
     out += esc(text.slice(last, m.index))
     if (revealed) {
-      out += `<span style="background:#d1fae5;color:#14532d;font-weight:800;border-radius:4px;padding:1px 5px">${esc(m[2])}</span>`
+      out += `<span style="background:#dcfce7;color:#14532d;font-weight:800;border-radius:6px;padding:2px 8px;border:1px solid #86efac;box-shadow:0 1px 3px rgba(22,163,74,0.15)">${esc(m[2])}</span>`
     } else {
-      out += `<span style="background:#fef3c7;color:#b45309;font-weight:800;border-radius:4px;padding:1px 7px">[…c${m[1]}…]</span>`
+      const hint = m[3] ? esc(m[3]) : `c${m[1]}`
+      out += `<span style="background:#fef3c7;color:#b45309;font-weight:800;border-radius:6px;padding:2px 8px;border:1.5px dashed #f59e0b;cursor:pointer;display:inline-block" title="Lacuna Cloze: clique para virar e conferir">[…${hint}…]</span>`
     }
     last = m.index + m[0].length
   }
@@ -2107,6 +2115,16 @@ export default function Index() {
   const [masterAnalyticsOpen, setMasterAnalyticsOpen] = useState(false)
   const [currentCardNote, setCurrentCardNote] = useState('')
   const [noteSaving, setNoteSaving] = useState(false)
+  const [cramModalOpen, setCramModalOpen] = useState(false)
+  const [cramInitialDeckId, setCramInitialDeckId] = useState<string | undefined>(undefined)
+  const [sessionProtectFsrs, setSessionProtectFsrs] = useState(false)
+  const [ankiImportOpen, setAnkiImportOpen] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [speechRate, setSpeechRate] = useState(1.0)
+
+  useEffect(() => {
+    return speechService.subscribe(setIsSpeaking)
+  }, [])
 
   const retention = useMemo(() => getRetention(), [route, retentionTick])
   const schedulerSettings = useMemo(() => getSchedulerSettings(user?.id), [user?.id, retentionTick])
@@ -2338,7 +2356,14 @@ export default function Index() {
   }
 
   // Fila FSRS: vencidas → novas → futuras. Cartas com "reverse" geram uma variante invertida (verso→frente) na fila.
-  const startStudy = (candidateCards: Card[], deckId?: string, sessionTitle?: string) => {
+  const startStudy = (
+    candidateCards: Card[],
+    deckId?: string,
+    sessionTitle?: string,
+    options?: { protectFsrs?: boolean; preserveOrder?: boolean },
+  ) => {
+    setSessionProtectFsrs(!!options?.protectFsrs)
+    speechService.stop()
     const withVariants: Card[] = []
     for (const c of candidateCards) {
       if (c.suspended || c.deleted) continue
@@ -2346,20 +2371,23 @@ export default function Index() {
       if (c.reverse && c.q && c.a) withVariants.push({ ...c, id: c.id + '::rev', __reverse: true })
     }
     const studyCards = withVariants
-    const states = new Map(
-      studyCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
-    )
-    const currentTime = Date.now()
-    const rank = (cs: CardState) =>
-      cs.state === 'new' ? 2 : (cs.dueMs || 0) <= currentTime ? 0 : 1
-    const sorted = [...studyCards].sort((a, b) => {
-      const ra = rank(states.get(stateKey(a))!),
-        rb = rank(states.get(stateKey(b))!)
-      if (ra !== rb) return ra - rb
-      if (ra === 0)
-        return (states.get(stateKey(a))!.dueMs || 0) - (states.get(stateKey(b))!.dueMs || 0)
-      return 0
-    })
+    let sorted = studyCards
+    if (!options?.preserveOrder) {
+      const states = new Map(
+        studyCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
+      )
+      const currentTime = Date.now()
+      const rank = (cs: CardState) =>
+        cs.state === 'new' ? 2 : (cs.dueMs || 0) <= currentTime ? 0 : 1
+      sorted = [...studyCards].sort((a, b) => {
+        const ra = rank(states.get(stateKey(a))!),
+          rb = rank(states.get(stateKey(b))!)
+        if (ra !== rb) return ra - rb
+        if (ra === 0)
+          return (states.get(stateKey(a))!.dueMs || 0) - (states.get(stateKey(b))!.dueMs || 0)
+        return 0
+      })
+    }
     setQueue(sorted)
     setQIdx(0)
     setFlipped(false)
@@ -2728,6 +2756,7 @@ export default function Index() {
 
   // Avalia carta: grava review no banco e avança
   const rate = async (quality: Quality) => {
+    speechService.stop()
     const card = queue[qIdx]
     if (!card) return
     const realId = card.id.replace(/::rev$/, '')
@@ -2735,6 +2764,16 @@ export default function Index() {
     const cs = cardStateFromReviews(cardReviews)
     const pv = previewIntervalsForSettings(cs, retention, schedulerSettings)
     const chosen = pv[quality]
+
+    if (sessionProtectFsrs) {
+      setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
+      setMsg(`⚡ Treino de véspera: resposta salva (${quality}) com FSRS protegido.`)
+      setTimeout(() => setMsg(''), 2200)
+      setFlipped(false)
+      setMcPicked(null)
+      setQIdx((i) => i + 1)
+      return
+    }
     const now = new Date()
     const dueDate = new Date(now.getTime() + chosen.value * 86400000)
     const fmt = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 19)
@@ -2961,33 +3000,88 @@ export default function Index() {
             </span>
           </div>
           <article className="mr-legacy-study-card" onClick={() => setFlipped((f) => !f)}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
-              <span className="mr-legacy-badge">
-                {card.__reverse
-                  ? '🔁 Cartão reverso (verso → frente)'
-                  : isCloze(card.q)
-                    ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
-                    : card.clinical
-                      ? '🩺 Cartão de Modo Clínico'
-                      : '🩺 Cartão de revisão'}
-              </span>
-              {extractCardTags(card).map((tag) => (
-                <span
-                  key={tag}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span className="mr-legacy-badge">
+                  {card.__reverse
+                    ? '🔁 Cartão reverso (verso → frente)'
+                    : isCloze(card.q)
+                      ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
+                      : card.clinical
+                        ? '🩺 Cartão de Modo Clínico'
+                        : '🩺 Cartão de revisão'}
+                </span>
+                {extractCardTags(card).map((tag) => (
+                  <span
+                    key={tag}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '3px 9px',
+                      borderRadius: 999,
+                      background: '#fef3c7',
+                      color: '#b45309',
+                      fontSize: '.72rem',
+                      fontWeight: 800,
+                    }}
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* Controles de Áudio TTS */}
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isSpeaking) {
+                      speechService.stop()
+                    } else {
+                      const textToRead = flipped ? card.a : card.q
+                      speechService.speak(textToRead, flipped, speechRate)
+                    }
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    padding: '3px 9px',
+                    gap: 5,
+                    border: `1.5px solid ${isSpeaking ? '#f59e0b' : '#86efac'}`,
+                    background: isSpeaking ? '#fffbeb' : '#f0fdf4',
+                    color: isSpeaking ? '#b45309' : '#15803d',
                     borderRadius: 999,
-                    background: '#fef3c7',
-                    color: '#b45309',
-                    fontSize: '.72rem',
+                    padding: '3px 10px',
+                    fontSize: '.74rem',
                     fontWeight: 800,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
+                  title="Ouvir em voz alta em português"
                 >
-                  {tag}
-                </span>
-              ))}
+                  {isSpeaking ? '⏹️ Parar' : flipped ? '🔊 Ouvir Resposta' : '🔊 Ouvir Pergunta'}
+                </button>
+                <select
+                  value={speechRate}
+                  onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
+                    padding: '2px 4px',
+                    fontSize: '.7rem',
+                    color: '#64748b',
+                    background: '#fff',
+                    cursor: 'pointer',
+                  }}
+                  title="Velocidade de leitura"
+                >
+                  <option value={1.0}>1.0x</option>
+                  <option value={1.2}>1.2x</option>
+                  <option value={1.5}>1.5x</option>
+                </select>
+              </div>
             </div>
             <h1
               className="mr-legacy-question"
@@ -3488,8 +3582,42 @@ export default function Index() {
         onOpenExamPlan={(dId, dTitle) => setExamPlanTarget({ id: dId, title: dTitle })}
         onOpenMasterReports={() => setMasterReportsOpen(true)}
         onOpenMasterAnalytics={() => setMasterAnalyticsOpen(true)}
+        reviews={reviews}
+        onOpenCramMode={(dId) => {
+          setCramInitialDeckId(dId)
+          setCramModalOpen(true)
+        }}
+        onOpenAnkiImport={() => setAnkiImportOpen(true)}
       />
       <Suspense fallback={null}>
+        {cramModalOpen && (
+          <CramSessionModal
+            decks={decks}
+            cards={cards}
+            reviews={reviews}
+            initialDeckId={cramInitialDeckId}
+            onClose={() => setCramModalOpen(false)}
+            onStart={(pickedCards, options) => {
+              setCramModalOpen(false)
+              startStudy(pickedCards, undefined, options.title, {
+                protectFsrs: options.protectFsrs,
+                preserveOrder: true,
+              })
+            }}
+          />
+        )}
+        {ankiImportOpen && (
+          <AnkiImportModal
+            decks={decks}
+            onClose={() => setAnkiImportOpen(false)}
+            onSuccess={(count, deckTitle) => {
+              setAnkiImportOpen(false)
+              loadData()
+              setMsg(`Sucesso! ${count} cartas importadas do Anki para "${deckTitle}".`)
+              setTimeout(() => setMsg(''), 4000)
+            }}
+          />
+        )}
         {aiGeneratorOpen && (
           <AiCardGeneratorModal
             decks={decks}
@@ -3837,8 +3965,42 @@ export default function Index() {
               })()}
             {deckModal.type === 'card' ? (
               <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: '.8rem', fontWeight: 700, color: '#475569' }}>Frente (pergunta)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const textarea = document.getElementById('deck-modal-q-textarea') as HTMLTextAreaElement | null
+                      if (textarea) {
+                        const start = textarea.selectionStart
+                        const end = textarea.selectionEnd
+                        const sel = deckQ.substring(start, end)
+                        const nextClozeNum = clozeCount(deckQ) + 1
+                        const wrapped = sel ? `{{c${nextClozeNum}::${sel}}}` : `{{c${nextClozeNum}::palavra_oculta::dica}}`
+                        const newText = deckQ.substring(0, start) + wrapped + deckQ.substring(end)
+                        setDeckQ(newText)
+                        if (!deckA.trim()) setDeckA('Revisão da Lacuna (Cloze)')
+                        setTimeout(() => textarea.focus(), 50)
+                      }
+                    }}
+                    style={{
+                      background: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: 8,
+                      padding: '3px 8px',
+                      fontSize: '.74rem',
+                      fontWeight: 800,
+                      color: '#1d4ed8',
+                      cursor: 'pointer',
+                    }}
+                    title="Selecione um trecho e clique para transformar em lacuna Cloze {{c1::...}}"
+                  >
+                    🧩 + Ocultar Seleção (Cloze)
+                  </button>
+                </div>
                 <textarea
-                  placeholder="Frente (pergunta)"
+                  id="deck-modal-q-textarea"
+                  placeholder="Frente (pergunta) — selecione um termo e clique em 'Ocultar Seleção' para criar Cloze"
                   value={deckQ}
                   onChange={(e) => setDeckQ(e.target.value)}
                   style={{
