@@ -18,6 +18,7 @@ import {
   resetDeck,
   restoreBackupData,
   undoMoveSection,
+  getDeletedCardIds,
 } from '@/services/medreview'
 import {
   MedReviewLegacyHome,
@@ -164,6 +165,15 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
   }
   if (studyMode === 'reverse') {
     return renderClozeHtml(card.q, true)
+  }
+  // Se for oclusão de imagem e a resposta for apenas a tag da imagem sem texto adicional,
+  // evita duplicar a imagem embaixo do visualizador de oclusão
+  if (card.occlusion || (card.q && card.q.includes('image-occlusion:'))) {
+    const rawNoImg = (card.a || '').replace(/<img[^>]*>/gi, '').trim()
+    if (!rawNoImg) {
+      return '<div style="color:#15803d;font-weight:700">🎯 Resposta revelada na imagem acima.</div>'
+    }
+    return renderClozeHtml(rawNoImg, true)
   }
   if (isCloze(card.q)) {
     const clozeMatches: string[] = []
@@ -2208,10 +2218,11 @@ export default function Index() {
   }
 
   const fetchFullCardsProgressively = useCallback(async () => {
-    const batchSize = 40
+    const batchSize = 60
     let from = 0
     let hasMore = true
     const allFull: Card[] = []
+    const deletedCardIds = getDeletedCardIds()
 
     while (hasMore) {
       let data: any[] | null = null
@@ -2220,6 +2231,7 @@ export default function Index() {
         const res = await supabase
           .from('mr_cards')
           .select('*')
+          .order('id')
           .range(from, from + batchSize - 1)
         data = res.data
         error = res.error
@@ -2229,12 +2241,14 @@ export default function Index() {
 
       if (error || !data || data.length === 0) break
 
-      const mapped: Card[] = data.map((row: any) => ({
-        ...row,
-        created: row.created_at,
-        updated: row.updated_at,
-        deck: row.deck_id,
-      }))
+      const mapped: Card[] = data
+        .filter((row: any) => !deletedCardIds.has(row.id))
+        .map((row: any) => ({
+          ...row,
+          created: row.created_at,
+          updated: row.updated_at,
+          deck: row.deck_id,
+        }))
       allFull.push(...mapped)
 
       setCards((prev) => {
@@ -2259,7 +2273,7 @@ export default function Index() {
 
   const loadData = useCallback(async () => {
     try {
-      // 1. Carrega as 34 pastas instantaneamente (<450ms)
+      // 1. Carrega todas as pastas do usuário instantaneamente (<450ms)
       const decksPromise = pb.collection('mr_decks').getFullList({ sort: 'order' })
 
       // 2. Carrega metadados leves dos cartões (<750ms) e revisões em paralelo
@@ -2287,19 +2301,22 @@ export default function Index() {
 
       // Recebe metadados dos cartões e revisões
       const [metaRes, revs] = await Promise.all([metaCardsPromise, reviewsPromise])
+      const deletedCardIds = getDeletedCardIds()
       const rawMeta = metaRes.data || []
-      const validMetaCards: Card[] = rawMeta.map((row: any) => ({
-        id: row.id,
-        deck: row.deck_id,
-        deck_id: row.deck_id,
-        q: 'Carregando cartão...',
-        a: '',
-        suspended: !!row.suspended,
-        clinical: !!row.clinical,
-        created: row.created_at,
-        created_at: row.created_at,
-        tags: row.tags || [],
-      })) as any[]
+      const validMetaCards: Card[] = rawMeta
+        .filter((row: any) => !deletedCardIds.has(row.id))
+        .map((row: any) => ({
+          id: row.id,
+          deck: row.deck_id,
+          deck_id: row.deck_id,
+          q: 'Carregando cartão...',
+          a: '',
+          suspended: !!row.suspended,
+          clinical: !!row.clinical,
+          created: row.created_at,
+          created_at: row.created_at,
+          tags: row.tags || [],
+        })) as any[]
 
       // Atualiza cartões mantendo qualquer cartão já completo em memória
       setCards((prev) => {
@@ -2316,8 +2333,10 @@ export default function Index() {
 
       // 3. Busca o conteúdo completo progressivamente em segundo plano sem travar nada
       fetchFullCardsProgressively()
+      return { decks: validDecks, cards: validMetaCards }
     } catch (e: any) {
       console.warn('Erro ao carregar dados do Supabase:', e)
+      return null
     }
   }, [fetchFullCardsProgressively])
 
@@ -2740,16 +2759,21 @@ export default function Index() {
         return
       }
 
-      // Se alguns cartões ainda não têm o texto/imagem completo baixado, busca-os imediatamente
+      // Se alguns cartões ainda não têm o texto/imagem completo baixado, busca-os imediatamente em lotes
       let readyCards = targetCards
       const needFull = targetCards.filter((c) => !c.a || c.q === 'Carregando cartão...')
       if (needFull.length > 0) {
         try {
-          const ids = needFull.slice(0, 80).map((c) => c.id)
-          const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', ids)
-          if (fullRows && fullRows.length > 0) {
+          const allIds = needFull.map((c) => c.id)
+          const fetchedFull: any[] = []
+          for (let i = 0; i < allIds.length; i += 100) {
+            const batchIds = allIds.slice(i, i + 100)
+            const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', batchIds)
+            if (fullRows) fetchedFull.push(...fullRows)
+          }
+          if (fetchedFull.length > 0) {
             const fullMap = new Map(
-              fullRows.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
+              fetchedFull.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
             )
             readyCards = targetCards.map((c) => fullMap.get(c.id) || c)
             setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
@@ -2762,10 +2786,10 @@ export default function Index() {
     [decks, getSubtreeCardList],
   )
 
-  const openDeck = (deckId: string) => {
-    const deck = decks.find((d) => d.id === deckId)
+  const openDeck = (deckId: string, currentDecks = decks) => {
+    const deck = currentDecks.find((d) => d.id === deckId)
     // Se for pasta organizadora ou tiver subpastas, abre a navegação da pasta
-    const hasChildren = decks.some((d) => d.parent === deckId && !d.deleted)
+    const hasChildren = currentDecks.some((d) => d.parent === deckId && !d.deleted)
     if (deck && ((deck as any).mode === 'organizer' || hasChildren)) {
       setRoute({ view: 'home', folderKind: (deck.kind as any) || 'custom', deckId })
       return
@@ -2787,11 +2811,16 @@ export default function Index() {
     const needFull = candidates.filter((c) => !c.a || c.q === 'Carregando cartão...')
     if (needFull.length > 0) {
       try {
-        const ids = needFull.slice(0, 80).map((c) => c.id)
-        const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', ids)
-        if (fullRows && fullRows.length > 0) {
+        const allIds = needFull.map((c) => c.id)
+        const fetchedFull: any[] = []
+        for (let i = 0; i < allIds.length; i += 100) {
+          const batchIds = allIds.slice(i, i + 100)
+          const { data: fullRows } = await supabase.from('mr_cards').select('*').in('id', batchIds)
+          if (fullRows) fetchedFull.push(...fullRows)
+        }
+        if (fetchedFull.length > 0) {
           const fullMap = new Map(
-            fullRows.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
+            fetchedFull.map((r: any) => [r.id, { ...r, deck: r.deck_id, created: r.created_at }]),
           )
           readyCards = candidates.map((c) => fullMap.get(c.id) || c)
           setCards((prev) => prev.map((c) => fullMap.get(c.id) || c))
@@ -3881,11 +3910,11 @@ export default function Index() {
             onClose={() => setAnkiImportOpen(false)}
             onSuccess={async (count, deckTitle, deckId) => {
               setAnkiImportOpen(false)
-              await loadData()
+              const fresh = await loadData()
               setMsg(`Sucesso! ${count} cartas importadas para "${deckTitle}".`)
               setTimeout(() => setMsg(''), 4500)
               if (deckId) {
-                openDeck(deckId)
+                openDeck(deckId, fresh?.decks)
               }
             }}
           />

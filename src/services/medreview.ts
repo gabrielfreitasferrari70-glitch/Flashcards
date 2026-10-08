@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import type { ParsedCsvCard } from '@/lib/csvImport'
+import { getLocalCache, setLocalCache } from '@/lib/cache/localCache'
 
 export interface ReviewInput {
   card_id?: string
@@ -193,6 +194,9 @@ export const createCardsBatch = async (
       tags: Array.isArray(c.tags) ? c.tags.filter(Boolean) : [],
       group: c.group || '',
       ref: c.ref || '',
+      reverse: !!(c as any).reverse,
+      choices: (c as any).choices || null,
+      image_url: (c as any).image_url || c.imageUrl || null,
       occlusion: c.occlusion || null,
     }
   })
@@ -334,6 +338,12 @@ export const setCardSuspended = async (cardId: string, suspended: boolean) => {
 
 export const deleteCard = async (cardId: string) => {
   recordDeletedCardId(cardId)
+  try {
+    const cached = await getLocalCache<any[]>('mr_cached_cards')
+    if (cached && Array.isArray(cached)) {
+      await setLocalCache('mr_cached_cards', cached.filter((c) => c.id !== cardId))
+    }
+  } catch {}
   await supabase.from('mr_reviews').delete().eq('card_id', cardId)
   await supabase.from('mr_card_reports').delete().eq('card_id', cardId)
   await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
@@ -345,6 +355,13 @@ export const deleteCard = async (cardId: string) => {
 export const deleteCardsBatch = async (cardIds: string[]) => {
   if (cardIds.length === 0) return true
   recordDeletedCardId(cardIds)
+  try {
+    const cached = await getLocalCache<any[]>('mr_cached_cards')
+    if (cached && Array.isArray(cached)) {
+      const set = new Set(cardIds)
+      await setLocalCache('mr_cached_cards', cached.filter((c) => !set.has(c.id)))
+    }
+  } catch {}
   for (let i = 0; i < cardIds.length; i += 100) {
     const chunk = cardIds.slice(i, i + 100)
     await supabase.from('mr_reviews').delete().in('card_id', chunk)

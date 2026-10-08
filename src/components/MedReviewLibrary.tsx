@@ -501,6 +501,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     setSelectedCardIds(new Set())
     await run(async () => {
       await deleteCardsBatch(Array.from(idsToDelete))
+      await onRefresh()
     }, `${count} carta(s) excluída(s).`)
   }
 
@@ -871,6 +872,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     })
     await run(async () => {
       await deleteCard(card.id)
+      await onRefresh()
     }, 'Cartão excluído.')
   }
   const submitImport = async () => {

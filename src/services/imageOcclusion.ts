@@ -34,6 +34,67 @@ export function parseOcclusion(
       }
     }
   }
+
+  // 2. Fallback dinâmico para sintaxe nativa Anki: {{c1::image-occlusion:rect:...}}
+  if (!raw) {
+    const occText =
+      (promptText && promptText.includes('image-occlusion:'))
+        ? promptText
+        : (fallbackText && fallbackText.includes('image-occlusion:') ? fallbackText : '')
+
+    if (occText) {
+      const combined = `${fallbackText || ''} ${promptText || ''}`
+      const imgMatch = combined.match(/<img[^>]+src=["']([^"']+)["']/i)
+      const imageUrl = imgMatch ? imgMatch[1] : ''
+
+      if (imageUrl) {
+        const maskMatches = [
+          ...occText.matchAll(/(?:\{\{c(\d+)::)?image-occlusion:(\w+):([^}\n<"]+)(?:\}\})?/g),
+        ]
+        const masks: OcclusionMask[] = []
+        let maskIdx = 0
+        for (const m of maskMatches) {
+          maskIdx++
+          const clozeNum = m[1] ? parseInt(m[1], 10) : maskIdx
+          const params = m[3]
+          const leftM = params.match(/left=([0-9.]+)/)
+          const topM = params.match(/top=([0-9.]+)/)
+          const widthM = params.match(/width=([0-9.]+)/)
+          const heightM = params.match(/height=([0-9.]+)/)
+
+          if (leftM && topM && widthM && heightM) {
+            masks.push({
+              id: `c_${clozeNum}`,
+              x: Math.max(0, Math.min(100, parseFloat(leftM[1]) * 100)),
+              y: Math.max(0, Math.min(100, parseFloat(topM[1]) * 100)),
+              width: Math.max(0.5, Math.min(100, parseFloat(widthM[1]) * 100)),
+              height: Math.max(0.5, Math.min(100, parseFloat(heightM[1]) * 100)),
+              label: `Estrutura ${clozeNum}`,
+            })
+          }
+        }
+
+        if (masks.length > 0) {
+          let activeMaskId = masks[0].id
+          const activeClozeMatch = promptText?.match(/\{\{c(\d+)::image-occlusion/i)
+          if (activeClozeMatch) {
+            const clozeNum = parseInt(activeClozeMatch[1], 10)
+            const targetMask = masks.find((mk) => mk.id === `c_${clozeNum}`)
+            if (targetMask) activeMaskId = targetMask.id
+          }
+
+          raw = {
+            imageUrl,
+            imageTitle: 'Anatomia — Identificação Muscular',
+            masks,
+            activeMaskId,
+            mode: 'hide_all_guess_one',
+          }
+        }
+      }
+    }
+  }
+
   if (!raw) return null
   try {
     const data = typeof raw === 'string' ? JSON.parse(raw) : raw

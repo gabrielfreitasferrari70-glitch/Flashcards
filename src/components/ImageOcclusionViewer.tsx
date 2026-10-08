@@ -249,58 +249,22 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                   // 2. ATIVO (pergunta): 100% OPACO VERMELHO (#dc2626) para nada vazar
                   // 3. OUTROS (Hide All): 100% OPACO AMARELO (#ffea79)
                   border: isShown
-                    ? '3px solid #16a34a'
+                    ? '2.5px solid #16a34a'
                     : isActive
-                      ? '3px solid #991b1b'
-                      : '2px solid #1e293b',
+                      ? '2.5px solid #b91c1c'
+                      : '1.5px solid #ca8a04',
                   background: isShown
-                    ? 'rgba(34, 197, 94, 0.05)'
+                    ? 'transparent'
                     : isActive
-                      ? '#dc2626'
-                      : '#ffea79',
-                  color: isShown ? '#15803d' : isActive ? '#ffffff' : '#0f172a',
-                  fontWeight: 900,
-                  fontSize: 'clamp(0.7rem, 1.3vw, 0.95rem)',
-                  textAlign: 'center',
-                  userSelect: 'none',
+                      ? '#ef4444'
+                      : '#fde047',
                   boxShadow: isShown
-                    ? '0 0 14px rgba(22, 163, 74, 0.5), inset 0 0 8px rgba(22, 163, 74, 0.15)'
+                    ? 'none'
                     : isActive
-                      ? '0 0 16px rgba(220, 38, 38, 0.85)'
-                      : '0 2px 5px rgba(0,0,0,0.3)',
+                      ? '0 0 12px rgba(239, 68, 68, 0.7)'
+                      : '0 1px 3px rgba(0,0,0,0.2)',
                 }}
-              >
-                {/* Quando revelado: o interior é transparente e a etiqueta fica em badge externo flutuante */}
-                {isShown ? (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: mask.y < 14 ? '100%' : 'auto',
-                      bottom: mask.y < 14 ? 'auto' : '100%',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      background: '#15803d',
-                      color: '#ffffff',
-                      padding: '3px 9px',
-                      borderRadius: 6,
-                      fontSize: 'clamp(0.72rem, 1.2vw, 0.85rem)',
-                      fontWeight: 800,
-                      whiteSpace: 'nowrap',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
-                      zIndex: 25,
-                      pointerEvents: 'none',
-                      marginTop: mask.y < 14 ? 6 : 0,
-                      marginBottom: mask.y < 14 ? 0 : 6,
-                    }}
-                  >
-                    ✓ {mask.label || 'Estrutura'}
-                  </div>
-                ) : isActive ? (
-                  <span style={{ fontSize: '1.1rem', fontWeight: 900, letterSpacing: '-0.5px' }}>[ ? ]</span>
-                ) : (
-                  <span style={{ fontSize: '0.8rem', fontWeight: 900 }}>#{idx + 1}</span>
-                )}
-              </div>
+              />
             )
           })}
         </div>
