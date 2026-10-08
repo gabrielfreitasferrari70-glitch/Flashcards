@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { parseAnkiFile, type AnkiPackageResult } from '@/lib/ankiParser'
-import { createDeck, createCard } from '@/services/medreview'
+import { createDeck, createCardsBatch } from '@/services/medreview'
 
 interface Deck {
   id: string
@@ -74,8 +74,8 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
       }
 
       const total = result.cards.length
-      // Importa em lotes para não sobrecarregar o Supabase
-      const BATCH_SIZE = 10
+      // Importa em lotes rápidos via createCardsBatch
+      const BATCH_SIZE = 20
       for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = result.cards.slice(i, i + BATCH_SIZE)
         setProgress({
@@ -84,16 +84,13 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
           stage: `Importando cartões (${Math.min(i + batch.length, total)} de ${total})...`,
         })
 
-        await Promise.all(
-          batch.map((c) =>
-            createCard(finalDeckId, {
-              q: c.q,
-              a: c.a,
-              group: '',
-              ref: '',
-              tags: c.tags,
-            })
-          )
+        await createCardsBatch(
+          finalDeckId,
+          batch.map((c) => ({
+            q: c.q,
+            a: c.a,
+            tags: c.tags,
+          })),
         )
       }
 
@@ -413,18 +410,29 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                             🧩 Cloze
                           </span>
                         )}
+                        {(c.q.includes('<img') || c.a.includes('<img')) && (
+                          <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '1px 5px', borderRadius: 4, fontSize: '.7rem', fontWeight: 700 }}>
+                            🖼️ Imagem
+                          </span>
+                        )}
                         {c.tags && c.tags.length > 0 && (
                           <span style={{ color: '#64748b', fontSize: '.7rem' }}>
                             Tags: {c.tags.join(', ')}
                           </span>
                         )}
                       </div>
-                      <div style={{ color: '#1e293b', fontWeight: 600, marginBottom: 4 }}>
-                        <strong>P:</strong> {c.q.slice(0, 120)}{c.q.length > 120 ? '…' : ''}
-                      </div>
-                      <div style={{ color: '#64748b' }}>
-                        <strong>R:</strong> {c.a.slice(0, 100)}{c.a.length > 100 ? '…' : ''}
-                      </div>
+                      <div
+                        style={{ color: '#1e293b', fontWeight: 600, marginBottom: 6 }}
+                        dangerouslySetInnerHTML={{
+                          __html: `<strong>P:</strong> ` + c.q,
+                        }}
+                      />
+                      <div
+                        style={{ color: '#475569', fontSize: '.78rem' }}
+                        dangerouslySetInnerHTML={{
+                          __html: `<strong>R:</strong> ` + c.a,
+                        }}
+                      />
                     </div>
                   ))}
                 </div>

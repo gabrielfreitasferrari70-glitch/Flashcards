@@ -123,24 +123,27 @@ function clozeCount(text: string): number {
   while ((m = CLOZE_RE.exec(text || ''))) set.add(m[1])
   return set.size
 }
-// Renderiza o texto com as lacunas: antes de virar, oculta com dica ou numeração; depois, destaca com esmeralda.
+// Renderiza o texto com as lacunas: preserva HTML e imagens do Anki; antes de virar, oculta com dica ou numeração; depois, destaca com esmeralda.
 function renderClozeHtml(text: string, revealed: boolean): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  if (!text) return ''
+  const hasHtml = /<[a-z][\s\S]*>/i.test(text)
+  const baseText = hasHtml ? text : text.replace(/\n/g, '<br/>')
+
   CLOZE_RE.lastIndex = 0
   let out = ''
   let last = 0
   let m: RegExpExecArray | null
-  while ((m = CLOZE_RE.exec(text || ''))) {
-    out += esc(text.slice(last, m.index))
+  while ((m = CLOZE_RE.exec(baseText))) {
+    out += baseText.slice(last, m.index)
     if (revealed) {
-      out += `<span style="background:#dcfce7;color:#14532d;font-weight:800;border-radius:6px;padding:2px 8px;border:1px solid #86efac;box-shadow:0 1px 3px rgba(22,163,74,0.15)">${esc(m[2])}</span>`
+      out += `<span style="background:#dcfce7;color:#14532d;font-weight:800;border-radius:6px;padding:2px 8px;border:1px solid #86efac;box-shadow:0 1px 3px rgba(22,163,74,0.15)">${m[2]}</span>`
     } else {
-      const hint = m[3] ? esc(m[3]) : `c${m[1]}`
+      const hint = m[3] ? m[3] : `c${m[1]}`
       out += `<span style="background:#fef3c7;color:#b45309;font-weight:800;border-radius:6px;padding:2px 8px;border:1.5px dashed #f59e0b;cursor:pointer;display:inline-block" title="Lacuna Cloze: clique para virar e conferir">[…${hint}…]</span>`
     }
     last = m.index + m[0].length
   }
-  out += esc(text.slice(last))
+  out += baseText.slice(last)
   return out
 }
 
@@ -3259,7 +3262,16 @@ export default function Index() {
                     {mcPicked === card.a ? '✅ Correto!' : `❌ Você marcou: ${mcPicked}`}
                   </div>
                 )}
-                {card.__reverse ? card.q : studyMode === 'reverse' ? card.q : card.a}
+                <div
+                  className="mr-legacy-answer-body"
+                  style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#1e293b' }}
+                  dangerouslySetInnerHTML={{
+                    __html: renderClozeHtml(
+                      card.__reverse ? card.q : studyMode === 'reverse' ? card.q : card.a,
+                      true,
+                    ),
+                  }}
+                />
                 {card.__reverse && (card.diagram_svg || card.image) && (
                   <figure style={{ margin: '18px 0 0' }}>
                     {card.diagram_title && (
