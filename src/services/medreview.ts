@@ -230,36 +230,22 @@ export const setCardSuspended = async (cardId: string, suspended: boolean) => {
 }
 
 export const deleteCard = async (cardId: string) => {
-  try {
-    await supabase.from('mr_reviews').delete().eq('card_id', cardId)
-    await supabase.from('mr_card_reports').delete().eq('card_id', cardId)
-    await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
-    const { error } = await supabase.from('mr_cards').delete().eq('id', cardId)
-    if (error) throw error
-    return true
-  } catch (err) {
-    console.warn('Hard deleteCard failed, falling back to soft delete:', err)
-    const { error: softErr } = await supabase.from('mr_cards').update({ deleted: true }).eq('id', cardId)
-    if (softErr) throw softErr
-    return true
-  }
+  await supabase.from('mr_reviews').delete().eq('card_id', cardId)
+  await supabase.from('mr_card_reports').delete().eq('card_id', cardId)
+  await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
+  const { error } = await supabase.from('mr_cards').delete().eq('id', cardId)
+  if (error) throw error
+  return true
 }
 
 export const deleteCardsBatch = async (cardIds: string[]) => {
   if (cardIds.length === 0) return true
-  try {
-    await supabase.from('mr_reviews').delete().in('card_id', cardIds)
-    await supabase.from('mr_card_reports').delete().in('card_id', cardIds)
-    await supabase.from('mr_card_notes').delete().in('card_id', cardIds)
-    const { error } = await supabase.from('mr_cards').delete().in('id', cardIds)
-    if (error) throw error
-    return true
-  } catch (err) {
-    console.warn('Hard deleteCardsBatch failed, falling back to soft delete:', err)
-    const { error: softErr } = await supabase.from('mr_cards').update({ deleted: true }).in('id', cardIds)
-    if (softErr) throw softErr
-    return true
-  }
+  await supabase.from('mr_reviews').delete().in('card_id', cardIds)
+  await supabase.from('mr_card_reports').delete().in('card_id', cardIds)
+  await supabase.from('mr_card_notes').delete().in('card_id', cardIds)
+  const { error } = await supabase.from('mr_cards').delete().in('id', cardIds)
+  if (error) throw error
+  return true
 }
 
 export const setCardsSuspendedBatch = async (cardIds: string[], suspended: boolean) => {
@@ -278,45 +264,36 @@ export const moveCardsBatch = async (cardIds: string[], deckId: string) => {
 
 export const deleteDecksBatch = async (deckIds: string[]) => {
   if (deckIds.length === 0) return true
-  try {
-    const { data: allDecks } = await supabase.from('mr_decks').select('id, parent')
-    const toDelete = new Set<string>(deckIds)
-    if (allDecks) {
-      let changed = true
-      while (changed) {
-        changed = false
-        for (const d of allDecks) {
-          if (d.parent && toDelete.has(d.parent) && !toDelete.has(d.id)) {
-            toDelete.add(d.id)
-            changed = true
-          }
+  const { data: allDecks } = await supabase.from('mr_decks').select('id, parent')
+  const toDelete = new Set<string>(deckIds)
+  if (allDecks) {
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const d of allDecks) {
+        if (d.parent && toDelete.has(d.parent) && !toDelete.has(d.id)) {
+          toDelete.add(d.id)
+          changed = true
         }
       }
     }
-    const deleteArray = Array.from(toDelete)
-    
-    // Clean up cards, reviews, notes, exam plans first
-    const { data: deckCards } = await supabase.from('mr_cards').select('id').in('deck_id', deleteArray)
-    if (deckCards && deckCards.length > 0) {
-      const cids = deckCards.map((c) => c.id)
-      await supabase.from('mr_reviews').delete().in('card_id', cids)
-      await supabase.from('mr_card_reports').delete().in('card_id', cids)
-      await supabase.from('mr_card_notes').delete().in('card_id', cids)
-    }
-
-    await supabase.from('mr_exam_plans').delete().in('deck_id', deleteArray)
-    await supabase.from('mr_cards').delete().in('deck_id', deleteArray)
-    const { error } = await supabase.from('mr_decks').delete().in('id', deleteArray)
-    if (error) throw error
-    return true
-  } catch (err) {
-    console.warn('Hard deleteDecksBatch failed, falling back to soft delete:', err)
-    const deleteArray = Array.from(deckIds)
-    await supabase.from('mr_cards').update({ deleted: true }).in('deck_id', deleteArray)
-    const { error: softErr } = await supabase.from('mr_decks').update({ deleted: true }).in('id', deleteArray)
-    if (softErr) throw softErr
-    return true
   }
+  const deleteArray = Array.from(toDelete)
+  
+  // Clean up cards, reviews, notes, exam plans first
+  const { data: deckCards } = await supabase.from('mr_cards').select('id').in('deck_id', deleteArray)
+  if (deckCards && deckCards.length > 0) {
+    const cids = deckCards.map((c) => c.id)
+    await supabase.from('mr_reviews').delete().in('card_id', cids)
+    await supabase.from('mr_card_reports').delete().in('card_id', cids)
+    await supabase.from('mr_card_notes').delete().in('card_id', cids)
+  }
+
+  await supabase.from('mr_exam_plans').delete().in('deck_id', deleteArray)
+  await supabase.from('mr_cards').delete().in('deck_id', deleteArray)
+  const { error } = await supabase.from('mr_decks').delete().in('id', deleteArray)
+  if (error) throw error
+  return true
 }
 
 // Stubs for complex operations that we are simplifying
