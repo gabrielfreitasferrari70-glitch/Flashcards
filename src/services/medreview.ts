@@ -41,10 +41,35 @@ export const createReview = async (data: ReviewInput) => {
   return res
 }
 
+const FRONTLINE_DECKS_KEY = 'mr_frontline_decks_v1'
+
+export const getFrontlineDeckIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(FRONTLINE_DECKS_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? new Set(parsed) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+export const recordFrontlineDeckId = (deckId: string) => {
+  try {
+    const ids = getFrontlineDeckIds()
+    ids.add(deckId)
+    localStorage.setItem(FRONTLINE_DECKS_KEY, JSON.stringify(Array.from(ids)))
+  } catch {
+    /* ignore */
+  }
+}
+
 export const createDeck = async (
   title: string,
-  kind: 'tutoria' | 'prova' | 'custom',
-  parentId?: string
+  kind: 'tutoria' | 'prova' | 'custom' = 'custom',
+  parentId?: string,
+  mode?: string,
+  frontline?: boolean
 ) => {
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
@@ -69,7 +94,14 @@ export const createDeck = async (
   }).select().single()
   
   if (error) throw error
-  return data
+
+  // Marca no localStorage caso seja frontline ou pasta de raiz criada pelo usuário
+  const isFront = !!frontline || (!parentId && kind === 'custom')
+  if (isFront && data?.id) {
+    recordFrontlineDeckId(data.id)
+  }
+
+  return { ...data, frontline: isFront, mode: mode || 'study' }
 }
 
 export const renameDeck = async (deckId: string, title: string) => {
@@ -154,11 +186,11 @@ export const createCardsBatch = async (
     return {
       user_id: user.user!.id,
       deck_id: deckId,
-      q: c.q,
-      a: c.a,
+      q: (c.q && c.q.trim()) || 'Card sem pergunta',
+      a: (c.a && c.a.trim()) || 'Card sem resposta',
       clinical: !!c.clinical,
       suspended: false,
-      tags: c.tags || [],
+      tags: Array.isArray(c.tags) ? c.tags.filter(Boolean) : [],
       group: c.group || '',
       ref: c.ref || '',
       occlusion: c.occlusion || null,
@@ -167,7 +199,7 @@ export const createCardsBatch = async (
 
   // Insere em lotes adaptativos para garantir envio rápido e não estourar limite de payload HTTP
   const results: any[] = []
-  const MAX_BYTES_PER_CHUNK = 1_200_000
+  const MAX_BYTES_PER_CHUNK = 1_000_000
   const MAX_CARDS_PER_CHUNK = 20
 
   const chunks: Array<typeof payloads> = []
@@ -197,33 +229,35 @@ export const createCardsBatch = async (
   for (const chunk of chunks) {
     const { data, error } = await supabase.from('mr_cards').insert(chunk).select('id')
     if (error) {
-      if (error.code === '42703' || error.message?.includes('column')) {
-        const basicPayloads = chunk.map((c) => ({
-          user_id: c.user_id,
-          deck_id: c.deck_id,
-          q: c.q,
-          a: c.a,
-          clinical: c.clinical,
-          suspended: false,
-        }))
-        const { data: fbData, error: fbErr } = await supabase.from('mr_cards').insert(basicPayloads).select('id')
-        if (fbErr) throw fbErr
-        if (fbData) results.push(...fbData)
-      } else {
-        // Fallback resiliente: insere um a um para salvar o máximo possível de cartas
-        for (const single of chunk) {
-          try {
-            const { data: sData } = await supabase.from('mr_cards').insert([single]).select('id')
-            if (sData) results.push(...sData)
-          } catch (singleErr) {
-            console.warn('Erro ao inserir cartão individual:', singleErr)
+      console.warn('Falha no lote de cartões, tentando individualmente:', error.message)
+      for (const single of chunk) {
+        const { data: sData, error: sErr } = await supabase.from('mr_cards').insert([single]).select('id')
+        if (sData) {
+          results.push(...sData)
+        } else if (sErr) {
+          // Fallback ultra-básico sem occlusion ou tags caso o erro seja na serialização
+          const basic = {
+            user_id: single.user_id,
+            deck_id: single.deck_id,
+            q: single.q,
+            a: single.a,
+            clinical: single.clinical,
+            suspended: false,
           }
+          const { data: bData, error: bErr } = await supabase.from('mr_cards').insert([basic]).select('id')
+          if (bData) results.push(...bData)
+          if (bErr) console.error('Erro definitivo ao salvar cartão:', bErr)
         }
       }
     } else if (data) {
       results.push(...data)
     }
   }
+
+  if (results.length === 0 && payloads.length > 0) {
+    throw new Error('Não foi possível gravar as cartas no banco de dados. Verifique a conexão com o servidor.')
+  }
+
   return results
 }
 
@@ -738,7 +772,22 @@ export const importCardsAuto = async (
   }
   return true
 }
-export const uploadCardImage = async () => {}
+export const uploadCardImage = async (cardId: string, file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = async () => {
+      try {
+        const dataUrl = reader.result as string
+        await supabase.from('mr_cards').update({ image_url: dataUrl }).eq('id', cardId)
+        resolve(dataUrl)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = (e) => reject(e)
+    reader.readAsDataURL(file)
+  })
+}
 
 
 

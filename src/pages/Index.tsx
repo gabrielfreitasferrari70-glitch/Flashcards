@@ -11,6 +11,7 @@ import {
   deleteDeck,
   getDeletedCardIds,
   getDeletedDeckIds,
+  getFrontlineDeckIds,
   moveDeck,
   moveDeckSection,
   renameDeck,
@@ -2213,23 +2214,50 @@ async function getBaseCatalog() {
       const supaRawDecks = (d as any[]) || []
       const supaRawCards = (c as any[]) || []
 
-      if (supaRawDecks.length > 0) {
-        const filteredDecks = supaRawDecks.filter(
-          (row) => !row.deleted && !deletedDecks.has(row.id)
-        )
-        setDecks(filteredDecks)
-      } else if (baseData?.decks) {
-        setDecks(baseData.decks.filter((row) => !deletedDecks.has(row.id)))
-      }
+      const frontlineDeckIds = getFrontlineDeckIds()
 
-      if (supaRawCards.length > 0) {
-        const filteredCards = supaRawCards.filter(
-          (row) => !row.deleted && !deletedCards.has(row.id)
-        )
-        setCards(filteredCards)
-      } else if (baseData?.cards) {
-        setCards(baseData.cards.filter((row) => !deletedCards.has(row.id)))
+      // MERGE DE PASTAS: base catalog + Supabase custom decks
+      const decksMap = new Map<string, any>()
+      if (baseData?.decks) {
+        for (const row of baseData.decks) {
+          if (!deletedDecks.has(row.id)) {
+            decksMap.set(row.id, row)
+          }
+        }
       }
+      for (const row of supaRawDecks) {
+        if (row.deleted || deletedDecks.has(row.id)) {
+          decksMap.delete(row.id)
+        } else {
+          const isFrontline =
+            !!row.frontline ||
+            frontlineDeckIds.has(row.id) ||
+            (!row.parent &&
+              row.kind === 'custom' &&
+              row.id !== 'e9a9a8c3-c38f-45d8-9989-a887281172ff' &&
+              row.id !== '32353b13-4f84-41f5-be8b-2dafb1798278')
+          decksMap.set(row.id, { ...row, frontline: isFrontline })
+        }
+      }
+      setDecks(Array.from(decksMap.values()))
+
+      // MERGE DE CARTAS: base catalog (1.352) + Supabase new & imported cards
+      const cardsMap = new Map<string, any>()
+      if (baseData?.cards) {
+        for (const row of baseData.cards) {
+          if (!deletedCards.has(row.id)) {
+            cardsMap.set(row.id, row)
+          }
+        }
+      }
+      for (const row of supaRawCards) {
+        if (row.deleted || deletedCards.has(row.id)) {
+          cardsMap.delete(row.id)
+        } else {
+          cardsMap.set(row.id, row)
+        }
+      }
+      setCards(Array.from(cardsMap.values()))
 
       setReviews(r as any[])
     } catch (e: any) {
@@ -3596,8 +3624,17 @@ async function getBaseCatalog() {
   // Cards do grid da home = pastas "🎯 Na tela inicial" (frontline). As demais
   // ficam no portal Minhas Pastas (feedback: pasta criada lá dentro aparecia
   // duplicada na tela inicial).
+  const frontlineIds = getFrontlineDeckIds()
   const userDecks = decks
-    .filter((d) => d.kind === 'custom' && !d.parent && d.frontline)
+    .filter(
+      (d) =>
+        d.kind === 'custom' &&
+        !d.parent &&
+        (d.frontline ||
+          frontlineIds.has(d.id) ||
+          (d.id !== 'e9a9a8c3-c38f-45d8-9989-a887281172ff' &&
+            d.id !== '32353b13-4f84-41f5-be8b-2dafb1798278')),
+    )
     .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
   // seção foi movida (Anki: mover = some da origem), o card some da home.
@@ -3771,11 +3808,14 @@ async function getBaseCatalog() {
           <AnkiImportModal
             decks={decks}
             onClose={() => setAnkiImportOpen(false)}
-            onSuccess={(count, deckTitle) => {
+            onSuccess={async (count, deckTitle, deckId) => {
               setAnkiImportOpen(false)
-              loadData()
-              setMsg(`Sucesso! ${count} cartas importadas do Anki para "${deckTitle}".`)
-              setTimeout(() => setMsg(''), 4000)
+              await loadData()
+              setMsg(`Sucesso! ${count} cartas importadas para "${deckTitle}".`)
+              setTimeout(() => setMsg(''), 4500)
+              if (deckId) {
+                openDeck(deckId)
+              }
             }}
           />
         )}

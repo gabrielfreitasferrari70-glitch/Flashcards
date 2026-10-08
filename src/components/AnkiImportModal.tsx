@@ -12,7 +12,7 @@ interface Deck {
 interface Props {
   decks: Deck[]
   onClose: () => void
-  onSuccess: (importedCount: number, deckTitle: string) => void
+  onSuccess: (importedCount: number, deckTitle: string, deckId?: string) => void
 }
 
 export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) => {
@@ -67,7 +67,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
 
       if (targetDeckOption === 'new') {
         setProgress({ current: 0, total: result.cards.length, stage: 'Criando nova pasta...' })
-        const newDeck = await createDeck(finalDeckTitle, 'custom')
+        const newDeck = await createDeck(finalDeckTitle, 'custom', undefined, 'study', true)
         finalDeckId = newDeck.id
       } else {
         const found = decks.find((d) => d.id === targetDeckOption)
@@ -75,7 +75,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
       }
 
       const total = result.cards.length
-      // Importa em lotes seguros via createCardsBatch
+      let savedCount = 0
       const BATCH_SIZE = 15
       for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = result.cards.slice(i, i + BATCH_SIZE)
@@ -85,7 +85,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
           stage: `Importando cartões (${Math.min(i + batch.length, total)} de ${total})...`,
         })
 
-        await createCardsBatch(
+        const saved = await createCardsBatch(
           finalDeckId,
           batch.map((c) => ({
             q: c.q,
@@ -94,9 +94,14 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             occlusion: (c as any).occlusion,
           })),
         )
+        savedCount += (saved?.length || batch.length)
       }
 
-      onSuccess(total, finalDeckTitle)
+      if (savedCount === 0) {
+        throw new Error('Nenhuma carta pôde ser salva no banco de dados. Tente novamente.')
+      }
+
+      onSuccess(savedCount, finalDeckTitle, finalDeckId)
     } catch (e: any) {
       setErrorMsg('Erro durante a gravação das cartas: ' + (e?.message || e))
       setImporting(false)
