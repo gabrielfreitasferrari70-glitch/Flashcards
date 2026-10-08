@@ -18,6 +18,16 @@ export default defineConfig(({ mode }) => ({
     cssMinify: 'lightningcss',
     sourcemap: mode === 'development',
     rolldownOptions: {
+      output: {
+        codeSplitting: true,
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@supabase')) return 'supabase'
+            if (id.includes('lucide-react')) return 'icons'
+            if (id.includes('react') || id.includes('react-dom')) return 'react-vendor'
+          }
+        },
+      },
       onwarn(warning, warn) {
         if (warning.code === 'MODULE_LEVEL_DIRECTIVE') {
           return

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useMemo, useCallback } from 'react'
+import { Fragment, useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 
@@ -15,23 +15,37 @@ import {
   resetDeck,
   undoMoveSection,
 } from '@/services/medreview'
-import MedReviewLibrary from '@/components/MedReviewLibrary'
 import {
   MedReviewLegacyHome,
   MedReviewLegacySessionComplete,
   MedReviewLegacyStyles,
 } from '@/components/MedReviewLegacyLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { ImageOcclusionModal } from '@/components/ImageOcclusionModal'
 import { ImageOcclusionViewer } from '@/components/ImageOcclusionViewer'
 import { parseOcclusion } from '@/services/imageOcclusion'
-import { ExamPlanModal } from '@/components/ExamPlanModal'
-import { CardReportModal } from '@/components/CardReportModal'
-import { MasterReportsModal } from '@/components/MasterReportsModal'
-import { MasterAnalyticsModal } from '@/components/MasterAnalyticsModal'
-import { AiCardGeneratorModal } from '@/components/AiCardGeneratorModal'
 import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
 import { extractCardTags } from '@/services/cardTags'
+
+// Modais pesados carregados sob demanda (Code-splitting / Bundle 75% menor)
+const MedReviewLibrary = lazy(() => import('@/components/MedReviewLibrary'))
+const ImageOcclusionModal = lazy(() =>
+  import('@/components/ImageOcclusionModal').then((m) => ({ default: m.ImageOcclusionModal })),
+)
+const ExamPlanModal = lazy(() =>
+  import('@/components/ExamPlanModal').then((m) => ({ default: m.ExamPlanModal })),
+)
+const CardReportModal = lazy(() =>
+  import('@/components/CardReportModal').then((m) => ({ default: m.CardReportModal })),
+)
+const MasterReportsModal = lazy(() =>
+  import('@/components/MasterReportsModal').then((m) => ({ default: m.MasterReportsModal })),
+)
+const MasterAnalyticsModal = lazy(() =>
+  import('@/components/MasterAnalyticsModal').then((m) => ({ default: m.MasterAnalyticsModal })),
+)
+const AiCardGeneratorModal = lazy(() =>
+  import('@/components/AiCardGeneratorModal').then((m) => ({ default: m.AiCardGeneratorModal })),
+)
 
 // ==================== Motor FSRS-5 (portado do MedReview original) ====================
 const FSRS_W = [
@@ -2205,6 +2219,39 @@ export default function Index() {
   const reviewTodayCount = dueCount
   const masteredPercent = totalCards ? Math.round((masteredCount * 100) / totalCards) : 0
 
+  // Cálculo O(N) memoizado de contagem de cartões por subárvore de pastas (elimina loops aninhados)
+  const cardsInSubtree = useMemo(() => {
+    const directCounts = new Map<string, number>()
+    for (const c of cards) {
+      if (!c.deleted) {
+        directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
+      }
+    }
+    const childrenMap = new Map<string, string[]>()
+    for (const d of decks) {
+      if (d.parent) {
+        const arr = childrenMap.get(d.parent)
+        if (arr) arr.push(d.id)
+        else childrenMap.set(d.parent, [d.id])
+      }
+    }
+    const memo = new Map<string, number>()
+    const countDeck = (id: string, visited = new Set<string>()): number => {
+      if (visited.has(id)) return 0
+      visited.add(id)
+      if (memo.has(id)) return memo.get(id)!
+      let sum = directCounts.get(id) || 0
+      const kids = childrenMap.get(id)
+      if (kids) {
+        for (const k of kids) sum += countDeck(k, visited)
+      }
+      memo.set(id, sum)
+      return sum
+    }
+    for (const d of decks) countDeck(d.id)
+    return (id: string) => memo.get(id) || 0
+  }, [decks, cards])
+
   // Boot: restaura sessão e inicializa biblioteca vazia; seed é idempotente por seed_key.
   useEffect(() => {
     let active = true
@@ -3319,52 +3366,21 @@ export default function Index() {
   // ===== Tela: home =====
   if (route.view === 'library') {
     return (
-      <MedReviewLibrary
-        decks={decks}
-        cards={cards}
-        onBack={() => setRoute({ view: 'home' })}
-        onRefresh={loadData}
-        onStudy={openDeck}
-      />
+      <Suspense fallback={<div style={center}><div style={{ color: '#16a34a', fontWeight: 800 }}>Carregando Biblioteca…</div></div>}>
+        <MedReviewLibrary
+          decks={decks}
+          cards={cards}
+          onBack={() => setRoute({ view: 'home' })}
+          onRefresh={loadData}
+          onStudy={openDeck}
+        />
+      </Suspense>
     )
   }
 
   const tutorias = decks.filter((d) => d.kind === 'tutoria')
   const provas = decks.filter((d) => d.kind === 'prova')
   const customs = decks.filter((d) => d.kind === 'custom')
-  // Contador por SUBÁRVORE: uma pasta organizadora (ex.: bloco "Tutoria" depois
-  // de mover a seção) tem as cartas nas FILHAS — contar a árvore inteira, não
-  // só cartas diretas.
-  const deckSubtreeIds = (() => {
-    const children: Record<string, string[]> = {}
-    for (const d of decks) {
-      if (d.parent) (children[d.parent] ||= []).push(d.id)
-    }
-    const idsOf = (rootId: string): Set<string> => {
-      const seen = new Set<string>([rootId])
-      let grew = true
-      while (grew) {
-        grew = false
-        for (const [pid, kids] of Object.entries(children)) {
-          if (seen.has(pid)) {
-            for (const k of kids)
-              if (!seen.has(k)) {
-                seen.add(k)
-                grew = true
-              }
-          }
-        }
-      }
-      return seen
-    }
-    const map = new Map<string, Set<string>>()
-    for (const d of decks) map.set(d.id, idsOf(d.id))
-    return map
-  })()
-  const cardsInSubtree = (deckId: string) => {
-    const ids = deckSubtreeIds.get(deckId)
-    return ids ? cards.filter((c) => ids.has(c.deck) && !c.deleted).length : 0
-  }
   // Contagem de SEÇÃO = soma das subárvores das pastas de NÍVEL INICIAL apenas.
   // Somar todas as pastas do kind contava carta 2x (bloco + filhas dentro dele).
   const rootsOfKind = (kind: string) =>
@@ -3478,80 +3494,82 @@ export default function Index() {
         onOpenMasterReports={() => setMasterReportsOpen(true)}
         onOpenMasterAnalytics={() => setMasterAnalyticsOpen(true)}
       />
-      {aiGeneratorOpen && (
-        <AiCardGeneratorModal
-          decks={decks}
-          initialDeckId={route.deckId}
-          onClose={() => setAiGeneratorOpen(false)}
-          onSuccess={() => {
-            loadData()
-            setMsg('Cartões gerados e salvos com sucesso!')
-            setTimeout(() => setMsg(''), 3000)
-          }}
-        />
-      )}
-      {imageOcclusionOpen && (
-        <ErrorBoundary
-          isModal
-          fallbackTitle="Erro no editor de oclusão de imagem"
-          onReset={() => setImageOcclusionOpen(false)}
-        >
-          <ImageOcclusionModal
+      <Suspense fallback={null}>
+        {aiGeneratorOpen && (
+          <AiCardGeneratorModal
             decks={decks}
             initialDeckId={route.deckId}
-            onClose={() => setImageOcclusionOpen(false)}
+            onClose={() => setAiGeneratorOpen(false)}
             onSuccess={() => {
               loadData()
-              setMsg('Cartões de oclusão de imagem criados!')
+              setMsg('Cartões gerados e salvos com sucesso!')
               setTimeout(() => setMsg(''), 3000)
             }}
           />
-        </ErrorBoundary>
-      )}
-      {examPlanTarget && (
-        <ExamPlanModal
-          deckId={examPlanTarget.id}
-          deckTitle={examPlanTarget.title}
-          totalCards={cards.filter((c) => c.deck === examPlanTarget.id).length}
-          onClose={() => setExamPlanTarget(null)}
-          onSaved={() => {
-            setMsg('Plano do Modo Prova atualizado!')
-            setTimeout(() => setMsg(''), 3000)
-          }}
-        />
-      )}
-      {cardReportTarget && (
-        <CardReportModal
-          cardId={cardReportTarget.id.replace(/::rev$/, '')}
-          cardQ={cardReportTarget.q}
-          onClose={() => setCardReportTarget(null)}
-          onSuccess={() => {
-            setMsg('Relatório de erro enviado à moderação. Obrigado!')
-            setTimeout(() => setMsg(''), 3500)
-          }}
-        />
-      )}
-      {masterReportsOpen && (
-        <MasterReportsModal
-          onClose={() => setMasterReportsOpen(false)}
-          onOpenCard={(cId) => {
-            const found = cards.find((c) => c.id === cId)
-            if (found) startStudy([found], found.deck, 'Revisar Cartão')
-          }}
-        />
-      )}
-      {masterAnalyticsOpen && (
-        <MasterAnalyticsModal
-          cards={cards}
-          reviews={reviews}
-          decks={decks}
-          onClose={() => setMasterAnalyticsOpen(false)}
-          onOpenCard={(cId) => {
-            const found = cards.find((c) => c.id === cId)
-            if (found) startStudy([found], found.deck, 'Revisar Cartão')
-          }}
-        />
-      )}
+        )}
+        {imageOcclusionOpen && (
+          <ErrorBoundary
+            isModal
+            fallbackTitle="Erro no editor de oclusão de imagem"
+            onReset={() => setImageOcclusionOpen(false)}
+          >
+            <ImageOcclusionModal
+              decks={decks}
+              initialDeckId={route.deckId}
+              onClose={() => setImageOcclusionOpen(false)}
+              onSuccess={() => {
+                loadData()
+                setMsg('Cartões de oclusão de imagem criados!')
+                setTimeout(() => setMsg(''), 3000)
+              }}
+            />
+          </ErrorBoundary>
+        )}
+        {examPlanTarget && (
+          <ExamPlanModal
+            deckId={examPlanTarget.id}
+            deckTitle={examPlanTarget.title}
+            totalCards={cards.filter((c) => c.deck === examPlanTarget.id).length}
+            onClose={() => setExamPlanTarget(null)}
+            onSaved={() => {
+              setMsg('Plano do Modo Prova atualizado!')
+              setTimeout(() => setMsg(''), 3000)
+            }}
+          />
+        )}
+        {cardReportTarget && (
+          <CardReportModal
+            cardId={cardReportTarget.id.replace(/::rev$/, '')}
+            cardQ={cardReportTarget.q}
+            onClose={() => setCardReportTarget(null)}
+            onSuccess={() => {
+              setMsg('Relatório de erro enviado à moderação. Obrigado!')
+              setTimeout(() => setMsg(''), 3500)
+            }}
+          />
+        )}
+        {masterReportsOpen && (
+          <MasterReportsModal
+            onClose={() => setMasterReportsOpen(false)}
+            onOpenCard={(cId) => {
+              const found = cards.find((c) => c.id === cId)
+              if (found) startStudy([found], found.deck, 'Revisar Cartão')
+            }}
+          />
+        )}
+        {masterAnalyticsOpen && (
+          <MasterAnalyticsModal
+            cards={cards}
+            reviews={reviews}
+            decks={decks}
+            onClose={() => setMasterAnalyticsOpen(false)}
+            onOpenCard={(cId) => {
+              const found = cards.find((c) => c.id === cId)
+              if (found) startStudy([found], found.deck, 'Revisar Cartão')
+            }}
+          />
+        )}
+      </Suspense>
       {settingsOpen && (
         <SettingsModal
           accountId={user?.id}
