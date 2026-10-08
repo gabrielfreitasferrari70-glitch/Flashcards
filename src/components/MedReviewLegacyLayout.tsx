@@ -566,10 +566,70 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   )
                 })}
               </div>
-            ) : (
+            ) : null}
+
+            {openDeckId && (() => {
+              const directCards = cards.filter((c) => c.deck === openDeckId && !c.deleted)
+              if (directCards.length === 0) return null
+              return (
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#14532d' }}>
+                      📚 Cartas nesta pasta ({directCards.length})
+                    </h3>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        className="mr-legacy-button primary"
+                        onClick={() => onOpenDeck(openDeckId)}
+                        style={{ fontSize: '.82rem', padding: '6px 14px' }}
+                      >
+                        ⚡ Estudar estas cartas
+                      </button>
+                      <button
+                        className="mr-legacy-button"
+                        onClick={() => onDeckAddCard?.(openDeckId)}
+                        style={{ fontSize: '.82rem', padding: '6px 14px' }}
+                      >
+                        ＋ Nova carta
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                    {directCards.slice(0, 30).map((c, idx) => (
+                      <div
+                        key={c.id || idx}
+                        style={{
+                          background: '#fff',
+                          border: '1.5px solid #d1fae5',
+                          borderRadius: 12,
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                        }}
+                      >
+                        <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#1e293b' }}>
+                          {c.q.length > 90 ? c.q.slice(0, 90) + '…' : c.q}
+                        </div>
+                        <div style={{ fontSize: '.8rem', color: '#64748b', background: '#f8fafc', padding: '6px 8px', borderRadius: 6 }}>
+                          {c.a.length > 100 ? c.a.slice(0, 100) + '…' : c.a}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {directCards.length > 30 && (
+                    <p style={{ textAlign: 'center', color: '#64748b', fontSize: '.82rem', marginTop: 10 }}>
+                      Mostrando 30 de {directCards.length} cartas. Para gerenciar todas em detalhes, use “Gerenciar pastas”.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
+
+            {!folderDecks.length && (!openDeckId || !cards.some((c) => c.deck === openDeckId && !c.deleted)) && (
               <div className="mr-legacy-empty">
                 {openDeckId
-                  ? 'Nenhuma pasta dentro desta ainda — use "＋ Nova Pasta" para criar uma.'
+                  ? 'Nenhuma pasta ou carta dentro desta ainda — use "＋ Nova Pasta" ou "＋ Carta" para começar.'
                   : 'Nenhuma pasta nesta seção ainda. Crie uma pasta na Biblioteca para começar.'}
               </div>
             )}

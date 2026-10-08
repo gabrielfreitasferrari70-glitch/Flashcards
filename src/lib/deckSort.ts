@@ -12,17 +12,25 @@ export const DECK_SORT_OPTIONS: { value: DeckSortMode; label: string }[] = [
 const KEY = 'mr_deck_sort'
 export const DECK_SORT_EVENT = 'mr-deck-sort-change'
 
+let cachedSortMode: DeckSortMode | null = null
+
 export function getDeckSort(): DeckSortMode {
+  if (cachedSortMode) return cachedSortMode
   try {
     const v = localStorage.getItem(KEY) as DeckSortMode | null
-    if (v && DECK_SORT_OPTIONS.some((o) => o.value === v)) return v
+    if (v && DECK_SORT_OPTIONS.some((o) => o.value === v)) {
+      cachedSortMode = v
+      return v
+    }
   } catch {
     /* localStorage indisponível */
   }
+  cachedSortMode = 'manual'
   return 'manual'
 }
 
 export function setDeckSort(mode: DeckSortMode) {
+  cachedSortMode = mode
   try {
     localStorage.setItem(KEY, mode)
   } catch {

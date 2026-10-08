@@ -205,7 +205,13 @@ function Modal({
 
 export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onStudy }: Props) {
   const [selectedDeckId, setSelectedDeckId] = useState('')
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const d of decks) {
+      if (!d.parent) init[d.id] = true
+    }
+    return init
+  })
   const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [folderTitle, setFolderTitle] = useState('')
   const [folderKind, setFolderKind] = useState<'tutoria' | 'prova' | 'custom'>('custom')
@@ -238,6 +244,17 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
 
   useEffect(() => {
     setLocalDecks(decks)
+    setExpanded((prev) => {
+      const next = { ...prev }
+      let hasChanges = false
+      for (const d of decks) {
+        if (!d.parent && next[d.id] === undefined) {
+          next[d.id] = true
+          hasChanges = true
+        }
+      }
+      return hasChanges ? next : prev
+    })
   }, [decks])
 
   useEffect(() => {
@@ -347,11 +364,17 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const rootDecksOf = useCallback(
     (kind: string) =>
       localDecks
-        .filter((d) => d.kind === kind && !d.parent && !d.deleted)
+        .filter(
+          (d) =>
+            (d.kind === kind || (kind === 'custom' && (!d.kind || (d.kind !== 'tutoria' && d.kind !== 'prova')))) &&
+            !d.parent &&
+            !d.deleted,
+        )
         .sort((a, b) => compareDecks(a, b)),
     [localDecks],
   )
-  const visibleSections = sections.filter((section) => rootDecksOf(section.kind).length > 0)
+  const activeSections = sections.filter((section) => rootDecksOf(section.kind).length > 0)
+  const visibleSections = activeSections.length > 0 ? activeSections : sections.filter((s) => s.kind === 'custom')
 
   const run = async (task: () => Promise<void>, okMsg?: string) => {
     setBusy(true)
@@ -1192,8 +1215,33 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
 
             {deckCards.length === 0 ? (
               <div className="mr-lib-empty">
-                Nenhuma carta nesta pasta ainda. Crie a primeira com “＋ Nova carta” ou importe um
-                CSV/JSON.
+                {childrenOf(selectedDeck.id).length > 0 ? (
+                  <div style={{ padding: '8px 0' }}>
+                    <p style={{ fontWeight: 800, color: '#15803d', margin: '0 0 6px', fontSize: '.95rem' }}>
+                      🗂️ Pasta organizadora · {countOf(selectedDeck.id)} cartas nas subpastas
+                    </p>
+                    <p style={{ color: '#64748b', fontSize: '.84rem', margin: '0 0 14px' }}>
+                      Esta pasta agrupa {childrenOf(selectedDeck.id).length} subpasta(s). Clique em uma subpasta para gerenciar suas cartas:
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {childrenOf(selectedDeck.id).map((k) => (
+                        <button
+                          key={k.id}
+                          className="mr-lib-mini"
+                          style={{ padding: '7px 12px', fontSize: '.82rem' }}
+                          onClick={() => {
+                            setSelectedDeckId(k.id)
+                            setExpanded((e) => ({ ...e, [k.id]: true }))
+                          }}
+                        >
+                          📂 {k.title} ({countOf(k.id)} cartas)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  'Nenhuma carta nesta pasta ainda. Crie a primeira com “＋ Nova carta” ou importe um CSV/JSON.'
+                )}
               </div>
             ) : (
               <>
@@ -1286,13 +1334,12 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           return (
             <section
               key={section.key}
-              className="mr-lib-section"
+              className={`mr-lib-section${dragDeckId && dragOverOk(section.key) ? ' mr-lib-section-over' : ''}`}
               onDragOver={(e) => {
-                if (!dragDeckId || dragOverOk(section.key)) return
+                if (!dragDeckId || !dragOverOk(section.key)) return
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'move'
               }}
-              className={dragDeckId && dragOverOk(section.key) ? 'mr-lib-section-over' : ''}
               onDrop={(e) => {
                 e.preventDefault()
                 if (dragDeckId && dragOverOk(section.key)) submitDragToRoot(section.key)

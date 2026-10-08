@@ -3497,7 +3497,7 @@ export default function Index() {
   // ficam no portal Minhas Pastas (feedback: pasta criada lá dentro aparecia
   // duplicada na tela inicial).
   const userDecks = decks
-    .filter((d) => d.kind === 'custom' && !d.parent && d.frontline)
+    .filter((d) => !d.parent && !d.deleted)
     .sort((a, b) => compareDecks(a, b))
   // Card fixo da seção SÓ aparece se ela tem pastas em nível inicial — se a
   // seção foi movida (Anki: mover = some da origem), o card some da home.
