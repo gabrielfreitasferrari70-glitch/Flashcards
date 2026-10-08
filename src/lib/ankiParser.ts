@@ -19,11 +19,16 @@ export interface ParsedAnkiCard {
   tags?: string[]
   isCloze?: boolean
   occlusion?: any
+  folder?: string
+  group?: string
+  ref?: string
+  clinical?: boolean
 }
 
 export interface AnkiPackageResult {
   deckName: string
   cards: ParsedAnkiCard[]
+  decks?: Array<{ id?: string; title: string; parent?: string; kind?: string }>
 }
 
 function getMimeType(fileName: string): string {
@@ -867,24 +872,41 @@ export async function parseAnkiFile(file: File): Promise<AnkiPackageResult> {
     const textContent = await file.text()
     try {
       const data = JSON.parse(textContent)
-      const rawCards = Array.isArray(data) ? data : data.cards || []
+      const rawCards = Array.isArray(data)
+        ? data
+        : data.cartas || data.cards || data.flashcards || data.cartoes || []
       const cards: ParsedAnkiCard[] = []
       for (const item of rawCards) {
-        const q = item.q || item.front || item.pergunta || item.frente || ''
-        const a = item.a || item.back || item.resposta || item.verso || ''
+        const q = String(item.q || item.front || item.pergunta || item.frente || '').trim()
+        const a = String(item.a || item.back || item.resposta || item.verso || '').trim()
+        const folder = String(item.folder || item.pasta || item.deck || '').trim()
+        const group = String(item.group || item.grupo || item.category || item.categoria || '').trim()
+        const ref = String(item.ref || item.referencia || item.source || item.fonte || '').trim()
         if (q) {
           cards.push({
             q,
-            a,
-            tags: item.tags || [],
+            a: a || 'Sem resposta',
+            tags: Array.isArray(item.tags) ? item.tags : [],
             occlusion: item.occlusion || undefined,
             isCloze: /\{\{c\d+::.*?\}\}/.test(q),
+            folder: folder || undefined,
+            group: group || undefined,
+            ref: ref || undefined,
+            clinical: !!(item.clinical || item.clinico),
           })
         }
       }
-      const deckName = data.deckName || data.title || name.replace(/\.json$/i, '')
+      const deckName =
+        data.deckName ||
+        data.title ||
+        (cards.find((c) => c.folder)?.folder) ||
+        name.replace(/\.json$/i, '')
       if (cards.length > 0) {
-        return { deckName, cards }
+        return {
+          deckName,
+          cards,
+          decks: Array.isArray(data.decks) ? data.decks : undefined,
+        }
       }
     } catch {
       /* fallback to text */

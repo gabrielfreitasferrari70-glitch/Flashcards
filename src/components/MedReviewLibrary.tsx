@@ -185,14 +185,15 @@ function normalizeJsonCards(input: unknown): ParsedCsvCard[] {
       ).trim()
       return {
         q,
-        a: String(row.a ?? row.answer ?? row.resposta ?? row.back ?? row.verso ?? '').trim(),
+        a: String(row.a ?? row.answer ?? row.resposta ?? row.back ?? row.verso ?? 'Sem resposta').trim(),
         group: String(row.group ?? row.grupo ?? row.category ?? row.categoria ?? '').trim(),
         ref: String(row.ref ?? row.referencia ?? row.source ?? row.fonte ?? '').trim(),
+        folder: String(row.folder ?? row.pasta ?? row.deck ?? '').trim(),
         clinical: clinicalFlag,
         imageUrl: /^https?:\/\//i.test(imgRaw) ? imgRaw : '',
       }
     })
-    .filter((row: ParsedCsvCard) => row.q && row.a)
+    .filter((row: any) => row.q)
 }
 
 function Modal({

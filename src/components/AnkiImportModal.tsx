@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { parseAnkiFile, type AnkiPackageResult } from '@/lib/ankiParser'
-import { createDeck, createCardsBatch } from '@/services/medreview'
+import { createDeck, createCardsBatch, importCardsAuto } from '@/services/medreview'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Deck {
@@ -62,8 +62,23 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
     setErrorMsg('')
 
     try {
+      const hasAutoFolders =
+        result.cards.some((c) => c.folder) || (result.decks && result.decks.length > 1)
       let finalDeckId = targetDeckOption
       let finalDeckTitle = customDeckName.trim() || result.deckName
+
+      if (hasAutoFolders && targetDeckOption === 'new') {
+        setProgress({
+          current: 0,
+          total: result.cards.length,
+          stage: 'Distribuindo cartões nas pastas e gravando...',
+        })
+        const res = await importCardsAuto(result.cards as any, result.decks)
+        finalDeckId = res.firstDeckId || ''
+        finalDeckTitle = result.deckName || 'Pastas Importadas'
+        onSuccess(result.cards.length, finalDeckTitle, finalDeckId)
+        return
+      }
 
       if (targetDeckOption === 'new') {
         setProgress({ current: 0, total: result.cards.length, stage: 'Criando nova pasta...' })
@@ -153,11 +168,11 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '1.5rem' }}>📥</span>
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>
-                Importador Nativo do Anki (.apkg / .txt / .csv)
+                Importador Nativo (.apkg / .colpkg / .json / .csv)
               </h2>
             </div>
             <p style={{ margin: '6px 0 0', fontSize: '.84rem', opacity: 0.94 }}>
-              Migre seus decks do Anki diretamente para o MedReview com suporte total a Cloze.
+              Migre seus decks do Anki ou backups .json diretamente para o MedReview com suporte total a hierarquia e Cloze.
             </p>
           </div>
           <button
@@ -215,7 +230,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".apkg,.txt,.tsv,.csv"
+                accept=".apkg,.colpkg,.json,.txt,.tsv,.csv"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
@@ -225,10 +240,10 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
               />
               <div style={{ fontSize: '2.8rem', marginBottom: 10 }}>📦</div>
               <h3 style={{ margin: '0 0 6px', color: '#14532d', fontSize: '1.05rem', fontWeight: 800 }}>
-                {parsing ? 'Processando arquivo do Anki…' : 'Arraste seu arquivo do Anki aqui'}
+                {parsing ? 'Processando arquivo…' : 'Arraste seu arquivo (.apkg, .colpkg, .json, .csv) aqui'}
               </h3>
               <p style={{ margin: 0, color: '#64748b', fontSize: '.84rem', lineHeight: 1.5 }}>
-                Suporta pacotes <strong>.apkg</strong> ou notas em texto <strong>.txt / .tsv / .csv</strong> exportadas do Anki.
+                Suporta pacotes Anki <strong>.apkg / .colpkg</strong>, backups <strong>.json</strong> ou notas em <strong>.txt / .tsv / .csv</strong> com pastas automáticas.
               </p>
               <button
                 type="button"
