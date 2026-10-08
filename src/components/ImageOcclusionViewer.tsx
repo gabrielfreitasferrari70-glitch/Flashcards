@@ -15,6 +15,11 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
   const [manuallyRevealed, setManuallyRevealed] = useState<Record<string, boolean>>({})
   const [imgError, setImgError] = useState(false)
 
+  // Reseta erro de imagem se a URL mudar
+  useEffect(() => {
+    setImgError(false)
+  }, [data?.imageUrl])
+
   // Tecla ESC para sair de tela cheia
   useEffect(() => {
     if (!isFullscreen) return
@@ -25,7 +30,12 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
     return () => window.removeEventListener('keydown', handleKey)
   }, [isFullscreen])
 
-  if (!data || !data.imageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
+  const cleanImageUrl =
+    typeof data?.imageUrl === 'string' && data.imageUrl.startsWith('<img')
+      ? data.imageUrl.match(/src=["']([^"']+)["']/i)?.[1] || data.imageUrl
+      : data?.imageUrl || ''
+
+  if (!data || !cleanImageUrl || !Array.isArray(data.masks) || data.masks.length === 0) {
     return null
   }
 
@@ -88,7 +98,7 @@ export const ImageOcclusionViewer: React.FC<Props> = ({ data, revealed }) => {
             </div>
           ) : (
             <img
-              src={data.imageUrl}
+              src={cleanImageUrl}
               alt={data.imageTitle || 'Oclusão de Imagem'}
               decoding="async"
               onError={() => setImgError(true)}

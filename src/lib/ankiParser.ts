@@ -3,7 +3,7 @@
  * 1. Descompacta pacotes .apkg com JSZip.
  * 2. Suporta descompressão de bancos Zstandard (Zstd) em collection.anki21b usando fzstd.
  * 3. Ignora os cartões dummy ("Atualize para a versão mais recente do Anki...") inseridos pelo Anki moderno em collection.anki2.
- * 4. Decodifica mapa de mídia (media ou media.zst, comprimido ou texto plano) e converte fotos em Base64 Data URLs.
+ * 4. Decodifica mapa de mídia em ambos os formatos: JSON e Protobuf do Anki moderno, convertendo fotos em Base64 Data URLs.
  * 5. Suporte nativo a cartões Image Occlusion do Anki 23/24 (image-occlusion:rect) com renderização visual interativa completa.
  * 6. Abre a base de dados real com sql.js e extrai 100% dos cartões com suas imagens e formatação.
  */
@@ -78,6 +78,119 @@ function decompressIfZstd(bytes: Uint8Array): Uint8Array {
     }
   }
   return bytes
+}
+
+/**
+ * Decodifica o arquivo de mídia binário do Anki moderno (Anki 2.1.50+, Anki 23+, Anki 24+)
+ * No Anki moderno, o catálogo de mídia é serializado em Protocol Buffers (Protobuf).
+ * Cada mensagem de nível 1 contém sub-campo 1 com o nome do arquivo original ("paste-xxx.png").
+ */
+function parseMediaProtobuf(bytes: Uint8Array): string[] {
+  const entries: string[] = []
+  let pos = 0
+  const len = bytes.length
+
+  function readVarint(): number {
+    let result = 0
+    let shift = 0
+    while (pos < len) {
+      const b = bytes[pos++]
+      result |= (b & 0x7f) << shift
+      if (!(b & 0x80)) break
+      shift += 7
+    }
+    return result
+  }
+
+  while (pos < len) {
+    const tag = readVarint()
+    const wireType = tag & 7
+    const fieldNum = tag >> 3
+
+    if (wireType === 2) {
+      const fieldLen = readVarint()
+      const end = pos + fieldLen
+
+      if (fieldNum === 1) {
+        let name = ''
+        while (pos < end) {
+          const subTag = readVarint()
+          const subWire = subTag & 7
+          const subNum = subTag >> 3
+
+          if (subWire === 2) {
+            const subLen = readVarint()
+            if (subNum === 1) {
+              name = new TextDecoder('utf-8').decode(bytes.subarray(pos, pos + subLen))
+            }
+            pos += subLen
+          } else if (subWire === 0) {
+            readVarint()
+          } else if (subWire === 1) {
+            pos += 8
+          } else if (subWire === 5) {
+            pos += 4
+          } else {
+            pos = end
+          }
+        }
+        if (name) entries.push(name)
+      } else {
+        pos = end
+      }
+    } else if (wireType === 0) {
+      readVarint()
+    } else if (wireType === 1) {
+      pos += 8
+    } else if (wireType === 5) {
+      pos += 4
+    } else {
+      break
+    }
+  }
+
+  return entries
+}
+
+/**
+ * Otimiza data URLs no navegador para carregar instantaneamente e não pesar no Supabase
+ */
+async function optimizeDataUrl(dataUrl: string, maxDim = 1600, quality = 0.86): Promise<string> {
+  if (!dataUrl || dataUrl.length < 150000) return dataUrl
+  if (typeof window === 'undefined' || typeof document === 'undefined') return dataUrl
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth || img.width
+        let h = img.naturalHeight || img.height
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w)
+            w = maxDim
+          } else {
+            w = Math.round((w * maxDim) / h)
+            h = maxDim
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(dataUrl)
+          return
+        }
+        ctx.drawImage(img, 0, 0, w, h)
+        const optimized = canvas.toDataURL('image/jpeg', quality)
+        resolve(optimized.length < dataUrl.length ? optimized : dataUrl)
+      } catch {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
 }
 
 function registerMedia(map: Map<string, string>, name: string, dataUrl: string) {
@@ -197,7 +310,7 @@ function formatClozeForCard(text: string, targetIndex: number): string {
 export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): Promise<AnkiPackageResult> {
   const zip = await JSZip.loadAsync(fileBuffer)
 
-  // 1. Extrai mapeamento de mídia com suporte a Zstandard e múltiplos formatos
+  // 1. Extrai mapeamento de mídia com suporte a Zstandard, JSON e Protobuf
   const mediaMap = new Map<string, string>()
 
   // Procura o arquivo de mapeamento de mídia
@@ -216,10 +329,49 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
     try {
       const raw = await mediaEntry.async('uint8array')
       const decompressed = decompressIfZstd(raw)
-      const mediaJsonText = new TextDecoder('utf-8').decode(decompressed)
-      const mediaJson = JSON.parse(mediaJsonText) as Record<string, string>
 
-      for (const [zipKey, realName] of Object.entries(mediaJson)) {
+      const mediaMapping = new Map<string, string>()
+
+      // Tentativa 1: Formato JSON (Anki legado / versões anteriores)
+      try {
+        const mediaJsonText = new TextDecoder('utf-8').decode(decompressed)
+        if (mediaJsonText.trim().startsWith('{')) {
+          const mediaJson = JSON.parse(mediaJsonText) as Record<string, string>
+          for (const [k, v] of Object.entries(mediaJson)) {
+            mediaMapping.set(k, v)
+          }
+        }
+      } catch {
+        /* ignora se não for JSON */
+      }
+
+      // Tentativa 2: Formato Protobuf (Anki moderno 2.1.50+, 23+, 24+)
+      if (mediaMapping.size === 0) {
+        try {
+          const protoNames = parseMediaProtobuf(decompressed)
+          protoNames.forEach((realName, idx) => {
+            mediaMapping.set(String(idx), realName)
+          })
+        } catch (protoErr) {
+          console.warn('Erro ao ler Protobuf de mídia:', protoErr)
+        }
+      }
+
+      // Tentativa 3: Fallback Regex buscando nomes de arquivo no buffer
+      if (mediaMapping.size === 0) {
+        try {
+          const latinText = new TextDecoder('latin1').decode(decompressed)
+          const matches = [...latinText.matchAll(/([a-zA-Z0-9_\-.]+\.(png|jpe?g|gif|webp|svg|mp3|wav|ogg|m4a|mp4))/gi)]
+          matches.forEach((m, idx) => {
+            const cleanName = m[1].replace(/^[^a-zA-Z0-9]+/, '')
+            if (cleanName) mediaMapping.set(String(idx), cleanName)
+          })
+        } catch {
+          /* ignore */
+        }
+      }
+
+      for (const [zipKey, realName] of mediaMapping.entries()) {
         let entry = zip.file(zipKey) || zip.file(String(zipKey))
         if (!entry) {
           for (const k of Object.keys(zip.files)) {
@@ -234,9 +386,10 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
           let rawBytes = await entry.async('uint8array')
           rawBytes = decompressIfZstd(rawBytes)
           const mime = getMimeType(realName)
-          const base64Data = uint8ArrayToBase64(rawBytes)
-          const dataUrl = `data:${mime};base64,${base64Data}`
+          let dataUrl = `data:${mime};base64,${uint8ArrayToBase64(rawBytes)}`
+          dataUrl = await optimizeDataUrl(dataUrl)
           registerMedia(mediaMap, realName, dataUrl)
+          registerMedia(mediaMap, zipKey, dataUrl)
         }
       }
     } catch (e) {
@@ -255,8 +408,8 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
           let rawBytes = await zipObj.async('uint8array')
           rawBytes = decompressIfZstd(rawBytes)
           const mime = getMimeType(baseName)
-          const base64Data = uint8ArrayToBase64(rawBytes)
-          const dataUrl = `data:${mime};base64,${base64Data}`
+          let dataUrl = `data:${mime};base64,${uint8ArrayToBase64(rawBytes)}`
+          dataUrl = await optimizeDataUrl(dataUrl)
           registerMedia(mediaMap, baseName, dataUrl)
         } catch (err) {
           console.warn('Erro ao carregar arquivo de imagem direto do zip:', baseName, err)
@@ -266,8 +419,6 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
   }
 
   // 2. Localiza a base SQLite com a prioridade correta:
-  // Anki 2.1.50+ armazena o banco real em collection.anki21b compactado com Zstandard.
-  // collection.anki2 é apenas um placeholder de aviso de compatibilidade.
   const zipFiles = Object.keys(zip.files)
   let dbFileName = ''
 
@@ -568,7 +719,7 @@ export async function parseAnkiApkg(fileBuffer: ArrayBuffer, fileName: string): 
 
           const isCloze = /\{\{c\d+::.*?\}\}/.test(processedFields[0])
           const q = processedFields[0] || ''
-          const a = processedFields.slice(1).filter(Boolean).join('<br><br>') || (isCloze ? 'Complete a lacuna' : 'Revisão')
+          const a = fields.slice(1).filter(Boolean).join('<br><br>') || (isCloze ? 'Complete a lacuna' : 'Revisão')
 
           if (
             q.includes('Atualize para a versão mais recente') ||
