@@ -102,21 +102,33 @@ const libCss = `
 .mr-lib-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;background:#f0fdf4;border-bottom:1px solid #d1fae5}
 .mr-lib-section-head h2{margin:0;color:#14532d;font-size:1.02rem;font-weight:900}
 .mr-lib-section-head p{margin:3px 0 0;color:#6b7280;font-size:.8rem}
-.mr-lib-deck{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap}
+.mr-lib-deck{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 18px;border-bottom:1px solid #f1f5f9;transition:background .15s ease;position:relative}
+.mr-lib-deck:hover{background:#f8fafc}
 .mr-lib-deck.is-dragging{opacity:.4}
 .mr-lib-section-over{outline:2px dashed #16a34a;outline-offset:-2px;background:#f0fdf4;border-radius:12px}
 .mr-lib-deck.drag-valid{outline:2px dashed #16a34a;outline-offset:-2px;background:#f0fdf4}
 .mr-lib-deck:last-child{border-bottom:0}
 .mr-lib-deck.is-child{padding-left:44px;background:#fafcfa}
-.mr-lib-deck-name{display:flex;align-items:center;gap:9px;flex:1;min-width:180px;cursor:pointer;border:0;background:none;padding:0;text-align:left;font:inherit}
+.mr-lib-deck.is-child:hover{background:#f1f5f9}
+.mr-lib-deck-name{display:flex;align-items:center;gap:9px;flex:1;min-width:0;cursor:pointer;border:0;background:none;padding:0;text-align:left;font:inherit;overflow:hidden}
 .mr-lib-deck-name:hover .mr-lib-deck-title{color:#15803d}
-.mr-lib-twist{width:20px;height:20px;display:grid;place-items:center;color:#15803d;font-size:.8rem;flex:0 0 20px}
-.mr-lib-deck-icon{font-size:1.15rem}
-.mr-lib-deck-title{color:#14532d;font-weight:800;font-size:.92rem}
-.mr-lib-deck-tag{padding:3px 9px;border-radius:999px;background:#f0fdf4;color:#15803d;font-size:.7rem;font-weight:800;white-space:nowrap}
+.mr-lib-twist{width:18px;height:18px;display:grid;place-items:center;color:#15803d;font-size:.82rem;flex:0 0 18px;user-select:none}
+.mr-lib-deck-icon{font-size:1.1rem;flex-shrink:0}
+.mr-lib-deck-title{color:#14532d;font-weight:750;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-lib-deck-tag{padding:2px 8px;border-radius:999px;background:#f0fdf4;color:#15803d;font-size:.68rem;font-weight:800;white-space:nowrap;flex-shrink:0}
 .mr-lib-deck-tag.warn{background:#fef3c7;color:#b45309}
-.mr-lib-deck-actions{display:flex;gap:6px;flex-wrap:wrap}
-.mr-lib-mini{border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;background:#fff;color:#15803d;font:700 .74rem Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.mr-lib-deck-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.mr-lib-btn-study{border:1px solid #16a34a;border-radius:8px;padding:5px 12px;background:#16a34a;color:#fff;font:750 .74rem Inter,system-ui,sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(22,163,74,.2);transition:all .15s ease;white-space:nowrap}
+.mr-lib-btn-study:hover{background:#15803d;border-color:#15803d}
+.mr-lib-btn-more{width:28px;height:28px;display:grid;place-items:center;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#475569;font-size:1.05rem;font-weight:800;cursor:pointer;transition:all .15s ease}
+.mr-lib-btn-more:hover{background:#f1f5f9;border-color:#cbd5e1;color:#0f172a}
+.mr-lib-menu-popover{position:absolute;right:16px;top:calc(100% - 2px);z-index:99;min-width:175px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 25px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);padding:5px;display:flex;flex-direction:column;gap:2px}
+.mr-lib-menu-popover button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:6px;background:none;color:#334155;font:650 .78rem Inter,system-ui,sans-serif;cursor:pointer;text-align:left;transition:all .12s ease}
+.mr-lib-menu-popover button:hover{background:#f1f5f9;color:#0f172a}
+.mr-lib-menu-popover button.danger{color:#dc2626}
+.mr-lib-menu-popover button.danger:hover{background:#fef2f2;color:#b91c1c}
+.mr-lib-menu-divider{height:1px;background:#f1f5f9;margin:3px 0}
+.mr-lib-mini{border:1px solid #bbf7d0;border-radius:8px;padding:5px 9px;background:#fff;color:#15803d;font:700 .73rem Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap;transition:all .15s ease}
 .mr-lib-mini:hover{background:#f0fdf4;border-color:#86efac}
 .mr-lib-mini.danger{color:#b91c1c;border-color:#fecaca}
 .mr-lib-mini.danger:hover{background:#fef2f2}
@@ -125,12 +137,13 @@ const libCss = `
 .mr-lib-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
 .mr-lib-panel-head h2{margin:0;color:#14532d;font-size:1.25rem;font-weight:900;letter-spacing:-.02em}
 .mr-lib-panel-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
-.mr-lib-card-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:9px;background:#fff;flex-wrap:wrap}
-.mr-lib-card-q{flex:1;min-width:200px;color:#1f2937;font-size:.9rem;font-weight:600;line-height:1.45}
-.mr-lib-card-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
-.mr-lib-card-chip{padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.68rem;font-weight:700}
+.mr-lib-card-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:8px;background:#fff;transition:all .15s ease}
+.mr-lib-card-row:hover{border-color:#cbd5e1;box-shadow:0 2px 6px rgba(0,0,0,.03)}
+.mr-lib-card-q{color:#1f2937;font-size:.88rem;font-weight:600;line-height:1.4}
+.mr-lib-card-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.mr-lib-card-chip{padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.67rem;font-weight:700}
 .mr-lib-card-chip.susp{background:#fef3c7;color:#b45309}
-.mr-lib-card-actions{display:flex;gap:5px;flex-wrap:wrap}
+.mr-lib-card-actions{display:flex;gap:5px;flex-shrink:0}
 .mr-lib-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px}
 .mr-lib-modal{background:#fff;border-radius:18px;padding:22px;width:100%;max-width:460px;box-shadow:0 20px 50px rgba(15,23,42,.25);max-height:88vh;overflow:auto}
 .mr-lib-modal h3{margin:0 0 4px;color:#14532d;font-size:1.1rem;font-weight:900}
@@ -140,7 +153,7 @@ const libCss = `
 .mr-lib-bulk-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:12px;background:#f0fdf4;border:1.5px solid #86efac;margin-bottom:12px;flex-wrap:wrap;box-shadow:0 2px 8px rgba(22,163,74,.08)}
 .mr-lib-card-row.is-selected{border-color:#16a34a!important;background:#f0fdf4!important;box-shadow:0 0 0 1px #16a34a}
 .mr-lib-deck.is-selected{background:#f0fdf4!important;outline:2px solid #16a34a;outline-offset:-2px}
-@media(max-width:720px){.mr-lib-main{padding:16px 12px 48px}.mr-lib-deck{padding:11px 12px}.mr-lib-deck.is-child{padding-left:34px}.mr-lib-deck-actions{width:100%;padding-left:30px}.mr-lib-panel{padding:16px 14px}.mr-lib-panel-head h2{font-size:1.08rem}}
+@media(max-width:720px){.mr-lib-main{padding:16px 12px 48px}.mr-lib-deck{padding:10px 12px}.mr-lib-deck.is-child{padding-left:28px}.mr-lib-card-row{flex-direction:column;align-items:flex-start}.mr-lib-card-actions{width:100%;justify-content:flex-end;margin-top:6px}.mr-lib-panel{padding:16px 14px}.mr-lib-panel-head h2{font-size:1.08rem}}
 `
 
 function normalizeJsonCards(input: unknown): ParsedCsvCard[] {
@@ -238,6 +251,15 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const [localCards, setLocalCards] = useState<Card[]>(cards)
   const [localDecks, setLocalDecks] = useState<Deck[]>(decks)
   const [cardDisplayLimit, setCardDisplayLimit] = useState(50)
+  const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleDocClick = () => setOpenMenuDeckId(null)
+    if (openMenuDeckId) {
+      document.addEventListener('click', handleDocClick)
+      return () => document.removeEventListener('click', handleDocClick)
+    }
+  }, [openMenuDeckId])
 
   useEffect(() => {
     setLocalCards(cards)
@@ -973,37 +995,85 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           )}
           {isSeed && <span className="mr-lib-deck-tag">pronta</span>}
         </button>
-        <div className="mr-lib-deck-actions">
-          <button className="mr-lib-mini" onClick={() => onStudy(deck.id)}>
+        <div className="mr-lib-deck-actions" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="mr-lib-btn-study"
+            title="Estudar esta pasta"
+            onClick={() => onStudy(deck.id)}
+          >
             ▶ Estudar
           </button>
-          <button className="mr-lib-mini" onClick={() => openCardModal(deck.id)}>
+          <button
+            type="button"
+            className="mr-lib-mini"
+            title="Criar nova carta nesta pasta"
+            onClick={() => openCardModal(deck.id)}
+          >
             ＋ Carta
           </button>
-          <button
-            className="mr-lib-mini"
-            onClick={() => openFolderModal(deck.id, deck.kind as any)}
-          >
-            ＋ Subpasta
-          </button>
-          <button className="mr-lib-mini" onClick={() => resetDeckProgress(deck)}>
-            ↺ Resetar
-          </button>
-          <button className="mr-lib-mini" onClick={() => openMoveDeckModal(deck.id)}>
-            ➡️ Mover
-          </button>
-          <button
-            className="mr-lib-mini"
-            onClick={() => {
-              setRenameTitle(deck.title)
-              setModal({ type: 'rename', deckId: deck.id, title: deck.title })
-            }}
-          >
-            ✏️ Renomear
-          </button>
-          <button className="mr-lib-mini danger" onClick={() => removeDeck(deck)}>
-            🗑️ Excluir
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className="mr-lib-btn-more"
+              title="Mais opções para esta pasta"
+              onClick={() => setOpenMenuDeckId(openMenuDeckId === deck.id ? null : deck.id)}
+            >
+              ⋯
+            </button>
+            {openMenuDeckId === deck.id && (
+              <div className="mr-lib-menu-popover" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenuDeckId(null)
+                    openFolderModal(deck.id, deck.kind as any)
+                  }}
+                >
+                  <span>🗂️</span> Nova subpasta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenuDeckId(null)
+                    setRenameTitle(deck.title)
+                    setModal({ type: 'rename', deckId: deck.id, title: deck.title })
+                  }}
+                >
+                  <span>✏️</span> Renomear pasta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenuDeckId(null)
+                    openMoveDeckModal(deck.id)
+                  }}
+                >
+                  <span>➡️</span> Mover pasta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenMenuDeckId(null)
+                    resetDeckProgress(deck)
+                  }}
+                >
+                  <span>↺</span> Resetar progresso
+                </button>
+                <div className="mr-lib-menu-divider" />
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => {
+                    setOpenMenuDeckId(null)
+                    removeDeck(deck)
+                  }}
+                >
+                  <span>🗑️</span> Excluir pasta
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     )

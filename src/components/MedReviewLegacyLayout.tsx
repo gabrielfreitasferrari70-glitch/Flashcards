@@ -87,18 +87,26 @@ const legacyCss = `
 .mr-legacy-subdeck:hover{transform:translateY(-3px);border-color:#86efac;box-shadow:0 12px 23px rgba(22,163,74,.12)}
 .mr-legacy-subdeck h3{margin:13px 0 8px;color:#14532d;font-size:1rem}
 .mr-legacy-subdeck-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:auto}
-.mr-legacy-subdeck-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;width:100%}
+.mr-legacy-subdeck-actions{display:flex;align-items:center;gap:6px;margin-top:10px;width:100%;position:relative}
 .mr-legacy-subdeck-actions button{border:1px solid #bbf7d0;border-radius:8px;padding:5px 9px;background:#fff;color:#15803d;font:700 .72rem Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap;transition:all .15s ease}
 .mr-legacy-subdeck-actions button:hover{background:#f0fdf4;border-color:#86efac}
 .mr-legacy-subdeck-actions button.danger{color:#b91c1c;border-color:#fecaca}
 .mr-legacy-subdeck-actions button.danger:hover{background:#fef2f2}
+.mr-legacy-subdeck-more-btn{width:28px!important;height:28px!important;display:grid!important;place-items:center!important;border:1px solid #bbf7d0!important;border-radius:8px!important;background:#fff!important;color:#15803d!important;font-size:1.05rem!important;font-weight:800!important;cursor:pointer!important;transition:all .15s ease;padding:0!important}
+.mr-legacy-subdeck-more-btn:hover{background:#f0fdf4!important;border-color:#86efac!important}
+.mr-legacy-menu-popover{position:absolute;right:0;bottom:calc(100% + 4px);z-index:90;min-width:170px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 25px rgba(15,23,42,.12),0 2px 8px rgba(15,23,42,.06);padding:5px;display:flex;flex-direction:column;gap:2px}
+.mr-legacy-menu-popover button{display:flex!important;align-items:center;gap:8px;width:100%;padding:7px 10px!important;border:0!important;border-radius:6px!important;background:none!important;color:#334155!important;font:650 .78rem Inter,system-ui,sans-serif!important;cursor:pointer;text-align:left;transition:all .12s ease}
+.mr-legacy-menu-popover button:hover{background:#f1f5f9!important;color:#0f172a!important}
+.mr-legacy-menu-popover button.danger{color:#dc2626!important}
+.mr-legacy-menu-popover button.danger:hover{background:#fef2f2!important;color:#b91c1c!important}
+.mr-legacy-menu-divider{height:1px;background:#f1f5f9;margin:3px 0}
 .mr-legacy-folder-head-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 .mr-legacy-button.danger{color:#b91c1c;border-color:#fecaca;background:#fff}
 .mr-legacy-folder-manage{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 16px;padding:12px 14px;border:1px solid #bbf7d0;border-radius:13px;background:#f0fdf4}
 .mr-legacy-folder-manage-label{flex-basis:100%;color:#14532d;font-size:.78rem;font-weight:900}
 .mr-legacy-newfolder-card{justify-content:center;align-items:center;text-align:center;border-style:dashed;border-color:#86efac;color:#15803d;background:rgba(240,253,244,.6)}
 .mr-legacy-newfolder-card:hover{border-color:#16a34a;background:#f0fdf4}
-@media(max-width:720px){.mr-legacy-subdecks{grid-template-columns:repeat(2,minmax(0,1fr))}.mr-legacy-subdeck-actions button{padding:6px 8px}}
+@media(max-width:720px){.mr-legacy-subdecks{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.mr-legacy-subdecks{grid-template-columns:1fr}}
 .mr-legacy-pill{padding:5px 9px;border-radius:999px;background:#f0fdf4;color:#15803d;font-size:.73rem;font-weight:800}
 .mr-legacy-study-page{min-height:100vh;background:linear-gradient(180deg,#f0fdf4,#f8fafc 310px);font-family:Inter,system-ui,sans-serif}
@@ -243,6 +251,16 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   // (sem parent). O que está DENTRO de uma pasta aparece abrindo a pasta —
   // nunca achatado junto, senão parece que a seção "dissolveu".
   const [sortMode, setSortMode] = useState<DeckSortMode>(getDeckSort)
+  const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleDocClick = () => setOpenMenuDeckId(null)
+    if (openMenuDeckId) {
+      document.addEventListener('click', handleDocClick)
+      return () => document.removeEventListener('click', handleDocClick)
+    }
+  }, [openMenuDeckId])
+
   useEffect(() => {
     const sync = () => setSortMode(getDeckSort())
     window.addEventListener(DECK_SORT_EVENT, sync)
@@ -513,6 +531,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       >
                         <button
                           type="button"
+                          className="mr-legacy-action-eve"
                           title="Revisão intensiva de véspera nesta pasta"
                           onClick={() => onOpenCramMode?.(deck.id)}
                           style={{ color: '#b45309', fontWeight: 800 }}
@@ -526,38 +545,58 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         >
                           ＋ Carta
                         </button>
-                        <button
-                          type="button"
-                          title="Criar subpasta"
-                          onClick={() => onDeckAddSubfolder?.(deck.id)}
-                        >
-                          🗂 Subpasta
-                        </button>
-                        <button
-                          type="button"
-                          title="Mover esta pasta"
-                          aria-label={`Mover pasta ${deck.title}`}
-                          onClick={() => onDeckMove?.(deck.id)}
-                        >
-                          ➡️ Mover
-                        </button>
-                        <button
-                          type="button"
-                          title="Renomear esta pasta"
-                          aria-label={`Renomear pasta ${deck.title}`}
-                          onClick={() => onDeckRename?.(deck.id)}
-                        >
-                          ✏️ Renomear
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          title="Excluir esta pasta"
-                          aria-label={`Excluir pasta ${deck.title}`}
-                          onClick={() => onDeckDelete?.(deck.id)}
-                        >
-                          🗑️ Excluir
-                        </button>
+                        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                          <button
+                            type="button"
+                            className="mr-legacy-subdeck-more-btn"
+                            title="Mais opções para esta pasta"
+                            onClick={() => setOpenMenuDeckId(openMenuDeckId === deck.id ? null : deck.id)}
+                          >
+                            ⋯
+                          </button>
+                          {openMenuDeckId === deck.id && (
+                            <div className="mr-legacy-menu-popover" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckAddSubfolder?.(deck.id)
+                                }}
+                              >
+                                <span>🗂️</span> Nova subpasta
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckRename?.(deck.id)
+                                }}
+                              >
+                                <span>✏️</span> Renomear pasta
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckMove?.(deck.id)
+                                }}
+                              >
+                                <span>➡️</span> Mover pasta
+                              </button>
+                              <div className="mr-legacy-menu-divider" />
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckDelete?.(deck.id)
+                                }}
+                              >
+                                <span>🗑️</span> Excluir pasta
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </span>
                       <span className="mr-legacy-category-foot" style={{ width: '100%' }}>
                         Abrir pasta <span className="mr-legacy-arrow">→</span>
@@ -829,37 +868,58 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         >
                           ＋ Carta
                         </button>
-                        <button
-                          type="button"
-                          title="Criar subpasta"
-                          onClick={() => onDeckAddSubfolder?.(deck.id)}
-                        >
-                          🗂 Subpasta
-                        </button>
-                        <button
-                          type="button"
-                          title="Mover para dentro de outra pasta"
-                          onClick={() => onDeckMove?.(deck.id)}
-                        >
-                          ➡️
-                        </button>
-                        <button
-                          type="button"
-                          title="Renomear esta pasta"
-                          aria-label={`Renomear pasta ${deck.title}`}
-                          onClick={() => onDeckRename?.(deck.id)}
-                        >
-                          ✏️ Renomear
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          title="Excluir esta pasta"
-                          aria-label={`Excluir pasta ${deck.title}`}
-                          onClick={() => onDeckDelete?.(deck.id)}
-                        >
-                          🗑️ Excluir
-                        </button>
+                        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                          <button
+                            type="button"
+                            className="mr-legacy-subdeck-more-btn"
+                            title="Mais opções para esta pasta"
+                            onClick={() => setOpenMenuDeckId(openMenuDeckId === deck.id ? null : deck.id)}
+                          >
+                            ⋯
+                          </button>
+                          {openMenuDeckId === deck.id && (
+                            <div className="mr-legacy-menu-popover" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckAddSubfolder?.(deck.id)
+                                }}
+                              >
+                                <span>🗂️</span> Nova subpasta
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckRename?.(deck.id)
+                                }}
+                              >
+                                <span>✏️</span> Renomear pasta
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckMove?.(deck.id)
+                                }}
+                              >
+                                <span>➡️</span> Mover pasta
+                              </button>
+                              <div className="mr-legacy-menu-divider" />
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => {
+                                  setOpenMenuDeckId(null)
+                                  onDeckDelete?.(deck.id)
+                                }}
+                              >
+                                <span>🗑️</span> Excluir pasta
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </span>
                     </div>
                   )
