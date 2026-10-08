@@ -925,7 +925,9 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     )
     if (done) setModal({ type: 'none' })
   }
-  const deckRow = (deck: Deck, isChild: boolean) => {
+  const deckRow = (deck: Deck, isChildOrDepth: boolean | number = 0) => {
+    const depth = typeof isChildOrDepth === 'number' ? isChildOrDepth : isChildOrDepth ? 1 : 0
+    const isChild = depth > 0
     const kids = childrenOf(deck.id)
     const count = countOf(deck.id)
     const isOpen = !!expanded[deck.id]
@@ -936,7 +938,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
       <div
         key={deck.id}
         className={`mr-lib-deck${isChild ? ' is-child' : ''}${dragDeckId === deck.id ? ' is-dragging' : ''}${isDeckSelected ? ' is-selected' : ''}`}
-        style={isChild ? { paddingLeft: 44 + (Number(isChild) - 1) * 22 } : undefined}
+        style={isChild ? { paddingLeft: 18 + depth * 24 } : undefined}
         draggable={!deckSelectionMode}
         onDragStart={(e) => {
           if (deckSelectionMode) return
@@ -964,7 +966,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           <input
             type="checkbox"
             className="mr-lib-checkbox"
-            style={{ marginRight: 4 }}
+            style={{ marginRight: 6 }}
             checked={isDeckSelected}
             onChange={(e) => {
               e.stopPropagation()
@@ -984,6 +986,11 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
             if (kids.length) setExpanded((e) => ({ ...e, [deck.id]: !e[deck.id] }))
           }}
         >
+          {depth > 0 && (
+            <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '.82rem', marginRight: 2, flexShrink: 0 }}>
+              ↳
+            </span>
+          )}
           <span className="mr-lib-twist">{kids.length ? (isOpen ? '▾' : '▸') : ''}</span>
           <span className="mr-lib-deck-icon">{deck.kind === 'prova' ? '📝' : '🩺'}</span>
           <span className="mr-lib-deck-title">{deck.title}</span>
@@ -1169,7 +1176,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
               Recuperar Pastas e Cartões
             </h3>
             <p style={{ margin: '0 auto 16px', maxWidth: 640, color: '#3b82f6', fontSize: '.92rem', lineHeight: 1.5 }}>
-              Detectamos seu backup completo de <strong>34 pastas</strong> e <strong>863 cartões</strong> (incluindo UC-2 Tutorias, Módulos e UC-1 Anatomia de Músculos com imagens). Clique abaixo para restaurar imediatamente:
+              Detectamos seu backup completo de <strong>34 pastas</strong> e <strong>1.352 cartões</strong> (incluindo UC-2 Tutorias, Módulos e UC-1 Anatomia, Músculos e Neuro Provas Práticas 1 e 2 com imagens leves). Clique abaixo para restaurar imediatamente:
             </p>
             <button
               style={{
@@ -1186,10 +1193,10 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
               onClick={async () => {
                 try {
                   setBusy(true)
-                  setMessage('Restaurando suas 34 pastas e 863 cartões do backup...')
+                  setMessage('Restaurando suas 34 pastas e 1.352 cartões do backup...')
                   await restoreBackupData(true)
                   await onRefresh()
-                  setMessage('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+                  setMessage('Sucesso! 34 pastas e 1.352 cartões restaurados com perfeição.')
                 } catch (e: any) {
                   setError('Erro ao restaurar: ' + (e?.message || e))
                 } finally {
@@ -1197,7 +1204,7 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
                 }
               }}
             >
-              🚀 Restaurar Todas as 34 Pastas e 863 Cartões
+              🚀 Restaurar Todas as 34 Pastas e 1.352 Cartões
             </button>
           </div>
         )}

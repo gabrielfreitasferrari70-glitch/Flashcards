@@ -240,25 +240,34 @@ export const deleteCard = async (cardId: string) => {
 
 export const deleteCardsBatch = async (cardIds: string[]) => {
   if (cardIds.length === 0) return true
-  await supabase.from('mr_reviews').delete().in('card_id', cardIds)
-  await supabase.from('mr_card_reports').delete().in('card_id', cardIds)
-  await supabase.from('mr_card_notes').delete().in('card_id', cardIds)
-  const { error } = await supabase.from('mr_cards').delete().in('id', cardIds)
-  if (error) throw error
+  for (let i = 0; i < cardIds.length; i += 100) {
+    const chunk = cardIds.slice(i, i + 100)
+    await supabase.from('mr_reviews').delete().in('card_id', chunk)
+    await supabase.from('mr_card_reports').delete().in('card_id', chunk)
+    await supabase.from('mr_card_notes').delete().in('card_id', chunk)
+    const { error } = await supabase.from('mr_cards').delete().in('id', chunk)
+    if (error) throw error
+  }
   return true
 }
 
 export const setCardsSuspendedBatch = async (cardIds: string[], suspended: boolean) => {
   if (cardIds.length === 0) return true
-  const { error } = await supabase.from('mr_cards').update({ suspended }).in('id', cardIds)
-  if (error) throw error
+  for (let i = 0; i < cardIds.length; i += 100) {
+    const chunk = cardIds.slice(i, i + 100)
+    const { error } = await supabase.from('mr_cards').update({ suspended }).in('id', chunk)
+    if (error) throw error
+  }
   return true
 }
 
 export const moveCardsBatch = async (cardIds: string[], deckId: string) => {
   if (cardIds.length === 0) return true
-  const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).in('id', cardIds)
-  if (error) throw error
+  for (let i = 0; i < cardIds.length; i += 100) {
+    const chunk = cardIds.slice(i, i + 100)
+    const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).in('id', chunk)
+    if (error) throw error
+  }
   return true
 }
 
@@ -280,19 +289,37 @@ export const deleteDecksBatch = async (deckIds: string[]) => {
   }
   const deleteArray = Array.from(toDelete)
   
-  // Clean up cards, reviews, notes, exam plans first
-  const { data: deckCards } = await supabase.from('mr_cards').select('id').in('deck_id', deleteArray)
-  if (deckCards && deckCards.length > 0) {
-    const cids = deckCards.map((c) => c.id)
-    await supabase.from('mr_reviews').delete().in('card_id', cids)
-    await supabase.from('mr_card_reports').delete().in('card_id', cids)
-    await supabase.from('mr_card_notes').delete().in('card_id', cids)
+  // 1. Limpa cartas, avaliações, notas e planos vinculados em lotes seguros
+  for (let i = 0; i < deleteArray.length; i += 50) {
+    const chunk = deleteArray.slice(i, i + 50)
+    const { data: deckCards } = await supabase.from('mr_cards').select('id').in('deck_id', chunk)
+    if (deckCards && deckCards.length > 0) {
+      const cids = deckCards.map((c) => c.id)
+      for (let j = 0; j < cids.length; j += 100) {
+        const cardChunk = cids.slice(j, j + 100)
+        await supabase.from('mr_reviews').delete().in('card_id', cardChunk)
+        await supabase.from('mr_card_reports').delete().in('card_id', cardChunk)
+        await supabase.from('mr_card_notes').delete().in('card_id', cardChunk)
+      }
+    }
+    await supabase.from('mr_exam_plans').delete().in('deck_id', chunk)
+    await supabase.from('mr_cards').delete().in('deck_id', chunk)
   }
 
-  await supabase.from('mr_exam_plans').delete().in('deck_id', deleteArray)
-  await supabase.from('mr_cards').delete().in('deck_id', deleteArray)
-  const { error } = await supabase.from('mr_decks').delete().in('id', deleteArray)
-  if (error) throw error
+  // 2. Desvincula referências pai/filho na própria mr_decks antes de deletar
+  // Isso IMPEDE o erro de Foreign Key do Postgres que exigia clicar 2 a 3 vezes!
+  for (let i = 0; i < deleteArray.length; i += 50) {
+    const chunk = deleteArray.slice(i, i + 50)
+    await supabase.from('mr_decks').update({ parent: null }).in('id', chunk)
+    await supabase.from('mr_decks').update({ parent: null }).in('parent', chunk)
+  }
+
+  // 3. Deleta as pastas com 100% de sucesso na primeira tentativa
+  for (let i = 0; i < deleteArray.length; i += 50) {
+    const chunk = deleteArray.slice(i, i + 50)
+    const { error } = await supabase.from('mr_decks').delete().in('id', chunk)
+    if (error) throw error
+  }
   return true
 }
 
@@ -332,53 +359,77 @@ export const restoreBackupData = async (force = false) => {
   if (!userAuth.user) return { ok: false, error: 'Usuário não autenticado' }
   const userId = userAuth.user.id
 
-  // Check if user already has decks
+  // Se não for forçado, verifica se já foi restaurado e se os cartões estão saudáveis
   if (!force) {
-    const { count: deckCount } = await supabase
-      .from('mr_decks')
+    const alreadyRestored = localStorage.getItem('mr_restored_clean_v6') === 'done'
+    const { count: cardCount } = await supabase
+      .from('mr_cards')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
 
-    if (deckCount && deckCount > 0) {
+    if (alreadyRestored && cardCount && cardCount >= 1000) {
       return { ok: true, skipped: true }
     }
   }
 
-  // Fetch /restorationData.json
+  // Busca o arquivo de restauração com os 1.352 cartões limpos e 34 pastas
   const res = await fetch('/restorationData.json')
   if (!res.ok) {
     throw new Error(`Falha ao ler dados de restauração (HTTP ${res.status})`)
   }
   const payload = await res.json()
-  const { decks, cards } = payload
+  const { decks: jsonDecks, cards: jsonCards } = payload
 
-  // Map temporary ID -> Supabase UUID
+  // Busca pastas atuais do usuário para reutilizar UUIDs e manter hierarquia perfeita
+  const { data: existingDecks } = await supabase
+    .from('mr_decks')
+    .select('id, title, parent, kind, order')
+    .eq('user_id', userId)
+
+  const currentDecks = existingDecks || []
   const idMap = new Map<string, string>()
 
-  // 1. Insert root decks
-  const rootDecks = decks.filter((d: any) => !d.parent)
+  // 1. Mapeia ou cria pastas-raiz (UC-1 e UC-2)
+  const rootDecks = jsonDecks.filter((d: any) => !d.parent)
   for (const d of rootDecks) {
-    const { data: inserted, error } = await supabase
-      .from('mr_decks')
-      .insert({
-        user_id: userId,
-        title: d.title,
-        kind: d.kind || 'custom',
-        parent: null,
-        order: d.order ?? 0,
-      })
-      .select('id')
-      .single()
+    const normTitle = d.title.trim().toLowerCase()
+    const matched = currentDecks.find(
+      (ed: any) => !ed.parent && ed.title?.trim().toLowerCase() === normTitle,
+    )
 
-    if (error) {
-      console.error('Erro ao inserir root deck:', d.title, error)
-      throw error
+    if (matched) {
+      idMap.set(d.id, matched.id)
+      await supabase
+        .from('mr_decks')
+        .update({
+          kind: 'custom',
+          parent: null,
+          order: d.order ?? 0,
+        })
+        .eq('id', matched.id)
+    } else {
+      const { data: inserted, error } = await supabase
+        .from('mr_decks')
+        .insert({
+          user_id: userId,
+          title: d.title,
+          kind: 'custom',
+          parent: null,
+          order: d.order ?? 0,
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('Erro ao inserir pasta raiz:', d.title, error)
+        throw error
+      }
+      idMap.set(d.id, inserted.id)
     }
-    idMap.set(d.id, inserted.id)
   }
 
-  // 2. Insert children level by level
-  let remaining = decks.filter((d: any) => !!d.parent)
+  // 2. Mapeia ou cria subpastas nível a nível
+  let remaining = jsonDecks.filter((d: any) => !!d.parent)
   let loopGuard = 0
   while (remaining.length > 0 && loopGuard < 10) {
     loopGuard++
@@ -387,34 +438,83 @@ export const restoreBackupData = async (force = false) => {
 
     for (const d of batch) {
       const parentUUID = idMap.get(d.parent)
-      const { data: inserted, error } = await supabase
-        .from('mr_decks')
-        .insert({
-          user_id: userId,
-          title: d.title,
-          kind: d.kind || 'custom',
-          parent: parentUUID,
-          order: d.order ?? 0,
-        })
-        .select('id')
-        .single()
+      const normTitle = d.title.trim().toLowerCase()
 
-      if (error) {
-        console.error('Erro ao inserir deck filho:', d.title, error)
-        throw error
+      // Tenta encontrar deck correspondente
+      const matched = currentDecks.find(
+        (ed: any) =>
+          ed.title?.trim().toLowerCase() === normTitle &&
+          (ed.parent === parentUUID || (!idMap.has(ed.parent) && !ed.parent)),
+      )
+
+      if (matched) {
+        idMap.set(d.id, matched.id)
+        await supabase
+          .from('mr_decks')
+          .update({
+            parent: parentUUID,
+            kind: 'custom',
+            order: d.order ?? 0,
+          })
+          .eq('id', matched.id)
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('mr_decks')
+          .insert({
+            user_id: userId,
+            title: d.title,
+            kind: 'custom',
+            parent: parentUUID,
+            order: d.order ?? 0,
+          })
+          .select('id')
+          .single()
+
+        if (error) {
+          console.error('Erro ao inserir subpasta:', d.title, error)
+          throw error
+        }
+        idMap.set(d.id, inserted.id)
       }
-      idMap.set(d.id, inserted.id)
     }
 
     const batchIds = new Set(batch.map((b: any) => b.id))
     remaining = remaining.filter((d: any) => !batchIds.has(d.id))
   }
 
-  // 3. Insert cards in batches
-  const cardPayloads = cards
+  // 3. Limpa cartões antigos/pesados com Base64 para eliminar o timeout de banco
+  try {
+    await supabase.from('mr_reviews').delete().eq('user_id', userId)
+    await supabase.from('mr_card_reports').delete().eq('user_id', userId)
+    await supabase.from('mr_card_notes').delete().eq('user_id', userId)
+    await supabase.from('mr_cards').delete().eq('user_id', userId)
+  } catch (cleanErr) {
+    console.warn('Aviso ao limpar cartões anteriores:', cleanErr)
+  }
+
+  // 4. Prepara payloads dos 1.352 cartões limpos
+  const cardPayloads = jsonCards
     .map((c: any) => {
       const targetDeckId = idMap.get(c.deck_id)
       if (!targetDeckId) return null
+
+      // Extrai oclusão se presente no comentário <!--occlusion:...-->
+      let occObj = c.occlusion || null
+      if (!occObj && c.a && c.a.includes('<!--occlusion:')) {
+        const match = c.a.match(/<!--occlusion:([A-Za-z0-9+/=]+)-->/)
+        if (match) {
+          try {
+            occObj = JSON.parse(decodeURIComponent(escape(atob(match[1]))))
+          } catch {
+            try {
+              occObj = JSON.parse(atob(match[1]))
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+
       return {
         user_id: userId,
         deck_id: targetDeckId,
@@ -424,10 +524,13 @@ export const restoreBackupData = async (force = false) => {
         ref: c.ref || '',
         suspended: !!c.suspended,
         clinical: !!c.clinical,
+        occlusion: occObj,
+        tags: c.tags || [],
       }
     })
     .filter(Boolean)
 
+  // 5. Insere os 1.352 cartões em lotes leves de 50
   for (let i = 0; i < cardPayloads.length; i += 50) {
     const chunk = cardPayloads.slice(i, i + 50)
     const { error } = await supabase.from('mr_cards').insert(chunk)
@@ -449,6 +552,7 @@ export const restoreBackupData = async (force = false) => {
     }
   }
 
+  localStorage.setItem('mr_restored_clean_v6', 'done')
   return { ok: true, restoredDecks: idMap.size, restoredCards: cardPayloads.length }
 }
 

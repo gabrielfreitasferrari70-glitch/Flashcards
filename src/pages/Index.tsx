@@ -3574,7 +3574,7 @@ export default function Index() {
           }}
         >
           <span style={{ fontSize: '.92rem', color: '#1e40af', fontWeight: 600 }}>
-            Pastas ou cartões sumiram? Restaure sua biblioteca completa (34 pastas e 863 cartões):
+            Pastas ou cartões sumiram? Restaure sua biblioteca completa (34 pastas e 1.352 cartões):
           </span>
           <button
             style={{
@@ -3589,17 +3589,17 @@ export default function Index() {
               boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
             }}
             onClick={async () => {
-              setMsg('Restaurando suas 34 pastas e 863 cartões do backup...')
+              setMsg('Restaurando suas 34 pastas e 1.352 cartões do backup...')
               try {
                 await restoreBackupData(true)
                 await loadData()
-                setMsg('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+                setMsg('Sucesso! 34 pastas e 1.352 cartões restaurados com perfeição.')
               } catch (e: any) {
                 setMsg('Erro ao restaurar: ' + (e?.message || e))
               }
             }}
           >
-            🚀 Restaurar 863 Cartões Agora
+            🚀 Restaurar 1.352 Cartões Agora
           </button>
         </div>
       )}

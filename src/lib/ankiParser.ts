@@ -155,8 +155,8 @@ function parseMediaProtobuf(bytes: Uint8Array): string[] {
 /**
  * Otimiza data URLs no navegador para carregar instantaneamente e não pesar no Supabase
  */
-async function optimizeDataUrl(dataUrl: string, maxDim = 1600, quality = 0.86): Promise<string> {
-  if (!dataUrl || dataUrl.length < 150000) return dataUrl
+async function optimizeDataUrl(dataUrl: string, maxDim = 1200, quality = 0.78): Promise<string> {
+  if (!dataUrl || dataUrl.length < 80000) return dataUrl
   if (typeof window === 'undefined' || typeof document === 'undefined') return dataUrl
   return new Promise((resolve) => {
     const img = new Image()

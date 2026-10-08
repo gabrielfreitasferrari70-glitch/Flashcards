@@ -69,25 +69,50 @@ const pb = {
         throw new Error('Create not implemented for ' + name)
       },
       getFullList: async (options?: { sort?: string }) => {
-        let query = supabase.from(name).select('*')
+        const batchSize = 1000
+        let allRows: any[] = []
+        let from = 0
+        let hasMore = true
 
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from(name)
+            .select('*')
+            .range(from, from + batchSize - 1)
+
+          if (error) {
+            console.error(`Erro ao buscar ${name} (range ${from}-${from + batchSize - 1}):`, error)
+            break
+          }
+          if (!data || data.length === 0) {
+            break
+          }
+          allRows.push(...data)
+          if (data.length < batchSize) {
+            hasMore = false
+          } else {
+            from += batchSize
+          }
+        }
+
+        // Ordenação client-side ultra-rápida em memória (evita timeouts no Postgres)
         if (options?.sort) {
           const isDesc = options.sort.startsWith('-')
           let col = isDesc ? options.sort.substring(1) : options.sort
           if (col === 'created') col = 'created_at'
           if (col === 'updated') col = 'updated_at'
-          query = query.order(col, { ascending: !isDesc })
+          allRows.sort((a, b) => {
+            const va = a[col]
+            const vb = b[col]
+            if (va === vb) return 0
+            if (va === null || va === undefined) return 1
+            if (vb === null || vb === undefined) return -1
+            return isDesc ? (va > vb ? -1 : 1) : (va > vb ? 1 : -1)
+          })
         }
-        
-        query = query.limit(10000)
 
-        const { data, error } = await query
-        if (error) {
-          console.error(`Erro ao buscar ${name}:`, error)
-          return []
-        }
         // Mapeia colunas do Supabase para o formato esperado pelo frontend (estilo Pocketbase)
-        return data.map((row: any) => {
+        return allRows.map((row: any) => {
           const mapped = { ...row }
           if (row.created_at) mapped.created = row.created_at
           if (row.updated_at) mapped.updated = row.updated_at
