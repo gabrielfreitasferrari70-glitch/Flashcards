@@ -3325,6 +3325,21 @@ export default function Index() {
           </div>
           <article
             className="mr-legacy-study-card"
+            onErrorCapture={(e) => {
+              const target = e.target as HTMLImageElement
+              if (target && target.tagName === 'IMG' && target.src) {
+                if (target.src.includes('/cards-media/')) {
+                  const filename = target.src.split('/cards-media/').pop()?.split('?')[0]
+                  if (filename && !target.dataset.fallback) {
+                    target.dataset.fallback = '1'
+                    target.src = `https://cdn.jsdelivr.net/gh/gabrielfreitasferrari70-glitch/Flashcards@main/public/cards-media/${filename}`
+                  } else if (filename && target.dataset.fallback === '1') {
+                    target.dataset.fallback = '2'
+                    target.src = `https://raw.githubusercontent.com/gabrielfreitasferrari70-glitch/Flashcards/main/public/cards-media/${filename}`
+                  }
+                }
+              }
+            }}
             onClick={(e) => {
               const target = e.target as HTMLElement
               if (target.tagName === 'IMG') {
@@ -3893,19 +3908,23 @@ export default function Index() {
           },
         ]
       : []),
-    // Minhas Pastas SEMPRE aparece (portal de navegação) — mesmo vazia.
-    // Título FIXO: o card é um portal, NÃO é a pasta capa (renomear uma pasta
-    // dentro não pode mudar o card da home — feedback da Nathalia).
-    {
-      icon: '📁',
-      tag: 'Suas pastas livres',
-      title: 'Minhas Pastas',
-      description: 'Pastas que você criou — organização livre, com subpastas ilimitadas.',
-      count: rootsOfKind('custom').reduce((n, d) => n + cardsInSubtree(d.id), 0),
-      onClick: () => openFolderGroup('custom'),
-      deckId: customs.find((d) => !d.parent)?.id,
-      sectionKind: 'custom' as const,
-    },
+    // Se o usuário já possui pastas raiz livres visíveis (ex: UC-1, UC-2), elas são renderizadas diretamente
+    // como cartões de pasta real (userDecks). O card portal "Minhas Pastas" só é exibido se ainda NÃO houver
+    // pastas criadas, evitando duplicar as pastas e a contagem de cartas na tela inicial.
+    ...(userDecks.length === 0
+      ? [
+          {
+            icon: '📁',
+            tag: 'Suas pastas livres',
+            title: 'Minhas Pastas',
+            description: 'Pastas que você criou — organização livre, com subpastas ilimitadas.',
+            count: rootsOfKind('custom').reduce((n, d) => n + cardsInSubtree(d.id), 0),
+            onClick: () => openFolderGroup('custom'),
+            deckId: customs.find((d) => !d.parent)?.id,
+            sectionKind: 'custom' as const,
+          },
+        ]
+      : []),
     {
       icon: '📚',
       tag: 'Biblioteca',

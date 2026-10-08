@@ -26,11 +26,41 @@ export const ImageOcclusionViewer = React.memo<Props>(({
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
-  // Reseta erro de imagem e pan se a URL mudar
+  const cleanImageUrl = useMemo(() => {
+    let url =
+      typeof data?.imageUrl === 'string' && data.imageUrl.startsWith('<img')
+        ? data.imageUrl.match(/src=["']([^"']+)["']/i)?.[1] || data.imageUrl
+        : data?.imageUrl || ''
+    if (typeof url !== 'string') return ''
+    return url.trim()
+  }, [data?.imageUrl])
+
+  const [currentImgSrc, setCurrentImgSrc] = useState(cleanImageUrl)
+  const [fallbackAttempt, setFallbackAttempt] = useState(0)
+
+  // Reseta erro de imagem, tentativa de fallback e pan se a URL mudar
   useEffect(() => {
+    setCurrentImgSrc(cleanImageUrl)
+    setFallbackAttempt(0)
     setImgError(false)
     setPan({ x: 0, y: 0 })
-  }, [data?.imageUrl])
+  }, [cleanImageUrl])
+
+  const handleImageError = () => {
+    if (fallbackAttempt === 0 && cleanImageUrl.startsWith('/cards-media/')) {
+      setFallbackAttempt(1)
+      const filename = cleanImageUrl.replace('/cards-media/', '')
+      // Tier 1 CDN: jsDelivr Global Edge CDN (Cloudflare edge)
+      setCurrentImgSrc(`https://cdn.jsdelivr.net/gh/gabrielfreitasferrari70-glitch/Flashcards@main/public/cards-media/${filename}`)
+    } else if (fallbackAttempt === 1 && cleanImageUrl.startsWith('/cards-media/')) {
+      setFallbackAttempt(2)
+      const filename = cleanImageUrl.replace('/cards-media/', '')
+      // Tier 2 CDN: GitHub Raw direto
+      setCurrentImgSrc(`https://raw.githubusercontent.com/gabrielfreitasferrari70-glitch/Flashcards/main/public/cards-media/${filename}`)
+    } else {
+      setImgError(true)
+    }
+  }
 
   // Tecla ESC para sair de tela cheia
   useEffect(() => {
@@ -41,11 +71,6 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [isFullscreen])
-
-  const cleanImageUrl =
-    typeof data?.imageUrl === 'string' && data.imageUrl.startsWith('<img')
-      ? data.imageUrl.match(/src=["']([^"']+)["']/i)?.[1] || data.imageUrl
-      : data?.imageUrl || ''
 
   // Normaliza máscaras garantindo IDs únicos (caso cartões antigos tenham IDs duplicados)
   const normalizedMasks = useMemo(() => {
@@ -194,18 +219,39 @@ export const ImageOcclusionViewer = React.memo<Props>(({
         >
           {!cleanImageUrl ? (
             <div style={{ padding: '50px 20px', color: '#fca5a5', textAlign: 'center', fontSize: '.88rem' }}>
-              ⚠️ Imagem da oclusão não encontrada.
+              ⚠️ Imagem da oclusão não informada.
             </div>
           ) : imgError ? (
             <div style={{ padding: '50px 20px', color: '#fca5a5', textAlign: 'center', fontSize: '.88rem' }}>
-              ⚠️ Não foi possível carregar a imagem da oclusão.
+              <div>⚠️ Não foi possível carregar a imagem da oclusão.</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setImgError(false)
+                  setFallbackAttempt(0)
+                  setCurrentImgSrc(`${cleanImageUrl}?t=${Date.now()}`)
+                }}
+                style={{
+                  marginTop: 10,
+                  border: '1px solid #f87171',
+                  background: 'rgba(239, 68, 68, 0.25)',
+                  color: '#fff',
+                  borderRadius: 6,
+                  padding: '5px 12px',
+                  cursor: 'pointer',
+                  fontSize: '.78rem',
+                  fontWeight: 700,
+                }}
+              >
+                🔄 Tentar novamente
+              </button>
             </div>
           ) : (
             <img
-              src={cleanImageUrl}
+              src={currentImgSrc}
               alt={data.imageTitle || 'Oclusão de Imagem'}
               decoding="async"
-              onError={() => setImgError(true)}
+              onError={handleImageError}
               style={{
                 display: 'block',
                 maxWidth: '100%',
