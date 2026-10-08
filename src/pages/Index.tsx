@@ -2197,21 +2197,14 @@ export default function Index() {
   const allCards = cards
   const totalCards = allCards.length
 
-  const { cardStates, dueCount, newCount, masteredCount, streakDays } = useMemo(() => {
-    const states = new Map(
-      allCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
-    )
+  const { dueCount, masteredCount, streakDays } = useMemo(() => {
     let due = 0
-    let n = 0
     let mastered = 0
     const now = Date.now()
 
     for (const c of allCards) {
-      const cs = states.get(stateKey(c))
-      if (!cs) continue
-      if (cs.state === 'new') {
-        n += 1
-      } else if ((cs.dueMs || 0) <= now) {
+      const cs = cardStateFromReviews(reviewsForCard(c))
+      if (cs.state !== 'new' && (cs.dueMs || 0) <= now) {
         due += 1
       }
       if ((cs.s || 0) >= 21) {
@@ -2239,9 +2232,7 @@ export default function Index() {
     }
 
     return {
-      cardStates: states,
       dueCount: due,
-      newCount: n,
       masteredCount: mastered,
       streakDays: streak,
     }
@@ -2918,6 +2909,7 @@ export default function Index() {
       )
     const cs = cardStateFromReviews(reviewsForCard(card))
     const pv = previewIntervalsForSettings(cs, retention, schedulerSettings)
+    const currentOcclusionData = parseOcclusion(card.occlusion, card.a, card.q)
     return (
       <div className="mr-legacy-study-page">
         <MedReviewLegacyStyles />
@@ -3015,7 +3007,7 @@ export default function Index() {
                 <span className="mr-legacy-badge">
                   {card.__reverse
                     ? '🔁 Cartão reverso (verso → frente)'
-                    : parseOcclusion(card.occlusion, card.a, card.q)
+                    : currentOcclusionData
                       ? '🎯 Oclusão de Imagem (Anatomia)'
                       : isCloze(card.q)
                         ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
@@ -3105,10 +3097,10 @@ export default function Index() {
                     : renderClozeHtml(card.q, flipped),
               }}
             />
-            {parseOcclusion(card.occlusion, card.a, card.q) && (
+            {currentOcclusionData && (
               <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
                 <ImageOcclusionViewer
-                  data={parseOcclusion(card.occlusion, card.a, card.q)!}
+                  data={currentOcclusionData}
                   revealed={flipped}
                   cardPrompt={card.q}
                   cardAnswer={card.a}

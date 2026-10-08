@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { StudyHeatmap } from './StudyHeatmap'
 import {
   compareDecks,
@@ -192,7 +192,7 @@ type HomeProps = {
   onOpenAnkiImport?: () => void
 }
 
-export function MedReviewLegacyHome(props: HomeProps) {
+export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
   const {
     userEmail,
     totalCards,
@@ -256,26 +256,35 @@ export function MedReviewLegacyHome(props: HomeProps) {
         : []
   ).sort((a, b) => compareDecks(a, b, sortMode))
   const openDeck = openDeckId ? decks.find((d) => d.id === openDeckId) : null
-  // Contador por SUBÁRVORE: pasta organizadora (bloco "Tutoria", view de seção)
-  // tem as cartas nas FILHAS — contar a árvore inteira, não só cartas diretas.
-  const subtreeIdsOf = (rootId: string): Set<string> => {
-    const seen = new Set<string>([rootId])
-    let grew = true
-    while (grew) {
-      grew = false
-      for (const d of decks) {
-        if (d.parent && seen.has(d.parent) && !seen.has(d.id) && !d.deleted) {
-          seen.add(d.id)
-          grew = true
-        }
+  // Contador O(N) memoizado por subárvore (elimina loops aninhados O(D^2 * C))
+  const cardsInSubtree = useMemo(() => {
+    const directCounts = new Map<string, number>()
+    for (const c of cards) {
+      if (!c.deleted && c.deck) {
+        directCounts.set(c.deck, (directCounts.get(c.deck) || 0) + 1)
       }
     }
-    return seen
-  }
-  const cardsInSubtree = (deckId: string) => {
-    const ids = subtreeIdsOf(deckId)
-    return cards.filter((c) => ids.has(c.deck) && !c.deleted).length
-  }
+    const childrenMap = new Map<string, string[]>()
+    for (const d of decks) {
+      if (!d.deleted && d.parent) {
+        const arr = childrenMap.get(d.parent)
+        if (arr) arr.push(d.id)
+        else childrenMap.set(d.parent, [d.id])
+      }
+    }
+    const memo = new Map<string, number>()
+    const getCount = (id: string): number => {
+      if (memo.has(id)) return memo.get(id)!
+      let total = directCounts.get(id) || 0
+      const kids = childrenMap.get(id) || []
+      for (const kid of kids) {
+        total += getCount(kid)
+      }
+      memo.set(id, total)
+      return total
+    }
+    return getCount
+  }, [cards, decks])
 
   const title = openDeck
     ? openDeck.title
@@ -463,7 +472,6 @@ export function MedReviewLegacyHome(props: HomeProps) {
             {folderDecks.length ? (
               <div className="mr-legacy-subdecks">
                 {folderDecks.map((deck) => {
-                  const dc = cards.filter((c) => c.deck === deck.id && !c.deleted)
                   const total = cardsInSubtree(deck.id)
                   return (
                     <div
@@ -649,7 +657,6 @@ export function MedReviewLegacyHome(props: HomeProps) {
                 </button>
               </div>
             </section>
-            <StudyHeatmap reviews={reviews || []} cards={cards} />
             <section>
               <header className="mr-legacy-section-head">
                 <div>
@@ -719,7 +726,6 @@ export function MedReviewLegacyHome(props: HomeProps) {
                   </div>
                 ))}
                 {userDecks.map((deck) => {
-                  const dc = cards.filter((c) => c.deck === deck.id && !c.deleted)
                   const total = cardsInSubtree(deck.id)
                   const icon = deck.kind === 'prova' ? '📝' : '📁'
                   const tag =
@@ -800,12 +806,15 @@ export function MedReviewLegacyHome(props: HomeProps) {
                 })}
               </div>
             </section>
+            <div style={{ marginTop: 24 }}>
+              <StudyHeatmap reviews={reviews || []} cards={cards} />
+            </div>
           </>
         )}
       </main>
     </div>
   )
-}
+})
 
 type SessionCompleteProps = {
   title: string

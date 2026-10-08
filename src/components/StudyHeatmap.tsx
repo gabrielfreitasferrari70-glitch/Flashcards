@@ -32,7 +32,7 @@ function dateKey(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-export const StudyHeatmap: React.FC<Props> = ({ reviews, cards = [], compact = false }) => {
+export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = false }) => {
   const [hoverInfo, setHoverInfo] = useState<{ text: string; x: number; y: number } | null>(null)
   const [timeRange, setTimeRange] = useState<'6m' | '1y'>('6m')
 
@@ -406,4 +406,4 @@ export const StudyHeatmap: React.FC<Props> = ({ reviews, cards = [], compact = f
       )}
     </div>
   )
-}
+})

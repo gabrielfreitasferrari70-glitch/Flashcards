@@ -9,7 +9,7 @@ interface Props {
   cardAnswer?: string
 }
 
-export const ImageOcclusionViewer: React.FC<Props> = ({
+export const ImageOcclusionViewer = React.memo<Props>(({
   data,
   revealed,
   cardPrompt,
@@ -618,4 +618,4 @@ export const ImageOcclusionViewer: React.FC<Props> = ({
       )}
     </div>
   )
-}
+})
