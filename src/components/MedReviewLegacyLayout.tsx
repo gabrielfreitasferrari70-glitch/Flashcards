@@ -198,6 +198,23 @@ const legacyCss = `
   background: rgba(59, 130, 246, 0.25) !important;
   border-color: #3b82f6 !important;
 }
+[data-theme="dark"] .mr-legacy-button.sync,
+.dark .mr-legacy-button.sync {
+  background: rgba(14, 165, 233, 0.15) !important;
+  border-color: rgba(14, 165, 233, 0.35) !important;
+  color: #38bdf8 !important;
+}
+[data-theme="dark"] .mr-legacy-button.sync:hover,
+.dark .mr-legacy-button.sync:hover {
+  background: rgba(14, 165, 233, 0.28) !important;
+  border-color: #0ea5e9 !important;
+}
+[data-theme="dark"] .mr-legacy-button.sync.is-success,
+.dark .mr-legacy-button.sync.is-success {
+  background: rgba(34, 197, 94, 0.18) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+  color: #4ade80 !important;
+}
 [data-theme="dark"] .mr-legacy-button.icon-only,
 .dark .mr-legacy-button.icon-only {
   background: #1e293b !important;
@@ -850,6 +867,41 @@ mark {
 .mr-legacy-button.blue:hover {
   background: #dbeafe;
   border-color: #93c5fd;
+}
+.mr-legacy-button.sync {
+  color: #0369a1;
+  border-color: #7dd3fc;
+  background: #f0f9ff;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.mr-legacy-button.sync:hover {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+  color: #0284c7;
+}
+.mr-legacy-button.sync.is-success {
+  color: #15803d !important;
+  border-color: #86efac !important;
+  background: #f0fdf4 !important;
+}
+.mr-legacy-button.sync.is-syncing {
+  opacity: 0.85;
+  cursor: wait;
+}
+.mr-legacy-button.sync .sync-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+.mr-legacy-button.sync .sync-icon.spinning {
+  animation: mrSpinSync 0.8s linear infinite;
+}
+@keyframes mrSpinSync {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .mr-legacy-button.icon-only {
   width: 38px;
@@ -1971,6 +2023,8 @@ type HomeProps = {
   onExportBackup?: () => void
   reviews?: any[]
   onStudyCards?: (cards: LegacyCard[], title: string) => void
+  onSync?: () => Promise<void> | void
+  isSyncing?: boolean
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -2023,8 +2077,31 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onInstallPwa,
     onExportBackup,
     onStudyCards,
+    onSync,
+    isSyncing: externalSyncing,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
+
+  const [localSyncing, setLocalSyncing] = useState(false)
+  const [syncSuccess, setSyncSuccess] = useState(false)
+  const isSyncingActive = !!(externalSyncing || localSyncing)
+
+  const handleSync = async () => {
+    if (isSyncingActive) return
+    setLocalSyncing(true)
+    setSyncSuccess(false)
+    try {
+      if (onSync) {
+        await onSync()
+      }
+      setSyncSuccess(true)
+      setTimeout(() => setSyncSuccess(false), 2500)
+    } catch (err) {
+      console.warn('Erro ao sincronizar:', err)
+    } finally {
+      setLocalSyncing(false)
+    }
+  }
 
   const [sortMode, setSortMode] = useState<DeckSortMode>(getDeckSort)
   const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
@@ -2185,6 +2262,24 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   </div>
                 )}
               </div>
+            )}
+
+            {onSync && (
+              <button
+                type="button"
+                className={`mr-legacy-button sync ${syncSuccess ? 'is-success' : ''} ${isSyncingActive ? 'is-syncing' : ''}`}
+                onClick={handleSync}
+                disabled={isSyncingActive}
+                title="Sincronizar baralhos com a nuvem e transmitir novos flashcards para todos os alunos"
+                aria-label="Sincronizar flashcards"
+              >
+                <span className={`sync-icon ${isSyncingActive ? 'spinning' : ''}`}>
+                  {syncSuccess ? '✓' : '🔄'}
+                </span>
+                <span>
+                  {isSyncingActive ? 'Sincronizando...' : syncSuccess ? 'Sincronizado!' : 'Sincronizar'}
+                </span>
+              </button>
             )}
 
             <button
@@ -2744,6 +2839,22 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 <button className="mr-legacy-button" onClick={onSessionBuilder}>
                   🎛️ Montar Sessão
                 </button>
+                {onSync && (
+                  <button
+                    type="button"
+                    className={`mr-legacy-button sync ${syncSuccess ? 'is-success' : ''} ${isSyncingActive ? 'is-syncing' : ''}`}
+                    onClick={handleSync}
+                    disabled={isSyncingActive}
+                    title="Forçar sincronização com a nuvem e transmitir novidades para todos os alunos"
+                  >
+                    <span className={`sync-icon ${isSyncingActive ? 'spinning' : ''}`}>
+                      {syncSuccess ? '✓' : '🔄'}
+                    </span>
+                    <span>
+                      {isSyncingActive ? 'Sincronizando...' : syncSuccess ? 'Sincronizado!' : 'Sincronizar'}
+                    </span>
+                  </button>
+                )}
                 {onStudyLeeches && (
                   <button
                     type="button"

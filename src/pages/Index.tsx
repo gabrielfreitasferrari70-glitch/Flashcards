@@ -19,6 +19,7 @@ import {
   restoreBackupData,
   undoMoveSection,
   getDeletedCardIds,
+  notifyDataMutation,
 } from '@/services/medreview'
 import {
   MedReviewLegacyHome,
@@ -2803,6 +2804,36 @@ export default function Index() {
     }
   }, [decks, cards, reviews])
 
+  const [isSyncing, setIsSyncing] = useState(false)
+  const handleForceSync = useCallback(async () => {
+    if (isSyncing) return
+    setIsSyncing(true)
+    try {
+      // 1. Envia quaisquer revisões offline pendentes para o banco
+      await flushOfflineReviews().catch(() => {})
+
+      // 2. Dispara broadcast global pelo Supabase para todos os navegadores e dispositivos de alunos
+      notifyDataMutation('manual_force_sync', {
+        triggered_by: user?.email || 'admin',
+        userId: user?.id,
+        timestamp: Date.now(),
+      })
+
+      // 3. Recarrega dados completos (cartões de todos os usuários + pastas compartilhadas)
+      const res = await loadData()
+      const totalCount = res?.cards?.length || cards.length
+
+      setMsg(`✨ Sincronizado com sucesso! ${totalCount} flashcards atualizados e transmitidos para todos os alunos.`)
+      setTimeout(() => setMsg(''), 4500)
+    } catch (e: any) {
+      console.warn('Erro ao forçar sincronização:', e)
+      setMsg('⚠️ Erro ao sincronizar. Verifique sua conexão com o servidor.')
+      setTimeout(() => setMsg(''), 4000)
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [isSyncing, loadData, user?.email, user?.id, cards.length])
+
   const handleTextSelection = useCallback(() => {
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed) {
@@ -5569,6 +5600,8 @@ export default function Index() {
         canInstallPwa={!isStandalone}
         onInstallPwa={handleInstallPwa}
         onExportBackup={handleExportBackup}
+        onSync={handleForceSync}
+        isSyncing={isSyncing}
         onStudyCards={(cardsToStudy, sessionTitle) => {
           startStudy(cardsToStudy as any, undefined, sessionTitle, { protectFsrs: false })
         }}
