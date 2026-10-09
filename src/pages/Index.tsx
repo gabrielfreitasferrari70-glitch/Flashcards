@@ -112,8 +112,15 @@ function fsrsSameDayStability(s: number, g: number): number {
   return Math.max(0.1, s * Math.exp(FSRS_W[17] * (g - 3 + FSRS_W[18])))
 }
 function formatInterval(days: number): string {
-  if (days < 1) return `${Math.round(days * 24 * 60)}min`
-  if (days < 30) return `${Math.round(days)}d`
+  if (days < 1 / 24) return `${Math.max(1, Math.round(days * 24 * 60))}min`
+  if (days < 1) {
+    const hours = Math.round(days * 24 * 10) / 10
+    return `${hours % 1 === 0 ? hours.toFixed(0) : hours.toFixed(1)}h`
+  }
+  if (days < 30) {
+    const d = Math.round(days * 10) / 10
+    return `${d % 1 === 0 ? d.toFixed(0) : d.toFixed(1)}d`
+  }
   if (days < 365) return `${(days / 30).toFixed(1)}m`
   return `${(days / 365).toFixed(1)}a`
 }
@@ -522,13 +529,105 @@ function previewIntervalsForSettings(
 ) {
   const automatic = previewIntervals(cs, retention)
   if (settings.mode !== 'manual') return automatic
-  const result = { ...automatic }
-  for (const quality of ['again', 'hard', 'good', 'easy'] as Quality[]) {
-    const interval = parseManualInterval(settings.intervals[quality])
-    if (interval)
-      result[quality] = { ...automatic[quality], value: interval.days, label: interval.label }
+
+  const parsedAgain = parseManualInterval(settings.intervals.again) || { days: 10 / 1440, label: '10min' }
+  const parsedHard = parseManualInterval(settings.intervals.hard) || { days: 1, label: '1d' }
+  const parsedGood = parseManualInterval(settings.intervals.good) || { days: 2, label: '2d' }
+  const parsedEasy = parseManualInterval(settings.intervals.easy) || { days: 3, label: '3d' }
+
+  // 1ª Visualização: cartão novo ou sem histórico de revisão
+  const isFirstView = (cs.reps === 0 && cs.state === 'new') || !cs.lastReviewMs
+
+  if (isFirstView) {
+    return {
+      again: {
+        label: parsedAgain.label,
+        value: parsedAgain.days,
+        g: 1,
+        state: 'learning',
+        newS: parsedAgain.days,
+        newD: 7,
+      },
+      hard: {
+        label: parsedHard.label,
+        value: parsedHard.days,
+        g: 2,
+        state: 'learning',
+        newS: parsedHard.days,
+        newD: 6,
+      },
+      good: {
+        label: parsedGood.label,
+        value: parsedGood.days,
+        g: 3,
+        state: 'review',
+        newS: parsedGood.days,
+        newD: 5,
+      },
+      easy: {
+        label: parsedEasy.label,
+        value: parsedEasy.days,
+        g: 4,
+        state: 'review',
+        newS: parsedEasy.days,
+        newD: 4,
+      },
+    }
   }
-  return result
+
+  // Revisões Subsequentes (o flashcard voltou após o primeiro estudo):
+  // Os intervalos progridem de forma espaçada e multiplicada com base nas repetições
+  const prevIntervalDays =
+    typeof cs.s === 'number' && Number.isFinite(cs.s) && cs.s > 0
+      ? cs.s
+      : parsedGood.days * Math.pow(2.2, Math.max(0, cs.reps - 1))
+
+  // Errei: recai para o passo de reaprendizado configurado
+  const againDays = parsedAgain.days
+
+  // Difícil: avanço moderado (1.25x do intervalo anterior, no mínimo o passo base de difícil)
+  const hardDays = Math.max(parsedHard.days, prevIntervalDays * 1.25)
+
+  // Bom: fator clássico de repetição espaçada SM-2 / Anki (2.5x sobre o anterior)
+  const goodDays = Math.max(parsedGood.days * 1.5, prevIntervalDays * 2.5)
+
+  // Fácil: avanço acelerado com bônus (1.4x além do bom, ou 3.5x sobre o anterior)
+  const easyDays = Math.max(parsedEasy.days * 1.5, goodDays * 1.4, prevIntervalDays * 3.5)
+
+  return {
+    again: {
+      label: formatInterval(againDays),
+      value: againDays,
+      g: 1,
+      state: 'relearning',
+      newS: againDays,
+      newD: Math.min(10, (cs.d ?? 5) + 0.5),
+    },
+    hard: {
+      label: formatInterval(hardDays),
+      value: hardDays,
+      g: 2,
+      state: 'review',
+      newS: hardDays,
+      newD: Math.min(10, (cs.d ?? 5) + 0.2),
+    },
+    good: {
+      label: formatInterval(goodDays),
+      value: goodDays,
+      g: 3,
+      state: 'review',
+      newS: goodDays,
+      newD: Math.max(1, (cs.d ?? 5) - 0.15),
+    },
+    easy: {
+      label: formatInterval(easyDays),
+      value: easyDays,
+      g: 4,
+      state: 'review',
+      newS: easyDays,
+      newD: Math.max(1, (cs.d ?? 5) - 0.3),
+    },
+  }
 }
 function getRetention(): number {
   try {
