@@ -921,6 +921,10 @@ export async function parseAnkiFile(file: File): Promise<AnkiPackageResult> {
       q: c.q,
       a: c.a,
       isCloze: /\{\{c\d+::.*?\}\}/.test(c.q),
+      folder: c.folder,
+      group: c.group,
+      ref: c.ref,
+      clinical: c.clinical,
     }))
     const deckName = name.replace(/\.csv$/i, '')
     if (cards.length > 0) {
@@ -931,3 +935,86 @@ export async function parseAnkiFile(file: File): Promise<AnkiPackageResult> {
   const textContent = await file.text()
   return parseAnkiText(textContent, name)
 }
+
+/**
+ * Interpreta texto bruto colado pelo usuário (CSV, JSON ou TSV/texto gerado por IA)
+ */
+export function parseCardsFromRawText(rawText: string, defaultTitle = 'Flashcards Importados'): AnkiPackageResult {
+  const trimmed = (rawText || '').trim()
+  if (!trimmed) {
+    throw new Error('Nenhum texto foi colado. Cole o conteúdo do CSV ou JSON gerado pela sua IA.')
+  }
+
+  // 1. Tenta interpretar como JSON
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const data = JSON.parse(trimmed)
+      const rawCards = Array.isArray(data)
+        ? data
+        : data.cartas || data.cards || data.flashcards || data.cartoes || []
+      const cards: ParsedAnkiCard[] = []
+      for (const item of rawCards) {
+        const q = String(item.q || item.front || item.pergunta || item.frente || '').trim()
+        const a = String(item.a || item.back || item.resposta || item.verso || '').trim()
+        const folder = String(item.folder || item.pasta || item.deck || '').trim()
+        const group = String(item.group || item.grupo || item.category || item.categoria || '').trim()
+        const ref = String(item.ref || item.referencia || item.source || item.fonte || '').trim()
+        if (q) {
+          cards.push({
+            q,
+            a: a || 'Sem resposta',
+            tags: Array.isArray(item.tags) ? item.tags : [],
+            occlusion: item.occlusion || undefined,
+            isCloze: /\{\{c\d+::.*?\}\}/.test(q),
+            folder: folder || undefined,
+            group: group || undefined,
+            ref: ref || undefined,
+            clinical: !!(item.clinical || item.clinico),
+          })
+        }
+      }
+      if (cards.length > 0) {
+        const deckName =
+          data.deckName ||
+          data.title ||
+          cards.find((c) => c.folder)?.folder ||
+          defaultTitle
+        return {
+          deckName,
+          cards,
+          decks: Array.isArray(data.decks) ? data.decks : undefined,
+        }
+      }
+    } catch {
+      /* não é JSON válido, prossegue para CSV */
+    }
+  }
+
+  // 2. Interpreta como CSV estruturado RFC 4180
+  const csvRes = parseCardsFromCsv(trimmed)
+  if (csvRes.cards && csvRes.cards.length > 0) {
+    const cards: ParsedAnkiCard[] = csvRes.cards.map((c) => ({
+      q: c.q,
+      a: c.a,
+      isCloze: /\{\{c\d+::.*?\}\}/.test(c.q),
+      folder: c.folder,
+      group: c.group,
+      ref: c.ref,
+      clinical: c.clinical,
+    }))
+    const detectedFolder = cards.find((c) => c.folder)?.folder
+    return {
+      deckName: detectedFolder || defaultTitle,
+      cards,
+    }
+  }
+
+  // 3. Fallback para parser de texto simples / Anki export
+  const textRes = parseAnkiText(trimmed, defaultTitle)
+  if (textRes.cards && textRes.cards.length > 0) {
+    return textRes
+  }
+
+  throw new Error('Nenhum flashcard válido foi reconhecido no texto colado. Verifique se o formato possui as colunas "Frente,Verso" ou estrutura JSON válida.')
+}
+

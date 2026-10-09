@@ -33,6 +33,7 @@ import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
 import { extractCardTags } from '@/services/cardTags'
 import { saveOfflineReview, flushOfflineReviews, initOfflineSync, getOfflineReviews } from '@/services/offlineSync'
 import { getCardHighlights, saveCardHighlight, clearCardHighlights, applyHighlightsToHtml, CardHighlight } from '@/services/cardHighlights'
+import { downloadFullBackup } from '@/services/fullBackup'
 
 // Modais pesados carregados sob demanda (Code-splitting / Bundle 75% menor)
 const MedReviewLibrary = lazy(() => import('@/components/MedReviewLibrary'))
@@ -2402,6 +2403,17 @@ export default function Index() {
       )
     }
   }, [deferredInstallPrompt])
+
+  const handleExportBackup = useCallback(() => {
+    try {
+      const res = downloadFullBackup(decks, cards, reviews)
+      setMsg(`Backup exportado com sucesso! (${res.totalCards} cartas, ${res.totalDecks} pastas, ${res.totalReviews} revisões salvas).`)
+      setTimeout(() => setMsg(''), 5000)
+    } catch (e: any) {
+      setMsg(`Erro ao exportar backup: ${e?.message || e}`)
+      setTimeout(() => setMsg(''), 5000)
+    }
+  }, [decks, cards, reviews])
 
   const handleTextSelection = useCallback(() => {
     const selection = window.getSelection()
@@ -4942,6 +4954,7 @@ export default function Index() {
         <MedReviewLibrary
           decks={decks}
           cards={cards}
+          reviews={reviews}
           onBack={() => setRoute({ view: 'home' })}
           onRefresh={loadData}
           onStudy={openDeck}
@@ -5106,6 +5119,7 @@ export default function Index() {
         pendingOfflineReviews={pendingOfflineReviews}
         canInstallPwa={!isStandalone}
         onInstallPwa={handleInstallPwa}
+        onExportBackup={handleExportBackup}
       />
       <Suspense fallback={null}>
         {cramModalOpen && (

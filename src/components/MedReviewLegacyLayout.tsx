@@ -1604,6 +1604,7 @@ type HomeProps = {
   pendingOfflineReviews?: number
   canInstallPwa?: boolean
   onInstallPwa?: () => void
+  onExportBackup?: () => void
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -1654,6 +1655,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     pendingOfflineReviews = 0,
     canInstallPwa = false,
     onInstallPwa,
+    onExportBackup,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
 
@@ -1820,6 +1822,17 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             >
               📥 Importar
             </button>
+
+            {onExportBackup && (
+              <button
+                type="button"
+                className="mr-legacy-button"
+                onClick={onExportBackup}
+                title="Exportar Backup Completo (.JSON com pastas, cartas, revisões e anotações)"
+              >
+                💾 Backup
+              </button>
+            )}
 
             <div className="mr-legacy-dropdown-wrap">
               <button
@@ -2362,6 +2375,11 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 <button className="mr-legacy-button" onClick={onOpenAnkiImport}>
                   📥 Importar Baralho
                 </button>
+                {onExportBackup && (
+                  <button className="mr-legacy-button" onClick={onExportBackup} title="Exportar Backup Completo">
+                    💾 Fazer Backup
+                  </button>
+                )}
               </div>
             </section>
 

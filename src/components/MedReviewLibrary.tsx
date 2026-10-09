@@ -21,6 +21,7 @@ import {
   updateCard,
   uploadCardImage,
 } from '@/services/medreview'
+import { downloadFullBackup } from '@/services/fullBackup'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 type Deck = { id: string; title: string; kind: string; order: number; parent?: string }
@@ -42,6 +43,7 @@ type Card = {
 type Props = {
   decks: Deck[]
   cards: Card[]
+  reviews?: any[]
   onBack: () => void
   onRefresh: () => Promise<void>
   onStudy: (deckId: string) => void
@@ -218,7 +220,7 @@ function Modal({
   )
 }
 
-export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onStudy }: Props) {
+export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefresh, onStudy }: Props) {
   const [selectedDeckId, setSelectedDeckId] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {}
@@ -253,6 +255,11 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
   const [localDecks, setLocalDecks] = useState<Deck[]>(decks)
   const [cardDisplayLimit, setCardDisplayLimit] = useState(50)
   const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
+
+  // Estado da Busca Global Instantânea
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchScope, setSearchScope] = useState<'all' | 'deck'>('all')
+  const [searchLimit, setSearchLimit] = useState(60)
 
   useEffect(() => {
     const handleDocClick = () => setOpenMenuDeckId(null)
@@ -294,6 +301,42 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     () => localCards.filter((card) => card.deck === selectedDeckId && !card.deleted),
     [localCards, selectedDeckId],
   )
+
+  const normalizedSearchQuery = useMemo(
+    () =>
+      searchQuery
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, ''),
+    [searchQuery]
+  )
+
+  const searchResults = useMemo(() => {
+    if (!normalizedSearchQuery) return []
+    const targetCards =
+      searchScope === 'deck' && selectedDeckId
+        ? localCards.filter((c) => c.deck === selectedDeckId && !c.deleted)
+        : localCards.filter((c) => !c.deleted)
+
+    const deckMap = new Map(localDecks.map((d) => [d.id, d.title]))
+
+    return targetCards.filter((c) => {
+      const qNorm = (c.q || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const aNorm = (c.a || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const gNorm = (c.group || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const rNorm = (c.ref || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const dNorm = (deckMap.get(c.deck) || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+      return (
+        qNorm.includes(normalizedSearchQuery) ||
+        aNorm.includes(normalizedSearchQuery) ||
+        gNorm.includes(normalizedSearchQuery) ||
+        rNorm.includes(normalizedSearchQuery) ||
+        dNorm.includes(normalizedSearchQuery)
+      )
+    })
+  }, [localCards, localDecks, normalizedSearchQuery, searchScope, selectedDeckId])
 
   // Mapa O(1) de subpastas (elimina filtros repetidos O(N) por pasta)
   const childrenMap = useMemo(() => {
@@ -787,25 +830,14 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
     })
   }
   const downloadBackup = () => {
-    const data = {
-      exported_at: new Date().toISOString(),
-      decks: decks.map((d) => ({ id: d.id, title: d.title, kind: d.kind, parent: d.parent || '' })),
-      cartas: cards.map((c) => ({
-        frente: c.q,
-        verso: c.a,
-        grupo: c.group || '',
-        referencia: c.ref || '',
-        pasta: decks.find((d) => d.id === c.deck)?.title || '',
-        suspensa: !!c.suspended,
-      })),
+    try {
+      const res = downloadFullBackup(decks, cards, reviews || [])
+      setMessage(`Backup completo exportado com sucesso! (${res.totalCards} cartas, ${res.totalDecks} pastas, ${res.totalReviews} revisões salvas).`)
+      setTimeout(() => setMessage(''), 5000)
+      setModal({ type: 'none' })
+    } catch (err: any) {
+      setError(`Erro ao exportar backup: ${err?.message || err}`)
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `medreview-backup-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
   }
   const submitCard = async () => {
     if (modal.type !== 'card') return
@@ -1227,12 +1259,234 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
           </div>
         )}
 
-        <div className="mr-lib-notice" style={{ background: '#f0fdf4', color: '#166534' }}>
-          Os cartões-base ficam disponíveis na sua Biblioteca. Seu progresso e suas revisões são
-          pessoais.
+        {/* Barra de Busca Global Instantânea */}
+        <div
+          style={{
+            background: '#ffffff',
+            border: '1.5px solid #d1fae5',
+            borderRadius: '16px',
+            padding: '12px 18px',
+            margin: '0 0 18px',
+            boxShadow: '0 4px 18px rgba(16, 185, 129, 0.06)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '1.25rem' }}>🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setSearchLimit(60)
+              }}
+              placeholder={
+                selectedDeckId && selectedDeck
+                  ? `Pesquisar em "${selectedDeck.title}" ou em toda a biblioteca... (ex: furosemida, conduta, choque)`
+                  : 'Pesquisar em todas as perguntas, respostas e temas... (ex: furosemida, conduta, choque, ICC)'
+              }
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                fontSize: '.92rem',
+                fontWeight: 600,
+                color: '#1e293b',
+                background: 'transparent',
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: 8,
+                  width: 26,
+                  height: 26,
+                  color: '#64748b',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+                title="Limpar pesquisa"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {searchQuery.trim().length > 0 && selectedDeckId && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
+              <span style={{ fontSize: '.78rem', color: '#64748b', fontWeight: 700 }}>Escopo:</span>
+              <button
+                type="button"
+                onClick={() => setSearchScope('all')}
+                style={{
+                  background: searchScope === 'all' ? '#dcfce7' : '#f8fafc',
+                  color: searchScope === 'all' ? '#15803d' : '#64748b',
+                  border: `1px solid ${searchScope === 'all' ? '#86efac' : '#e2e8f0'}`,
+                  borderRadius: 8,
+                  padding: '4px 10px',
+                  fontSize: '.78rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                🌐 Todas as Pastas ({localCards.filter((c) => !c.deleted).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchScope('deck')}
+                style={{
+                  background: searchScope === 'deck' ? '#dcfce7' : '#f8fafc',
+                  color: searchScope === 'deck' ? '#15803d' : '#64748b',
+                  border: `1px solid ${searchScope === 'deck' ? '#86efac' : '#e2e8f0'}`,
+                  borderRadius: 8,
+                  padding: '4px 10px',
+                  fontSize: '.78rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                📁 Pasta Atual ({deckCards.length})
+              </button>
+            </div>
+          )}
         </div>
 
-        {selectedDeck && (
+        {searchQuery.trim().length > 0 ? (
+          <section className="mr-lib-section" style={{ border: '2px solid #86efac', background: '#fcfdfd' }}>
+            <div className="mr-lib-section-head">
+              <div>
+                <h2 className="mr-lib-section-title">
+                  🔍 Resultados da busca: {searchResults.length} carta{searchResults.length !== 1 ? 's' : ''}
+                </h2>
+                <p className="mr-lib-section-sub">
+                  Termo: <strong>"{searchQuery}"</strong> · {searchScope === 'deck' && selectedDeck ? `filtrado na pasta "${selectedDeck.title}"` : 'em todas as pastas da biblioteca'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="mr-lib-mini"
+                onClick={() => setSearchQuery('')}
+              >
+                ✕ Limpar busca
+              </button>
+            </div>
+
+            {searchResults.length === 0 ? (
+              <div className="mr-lib-empty" style={{ padding: '32px 20px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontWeight: 700, color: '#334155', fontSize: '.95rem' }}>
+                  Nenhum cartão encontrado com "{searchQuery}".
+                </p>
+                <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '.84rem' }}>
+                  Tente usar palavras-chave mais simples ou alternar o escopo para Todas as Pastas.
+                </p>
+              </div>
+            ) : (
+              <>
+                {searchResults.slice(0, searchLimit).map((card) => {
+                  const deckObj = localDecks.find((d) => d.id === card.deck)
+                  const isSelected = selectedCardIds.has(card.id)
+                  return (
+                    <article key={card.id} className={`mr-lib-card-row${isSelected ? ' is-selected' : ''}`}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        {deckObj && (
+                          <div style={{ marginBottom: 4 }}>
+                            <span
+                              style={{
+                                background: '#f1f5f9',
+                                color: '#475569',
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                fontSize: '.72rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              📁 {deckObj.title}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mr-lib-card-q">
+                          {highlightMatch(card.q, searchQuery)}
+                        </div>
+                        {card.a && (
+                          <div style={{ fontSize: '.82rem', color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 700, color: '#15803d' }}>R: </span>
+                            {highlightMatch(card.a.length > 240 ? card.a.slice(0, 240) + '…' : card.a, searchQuery)}
+                          </div>
+                        )}
+                        <div className="mr-lib-card-chips">
+                          {card.group && (
+                            <span className="mr-lib-card-chip">
+                              {highlightMatch(card.group, searchQuery)}
+                            </span>
+                          )}
+                          {card.ref && (
+                            <span className="mr-lib-card-chip">
+                              📚 {highlightMatch(card.ref, searchQuery)}
+                            </span>
+                          )}
+                          {card.clinical && (
+                            <span className="mr-lib-card-chip" style={{ background: '#fef3c7', color: '#b45309' }}>
+                              🩺 Caso Clínico
+                            </span>
+                          )}
+                          {card.suspended && <span className="mr-lib-card-chip susp">⏸ suspensa</span>}
+                        </div>
+                      </div>
+                      <div className="mr-lib-card-actions">
+                        <button
+                          className="mr-lib-mini"
+                          onClick={() => openCardModal(card.deck, card)}
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button className="mr-lib-mini" onClick={() => openMoveModal(card)}>
+                          ➡️ Mover
+                        </button>
+                        <button className="mr-lib-mini" onClick={() => toggleSuspended(card)}>
+                          {card.suspended ? '▶ Retomar' : '⏸ Suspender'}
+                        </button>
+                        <button className="mr-lib-mini danger" onClick={() => removeCard(card)}>
+                          🗑️
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+
+                {searchResults.length > searchLimit && (
+                  <div style={{ textAlign: 'center', padding: '16px' }}>
+                    <button
+                      type="button"
+                      className="mr-lib-mini"
+                      style={{ background: '#f0fdf4', borderColor: '#86efac', fontWeight: 800 }}
+                      onClick={() => setSearchLimit((prev) => prev + 60)}
+                    >
+                      ＋ Mostrar mais resultados ({searchResults.length - searchLimit} restantes)
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        ) : (
+          <>
+            <div className="mr-lib-notice" style={{ background: '#f0fdf4', color: '#166534' }}>
+              Os cartões-base ficam disponíveis na sua Biblioteca. Seu progresso e suas revisões são
+              pessoais.
+            </div>
+
+            {selectedDeck && (
           <section className="mr-lib-panel">
             <div className="mr-lib-panel-head">
               <div>
@@ -1495,6 +1749,8 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
             </section>
           )
         })}
+          </>
+        )}
 
         {modal.type === 'folder' && (
           <Modal

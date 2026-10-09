@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { parseAnkiFile, type AnkiPackageResult } from '@/lib/ankiParser'
+import { parseAnkiFile, parseCardsFromRawText, type AnkiPackageResult } from '@/lib/ankiParser'
 import { createDeck, createCardsBatch, importCardsAuto } from '@/services/medreview'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
@@ -16,6 +16,8 @@ interface Props {
 }
 
 export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) => {
+  const [importSource, setImportSource] = useState<'file' | 'text'>('file')
+  const [pastedText, setPastedText] = useState<string>('')
   const [file, setFile] = useState<File | null>(null)
   const [parsing, setParsing] = useState<boolean>(false)
   const [result, setResult] = useState<AnkiPackageResult | null>(null)
@@ -29,6 +31,29 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
   })
   const [errorMsg, setErrorMsg] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleTextProcess = () => {
+    setErrorMsg('')
+    if (!pastedText.trim()) {
+      setErrorMsg('Cole o texto (CSV ou JSON) gerado pela sua IA antes de continuar.')
+      return
+    }
+    setParsing(true)
+    try {
+      const parsed = parseCardsFromRawText(pastedText)
+      if (!parsed.cards || parsed.cards.length === 0) {
+        throw new Error('Nenhum cartão válido foi reconhecido no texto.')
+      }
+      setResult(parsed)
+      setCustomDeckName(parsed.deckName || 'Flashcards IA')
+      setFile(null)
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Falha ao processar o texto.')
+      setResult(null)
+    } finally {
+      setParsing(false)
+    }
+  }
 
   const handleFileProcess = async (selectedFile: File) => {
     setErrorMsg('')
@@ -215,61 +240,167 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             </div>
           )}
 
-          {!result ? (
-            /* Upload Dropzone */
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                border: '2px dashed #86efac',
-                borderRadius: 18,
-                padding: '36px 20px',
-                textAlign: 'center',
-                background: '#f0fdf4',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".apkg,.colpkg,.json,.txt,.tsv,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleFileProcess(e.target.files[0])
-                  }
-                }}
-              />
-              <div style={{ fontSize: '2.8rem', marginBottom: 10 }}>📦</div>
-              <h3 style={{ margin: '0 0 6px', color: '#14532d', fontSize: '1.05rem', fontWeight: 800 }}>
-                {parsing ? 'Processando arquivo…' : 'Arraste seu arquivo (.apkg, .colpkg, .json, .csv) aqui'}
-              </h3>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '.84rem', lineHeight: 1.5 }}>
-                Suporta pacotes Anki <strong>.apkg / .colpkg</strong>, backups <strong>.json</strong> ou notas em <strong>.txt / .tsv / .csv</strong> com pastas automáticas.
-              </p>
+          {!result && (
+            <div style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 4, borderRadius: 12 }}>
               <button
                 type="button"
+                onClick={() => { setImportSource('file'); setErrorMsg('') }}
                 style={{
-                  marginTop: 16,
-                  background: '#16a34a',
-                  color: '#fff',
+                  flex: 1,
+                  padding: '9px 12px',
+                  borderRadius: 9,
                   border: 'none',
-                  borderRadius: 10,
-                  padding: '9px 18px',
-                  fontWeight: 700,
+                  background: importSource === 'file' ? '#fff' : 'transparent',
+                  color: importSource === 'file' ? '#15803d' : '#64748b',
+                  fontWeight: importSource === 'file' ? 800 : 600,
                   fontSize: '.84rem',
                   cursor: 'pointer',
+                  boxShadow: importSource === 'file' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all .15s',
                 }}
               >
-                {parsing ? 'Lendo…' : 'Selecionar Arquivo'}
+                📁 Enviar Arquivo (.apkg, .csv, .json)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setImportSource('text'); setErrorMsg('') }}
+                style={{
+                  flex: 1,
+                  padding: '9px 12px',
+                  borderRadius: 9,
+                  border: 'none',
+                  background: importSource === 'text' ? '#fff' : 'transparent',
+                  color: importSource === 'text' ? '#15803d' : '#64748b',
+                  fontWeight: importSource === 'text' ? 800 : 600,
+                  fontSize: '.84rem',
+                  cursor: 'pointer',
+                  boxShadow: importSource === 'text' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all .15s',
+                }}
+              >
+                📋 Colar Texto da IA (CSV / JSON)
               </button>
             </div>
+          )}
+
+          {!result ? (
+            importSource === 'file' ? (
+              /* Upload Dropzone */
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  border: '2px dashed #86efac',
+                  borderRadius: 18,
+                  padding: '36px 20px',
+                  textAlign: 'center',
+                  background: '#f0fdf4',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".apkg,.colpkg,.json,.txt,.tsv,.csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleFileProcess(e.target.files[0])
+                    }
+                  }}
+                />
+                <div style={{ fontSize: '2.8rem', marginBottom: 10 }}>📦</div>
+                <h3 style={{ margin: '0 0 6px', color: '#14532d', fontSize: '1.05rem', fontWeight: 800 }}>
+                  {parsing ? 'Processando arquivo…' : 'Arraste seu arquivo (.apkg, .colpkg, .json, .csv) aqui'}
+                </h3>
+                <p style={{ margin: 0, color: '#64748b', fontSize: '.84rem', lineHeight: 1.5 }}>
+                  Suporta pacotes Anki <strong>.apkg / .colpkg</strong>, backups <strong>.json</strong> ou notas em <strong>.txt / .tsv / .csv</strong> com pastas automáticas.
+                </p>
+                <button
+                  type="button"
+                  style={{
+                    marginTop: 16,
+                    background: '#16a34a',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '9px 18px',
+                    fontWeight: 700,
+                    fontSize: '.84rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {parsing ? 'Lendo…' : 'Selecionar Arquivo'}
+                </button>
+              </div>
+            ) : (
+              /* Direct Text Paste Box */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '.85rem', fontWeight: 800, color: '#1e293b' }}>
+                    Cole o texto gerado pela sua IA (ChatGPT, Claude, Gemini):
+                  </label>
+                  {pastedText && (
+                    <button
+                      type="button"
+                      onClick={() => setPastedText('')}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '.76rem', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  rows={9}
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder={`Frente,Verso,Pasta,Grupo,Clinico\n"Qual o diurético de escolha na ICC?","Furosemida (alça)",Cardiologia,ICC,false\n"No choque anafilático, fazer {{c1::Adrenalina IM}}...","...",Emergência,Choque,false\n\n(Dica: Pode colar com aspas ou direto do markdown da IA)`}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1.5px solid #cbd5e1',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    fontSize: '.82rem',
+                    lineHeight: 1.45,
+                    background: '#f8fafc',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: '.78rem', color: '#64748b' }}>
+                    💡 Reconhece automaticamente CSV com colunas, Cloze e JSON.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTextProcess}
+                    disabled={parsing || !pastedText.trim()}
+                    style={{
+                      background: !pastedText.trim() ? '#94a3b8' : '#16a34a',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 10,
+                      padding: '10px 18px',
+                      fontWeight: 800,
+                      fontSize: '.85rem',
+                      cursor: !pastedText.trim() ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      boxShadow: '0 2px 6px rgba(22,163,74,0.3)',
+                    }}
+                  >
+                    {parsing ? 'Processando…' : '⚡ Interpretar Flashcards'}
+                  </button>
+                </div>
+              </div>
+            )
           ) : (
             /* Preview and Options */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Resumo do Arquivo */}
+              {/* Resumo do Arquivo / Texto */}
               <div
                 style={{
                   background: '#f8fafc',
@@ -283,13 +414,13 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
               >
                 <div>
                   <div style={{ fontSize: '.78rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Arquivo Processado
+                    {file ? 'Arquivo Processado' : 'Conteúdo Colado da IA'}
                   </div>
                   <div style={{ fontSize: '.95rem', fontWeight: 800, color: '#1e293b', marginTop: 2 }}>
-                    📄 {file?.name}
+                    {file ? `📄 ${file.name}` : `📋 ${result.deckName || 'Flashcards Importados'}`}
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span
                     style={{
                       background: '#dcfce7',
@@ -302,6 +433,23 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                   >
                     ✨ {result.cards.length} cartas
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => { setResult(null); setFile(null); setErrorMsg('') }}
+                    title="Trocar arquivo ou colar outro texto"
+                    style={{
+                      background: '#fff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      padding: '4px 8px',
+                      fontSize: '.75rem',
+                      color: '#475569',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ↺ Trocar
+                  </button>
                 </div>
               </div>
 
