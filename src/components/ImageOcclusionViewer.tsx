@@ -469,6 +469,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
           {/* Alternar Tamanho da Imagem: Grande vs Padrão */}
           <button
             type="button"
+            className="mr-occlusion-btn"
             onClick={(e) => {
               e.stopPropagation()
               setIsExpanded((prev) => !prev)
@@ -494,6 +495,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
           {/* Botão de Tela Cheia Imersiva */}
           <button
             type="button"
+            className="mr-occlusion-btn"
             onClick={(e) => {
               e.stopPropagation()
               setIsFullscreen(true)
@@ -524,6 +526,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
       {/* Banner de Gabarito com botão de alternar quando virado */}
       {revealed && (
         <div
+          className="mr-occlusion-banner"
           style={{
             marginTop: 12,
             padding: '12px 18px',
@@ -563,6 +566,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
           </div>
           <button
             type="button"
+            className="mr-occlusion-btn"
             onClick={(e) => toggleMask(activeMask?.id || '', e)}
             style={{
               background: '#dcfce7',

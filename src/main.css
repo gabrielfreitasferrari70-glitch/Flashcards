@@ -69,7 +69,8 @@ body .folder-stats:not(#global-stats-modal *) {
     --chart-5: 33 100% 50%;
   }
 
-  .dark {
+  .dark,
+  [data-theme="dark"] {
     /* Change the colors to match the design system consistent with the dark mode */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;

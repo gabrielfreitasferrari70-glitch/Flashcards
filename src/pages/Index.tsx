@@ -161,10 +161,10 @@ function renderClozeHtml(text: string, revealed: boolean): string {
   while ((m = CLOZE_RE.exec(baseText))) {
     out += baseText.slice(last, m.index)
     if (revealed) {
-      out += `<span style="background:#dcfce7;color:#14532d;font-weight:800;border-radius:6px;padding:2px 8px;border:1px solid #86efac;box-shadow:0 1px 3px rgba(22,163,74,0.15)">${m[2]}</span>`
+      out += `<span class="mr-cloze-revealed" style="background:#dcfce7;color:#14532d;font-weight:800;border-radius:6px;padding:2px 8px;border:1px solid #86efac;box-shadow:0 1px 3px rgba(22,163,74,0.15)">${m[2]}</span>`
     } else {
       const hint = m[3] ? m[3] : `c${m[1]}`
-      out += `<span style="background:#fef3c7;color:#b45309;font-weight:800;border-radius:6px;padding:2px 8px;border:1.5px dashed #f59e0b;cursor:pointer;display:inline-block" title="Lacuna Cloze: clique para virar e conferir">[…${hint}…]</span>`
+      out += `<span class="mr-cloze-hidden" style="background:#fef3c7;color:#b45309;font-weight:800;border-radius:6px;padding:2px 8px;border:1.5px dashed #f59e0b;cursor:pointer;display:inline-block" title="Lacuna Cloze: clique para virar e conferir">[…${hint}…]</span>`
     }
     last = m.index + m[0].length
   }
@@ -189,7 +189,7 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
       /^Estrutura\s+\d+$/i.test(rawNoImg) ||
       rawNoImg.includes('✓ Estrutura identificada')
     if (isGeneric) {
-      return '<div style="color:#15803d;font-weight:700">🎯 Resposta revelada na imagem acima.</div>'
+      return '<div style="color:var(--mr-ink, #15803d);font-weight:700">🎯 Resposta revelada na imagem acima.</div>'
     }
     return renderClozeHtml(rawNoImg, true)
   }
@@ -210,10 +210,10 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
 
     let out = ''
     if (clozeMatches.length > 0) {
-      out += `<div style="margin-bottom:12px;font-weight:700;color:#15803d;font-size:1.05rem">🎯 Resposta da lacuna: <span style="background:#dcfce7;color:#14532d;padding:3px 10px;border-radius:6px;border:1px solid #86efac;font-weight:800">${clozeMatches.join('; ')}</span></div>`
+      out += `<div style="margin-bottom:12px;font-weight:700;color:var(--mr-ink, #15803d);font-size:1.05rem">🎯 Resposta da lacuna: <span style="background:var(--mr-pale, #dcfce7);color:var(--mr-dark, #14532d);padding:3px 10px;border-radius:6px;border:1px solid var(--mr-line, #86efac);font-weight:800">${clozeMatches.join('; ')}</span></div>`
     }
     if (!isPlaceholder) {
-      out += `<div style="margin-top:6px;color:#334155">${renderClozeHtml(card.a, true)}</div>`
+      out += `<div style="margin-top:6px;color:var(--mr-text, #334155)">${renderClozeHtml(card.a, true)}</div>`
     }
     return out || renderClozeHtml(card.q, true)
   }
@@ -524,6 +524,7 @@ function SettingsModal({
   }
   return (
     <div
+      className="mr-legacy-modal-overlay"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -538,6 +539,7 @@ function SettingsModal({
       }}
     >
       <div
+        className="mr-legacy-modal-box"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#fff',
@@ -924,6 +926,7 @@ function SessionBuilderModal({
   }
   return (
     <div
+      className="mr-legacy-modal-overlay"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -938,6 +941,7 @@ function SessionBuilderModal({
       }}
     >
       <div
+        className="mr-legacy-modal-box"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#fff',
@@ -1267,6 +1271,7 @@ function CardStatsModal({
   const maxDist = Math.max(1, ...dist.map((d) => d.value))
   return (
     <div
+      className="mr-legacy-modal-overlay"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -1281,6 +1286,7 @@ function CardStatsModal({
       }}
     >
       <div
+        className="mr-legacy-modal-box"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#fff',
@@ -1497,8 +1503,8 @@ function QuizSetupModal({
   const [timerOn, setTimerOn] = useState(true)
   const [kind, setKind] = useState('all')
   return (
-    <div onClick={onClose} style={quizOverlay(80)}>
-      <div onClick={(e) => e.stopPropagation()} style={{ ...quizPanel, maxWidth: 430 }}>
+    <div className="mr-legacy-modal-overlay" onClick={onClose} style={quizOverlay(80)}>
+      <div className="mr-legacy-modal-box" onClick={(e) => e.stopPropagation()} style={{ ...quizPanel, maxWidth: 430 }}>
         <h3 style={{ margin: '0 0 4px', color: '#14532d', fontSize: '1.1rem', fontWeight: 900 }}>
           ⏱️ Quiz cronometrado
         </h3>
@@ -1599,8 +1605,8 @@ function QuizRunModal({
     const pct = quiz.qs.length ? Math.round((quiz.score * 100) / quiz.qs.length) : 0
     const secs = Math.max(1, Math.round((Date.now() - quiz.startedMs) / 1000))
     return (
-      <div onClick={onClose} style={quizOverlay(80)}>
-        <div onClick={(e) => e.stopPropagation()} style={quizPanel}>
+      <div className="mr-legacy-modal-overlay" onClick={onClose} style={quizOverlay(80)}>
+        <div className="mr-legacy-modal-box" onClick={(e) => e.stopPropagation()} style={quizPanel}>
           <h3
             style={{ margin: '0 0 10px', color: '#14532d', fontSize: '1.15rem', fontWeight: 900 }}
           >
@@ -1701,8 +1707,8 @@ function QuizRunModal({
         : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cur.diagram_svg)}`
       : ''
   return (
-    <div onClick={onClose} style={quizOverlay(80)}>
-      <div onClick={(e) => e.stopPropagation()} style={quizPanel}>
+    <div className="mr-legacy-modal-overlay" onClick={onClose} style={quizOverlay(80)}>
+      <div className="mr-legacy-modal-box" onClick={(e) => e.stopPropagation()} style={quizPanel}>
         <div
           style={{
             display: 'flex',
@@ -1944,6 +1950,7 @@ function FsrDashboardModal({
   const maxLoad = Math.max(overdue, d7, d14, d30, 1)
   return (
     <div
+      className="mr-legacy-modal-overlay"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -1958,6 +1965,7 @@ function FsrDashboardModal({
       }}
     >
       <div
+        className="mr-legacy-modal-box"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#fff',
@@ -2192,12 +2200,14 @@ export default function Index() {
       const next = t === 'light' ? 'dark' : 'light'
       localStorage.setItem('mr_theme', next)
       document.documentElement.setAttribute('data-theme', next)
+      document.documentElement.classList.toggle('dark', next === 'dark')
       return next
     })
   }, [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
 
   const [lastReview, setLastReview] = useState<{
@@ -3575,6 +3585,15 @@ export default function Index() {
               <button className="mr-legacy-control" onClick={() => setQIdx(queue.length)}>
                 ✓ Concluído
               </button>
+              <button
+                type="button"
+                className="mr-legacy-control"
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
+                style={{ padding: '8px 11px', fontSize: '1rem' }}
+              >
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
               <button className="mr-legacy-control exit" onClick={returnToFolders}>
                 ✕ Sair da sessão
               </button>
@@ -3655,12 +3674,10 @@ export default function Index() {
                   e.stopPropagation()
                   setCardStatsOpen(true)
                 }}
+                className="mr-legacy-control"
                 style={{
-                  border: '1px solid #bbf7d0',
                   borderRadius: 8,
                   padding: '4px 9px',
-                  background: '#fff',
-                  color: '#15803d',
                   font: '700 .74rem Inter, system-ui, sans-serif',
                   cursor: 'pointer',
                 }}
@@ -3760,6 +3777,7 @@ export default function Index() {
               >
                 <button
                   type="button"
+                  className="mr-legacy-tts-btn"
                   onClick={() => {
                     if (isSpeaking) {
                       speechService.stop()
@@ -3789,13 +3807,11 @@ export default function Index() {
                 <select
                   value={speechRate}
                   onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                  className="mr-legacy-control"
                   style={{
-                    border: '1px solid #cbd5e1',
                     borderRadius: 6,
                     padding: '2px 4px',
                     fontSize: '.7rem',
-                    color: '#64748b',
-                    background: '#fff',
                     cursor: 'pointer',
                   }}
                   title="Velocidade de leitura"
@@ -3870,6 +3886,7 @@ export default function Index() {
                           setMcPicked(opt)
                           setFlipped(true)
                         }}
+                        className="mr-legacy-mc-btn"
                         style={{
                           textAlign: 'left',
                           border: '1.5px solid #cbd5e1',
@@ -3898,6 +3915,7 @@ export default function Index() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') checkWritten()
                   }}
+                  className="mr-legacy-write-input"
                   placeholder={
                     studyMode === 'reverse'
                       ? 'Digite a pergunta correspondente…'
@@ -3931,12 +3949,11 @@ export default function Index() {
                 </button>
                 <button
                   onClick={skipWrite}
+                  className="mr-legacy-button"
                   style={{
                     border: '1px solid #cbd5e1',
                     borderRadius: 10,
                     padding: '0.7rem 1rem',
-                    background: '#fff',
-                    color: '#475569',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
@@ -4086,6 +4103,7 @@ export default function Index() {
                 )}
                 <div
                   onClick={(e) => e.stopPropagation()}
+                  className="mr-legacy-card-note-box"
                   style={{
                     marginTop: 18,
                     padding: '12px 14px',
@@ -4107,7 +4125,7 @@ export default function Index() {
                       style={{
                         fontSize: '.76rem',
                         fontWeight: 800,
-                        color: '#15803d',
+                        color: 'var(--mr-ink, #15803d)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 6,
@@ -4131,6 +4149,7 @@ export default function Index() {
                         setTimeout(() => setNoteSaving(false), 800)
                       })
                     }}
+                    className="mr-legacy-card-note-input"
                     placeholder="Escreva seus mnemônicos, observações ou pegadinhas pessoais sobre esta carta..."
                     rows={2}
                     style={{
@@ -4551,6 +4570,7 @@ export default function Index() {
       )}
       {deckModal && (
         <div
+          className="mr-legacy-modal-overlay"
           onClick={() => setDeckModal(null)}
           style={{
             position: 'fixed',
@@ -4565,6 +4585,7 @@ export default function Index() {
           }}
         >
           <div
+            className="mr-legacy-modal-box"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: '#fff',
