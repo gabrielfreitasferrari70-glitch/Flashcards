@@ -565,7 +565,7 @@ function SettingsModal({
         position: 'fixed',
         inset: 0,
         background: 'rgba(15,23,42,.45)',
-        zIndex: 60,
+        zIndex: 1000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -999,7 +999,7 @@ function SessionBuilderModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        zIndex: 1000,
         background: 'rgba(15,23,42,.45)',
         display: 'flex',
         alignItems: 'center',
@@ -1344,7 +1344,7 @@ function CardStatsModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 70,
+        zIndex: 1000,
         background: 'rgba(15,23,42,.45)',
         display: 'flex',
         alignItems: 'center',
@@ -1509,7 +1509,7 @@ const QUIZ_SECONDS = 30
 const quizOverlay = (z: number): React.CSSProperties => ({
   position: 'fixed',
   inset: 0,
-  zIndex: z,
+  zIndex: 1000 + z,
   background: 'rgba(15,23,42,.45)',
   display: 'flex',
   alignItems: 'center',
@@ -2023,7 +2023,7 @@ function FsrDashboardModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 70,
+        zIndex: 1000,
         background: 'rgba(15,23,42,.45)',
         display: 'flex',
         alignItems: 'center',
@@ -5317,7 +5317,7 @@ export default function Index() {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 60,
+            zIndex: 1000,
             background: 'rgba(15,23,42,.45)',
             display: 'flex',
             alignItems: 'center',

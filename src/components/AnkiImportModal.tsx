@@ -158,7 +158,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 110,
+        zIndex: 1000,
         background: 'rgba(15,23,42,.65)',
         display: 'flex',
         alignItems: 'center',

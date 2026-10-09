@@ -746,32 +746,33 @@ mark {
   box-shadow: 0 4px 20px -2px rgba(20, 83, 45, 0.05);
 }
 .mr-legacy-header-inner {
-  max-width: 1200px;
-  min-height: 70px;
+  max-width: 1240px;
+  min-height: 64px;
   margin: 0 auto;
-  padding: 10px 24px;
+  padding: 8px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
 }
 .mr-legacy-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   cursor: pointer;
   text-decoration: none;
+  flex-shrink: 0;
 }
 .mr-legacy-brand-icon {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 11px;
   display: grid;
   place-items: center;
   background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-  font-size: 22px;
+  font-size: 20px;
   box-shadow: inset 0 0 0 1px #86efac;
 }
 .mr-legacy-brand-title {
@@ -779,14 +780,14 @@ mark {
   flex-direction: column;
 }
 .mr-legacy-brand-main {
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 900;
   color: #14532d;
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
 .mr-legacy-brand-sub {
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 700;
   color: #16a34a;
   letter-spacing: 0.06em;
@@ -795,25 +796,27 @@ mark {
 .mr-legacy-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .mr-legacy-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 38px;
+  gap: 6px;
+  min-height: 35px;
   border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 8px 14px;
+  border-radius: 9px;
+  padding: 6px 11px;
   color: #334155;
   background: #ffffff;
-  font: 700 0.82rem Inter, system-ui, sans-serif;
+  font: 700 0.8rem Inter, system-ui, sans-serif;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.18s ease;
+  flex-shrink: 0;
+  transition: all 0.16s ease;
 }
 .mr-legacy-button:hover {
   background: #f8fafc;
@@ -1002,22 +1005,35 @@ mark {
 /* CARDS & GRID */
 .mr-legacy-category-grid, .mr-legacy-subdecks {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 18px;
+  align-items: stretch;
 }
 .mr-legacy-category, .mr-legacy-subdeck {
   display: flex;
   flex-direction: column;
   min-height: 220px;
-  padding: 22px;
+  padding: 22px 20px 18px;
   border: 1.5px solid #e2e8f0;
   border-radius: 18px;
   background: #ffffff;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.03);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
   position: relative;
+  box-sizing: border-box;
+}
+.mr-legacy-category::before, .mr-legacy-subdeck::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #16a34a, #22c55e, #4ade80);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
 }
 .mr-legacy-category:hover, .mr-legacy-subdeck:hover {
   transform: translateY(-3px);
@@ -1032,19 +1048,20 @@ mark {
   width: 100%;
 }
 .mr-card-icon {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   display: grid;
   place-items: center;
   border-radius: 13px;
   background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-  font-size: 24px;
+  font-size: 22px;
 }
 .mr-card-top-right {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 .mr-legacy-tag {
   padding: 4px 10px;
@@ -1057,7 +1074,7 @@ mark {
   white-space: nowrap;
 }
 .mr-card-body {
-  margin: 14px 0;
+  margin: 14px 0 16px;
   flex: 1;
 }
 .mr-card-body h3 {
@@ -1079,13 +1096,15 @@ mark {
 }
 .mr-card-foot {
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid #f1f5f9;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  flex-wrap: wrap;
+  box-sizing: border-box;
 }
 .mr-card-count {
   display: inline-flex;
@@ -1098,11 +1117,15 @@ mark {
   color: #15803d;
   font-size: 0.74rem;
   font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .mr-card-foot-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .mr-card-foot-actions button {
   border: 1px solid #cbd5e1;
@@ -1113,6 +1136,7 @@ mark {
   font: 700 0.72rem Inter, system-ui, sans-serif;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 .mr-card-foot-actions button:hover {
@@ -1120,15 +1144,16 @@ mark {
   border-color: #94a3b8;
 }
 .mr-card-arrow {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: #f0fdf4;
   color: #15803d;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: bold;
+  flex-shrink: 0;
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .mr-legacy-category:hover .mr-card-arrow,
@@ -1500,20 +1525,88 @@ mark {
   gap: 10px;
 }
 
+/* MODALS BASE */
+.mr-legacy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000 !important;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  font-family: Inter, system-ui, sans-serif;
+  box-sizing: border-box;
+}
+.mr-legacy-modal-box {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.35);
+  border: 1px solid #e2e8f0;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* PREVIEW CARDS */
+.mr-legacy-preview-card {
+  background: #ffffff;
+  border: 1.5px solid #d1fae5;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.mr-legacy-preview-card:hover {
+  transform: translateY(-2px);
+  border-color: #86efac;
+}
+
 /* RESPONSIVE */
 @media (max-width: 900px) {
   .mr-legacy-category-grid, .mr-legacy-subdecks {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
   }
   .mr-legacy-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-@media (max-width: 640px) {
   .mr-legacy-header-inner {
     padding: 8px 14px;
     gap: 8px;
+    min-height: 56px;
   }
+  .mr-legacy-header-actions {
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    padding-bottom: 2px;
+  }
+  .mr-legacy-header-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .mr-legacy-button {
+    min-height: 32px;
+    padding: 5px 9px;
+    font-size: 0.74rem;
+  }
+  .mr-legacy-button.icon-only {
+    width: 32px;
+    min-width: 32px;
+  }
+}
+@media (max-width: 640px) {
   .mr-legacy-brand-main {
     font-size: 0.95rem;
   }
@@ -1521,11 +1614,12 @@ mark {
     padding: 16px 14px 40px;
   }
   .mr-legacy-hero {
-    padding: 22px 18px;
-    margin-bottom: 22px;
+    padding: 20px 16px;
+    margin-bottom: 20px;
   }
   .mr-legacy-category-grid, .mr-legacy-subdecks {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
   .mr-legacy-metrics {
     grid-template-columns: 1fr;
@@ -1533,10 +1627,15 @@ mark {
   .mr-legacy-actions {
     display: grid;
     grid-template-columns: 1fr;
+    gap: 8px;
   }
-  .mr-legacy-button, .mr-legacy-actions .mr-legacy-button {
+  .mr-legacy-actions .mr-legacy-button {
     width: 100%;
     box-sizing: border-box;
+  }
+  .mr-legacy-rating-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 }
 `
@@ -2109,7 +2208,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                   ? 'Pasta livre'
                                   : 'PBL / Tutoria'}
                           </span>
-                          <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                          <div
+                            style={{ position: 'relative', zIndex: openMenuDeckId === deck.id ? 70 : 1 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button
                               type="button"
                               className="mr-legacy-subdeck-more-btn"
@@ -2261,24 +2363,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       <div
                         key={c.id || idx}
                         className="mr-legacy-preview-card"
-                        style={{
-                          background: '#fff',
-                          border: '1.5px solid #d1fae5',
-                          borderRadius: 12,
-                          padding: '12px 14px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 6,
-                        }}
                       >
-                        <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#1e293b' }}>
+                        <div style={{ fontSize: '.88rem', fontWeight: 700, color: 'var(--mr-text, #1e293b)' }}>
                           {c.q.length > 90 ? c.q.slice(0, 90) + '…' : c.q}
                         </div>
                         <div
                           style={{
                             fontSize: '.8rem',
-                            color: '#64748b',
-                            background: '#f8fafc',
+                            color: 'var(--mr-muted, #64748b)',
+                            background: 'var(--mr-pale, #f8fafc)',
                             padding: '6px 8px',
                             borderRadius: 6,
                           }}
@@ -2430,7 +2523,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               <div style={{ margin: '14px 0 20px', position: 'relative' }}>
                 <input
                   type="text"
-                  placeholder="🔍 Buscar pasta médica, tema ou disciplina (ex: Músculos, Neuro, Cardiorrespiratório)..."
+                  placeholder="Buscar pasta médica, tema ou disciplina (ex: Músculos, Neuro, Cardiorrespiratório)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
@@ -2697,8 +2790,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                           role="button"
                                           tabIndex={0}
                                           style={{
-                                            background: '#f1f5f9',
-                                            color: '#334155',
+                                            background: 'var(--mr-mint, #f1f5f9)',
+                                            color: 'var(--mr-text, #334155)',
+                                            border: '1px solid var(--mr-line, #e2e8f0)',
                                             padding: '2px 8px',
                                             borderRadius: 6,
                                             fontSize: '.72rem',
@@ -2768,7 +2862,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                         style={{
                                           background: 'transparent',
                                           color: 'var(--mr-muted, #64748b)',
-                                          border: '1px solid #cbd5e1',
+                                          border: '1px solid var(--mr-line, #cbd5e1)',
                                           borderRadius: 8,
                                           padding: '6px 10px',
                                           fontSize: '.75rem',
@@ -2881,7 +2975,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         <div className="mr-card-top-right">
                           <span className="mr-legacy-tag">{tag}</span>
                           <div
-                            style={{ position: 'relative' }}
+                            style={{ position: 'relative', zIndex: openMenuDeckId === deck.id ? 70 : 1 }}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <button

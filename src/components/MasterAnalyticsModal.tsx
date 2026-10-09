@@ -81,7 +81,7 @@ export const MasterAnalyticsModal: React.FC<Props> = ({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        zIndex: 1000,
         background: 'rgba(15,23,42,.65)',
         display: 'flex',
         alignItems: 'center',
