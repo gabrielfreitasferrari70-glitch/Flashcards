@@ -797,7 +797,7 @@ mark {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 .mr-legacy-button {
@@ -1765,6 +1765,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   const [sortMode, setSortMode] = useState<DeckSortMode>(getDeckSort)
   const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [masterMenuOpen, setMasterMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -1773,6 +1774,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
       setOpenMenuDeckId(null)
       setCreateMenuOpen(false)
       setMasterMenuOpen(false)
+      setMoreMenuOpen(false)
     }
     document.addEventListener('click', handleDocClick)
     return () => document.removeEventListener('click', handleDocClick)
@@ -1923,41 +1925,12 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
 
             <button
               type="button"
-              className="mr-legacy-button"
-              onClick={onClinical}
-              title="Treino de Casos Clínicos"
-            >
-              📋 Modo Clínico
-            </button>
-
-            <button
-              type="button"
               className="mr-legacy-button amber"
               onClick={() => onOpenCramMode?.()}
               title="Revisão Intensiva de Véspera de Prova (Cram Mode)"
             >
               ⚡ Véspera
             </button>
-
-            <button
-              type="button"
-              className="mr-legacy-button"
-              onClick={onOpenAnkiImport}
-              title="Importar baralhos (.apkg, .colpkg, CSV, JSON)"
-            >
-              📥 Importar
-            </button>
-
-            {onExportBackup && (
-              <button
-                type="button"
-                className="mr-legacy-button"
-                onClick={onExportBackup}
-                title="Exportar Backup Completo (.JSON com pastas, cartas, revisões e anotações)"
-              >
-                💾 Backup
-              </button>
-            )}
 
             <div className="mr-legacy-dropdown-wrap">
               <button
@@ -2001,7 +1974,51 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 2 }}>
+            <div className="mr-legacy-dropdown-wrap">
+              <button
+                type="button"
+                className="mr-legacy-button"
+                onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                title="Mais ferramentas e importação"
+              >
+                🛠️ Mais ▾
+              </button>
+              {moreMenuOpen && (
+                <div className="mr-legacy-menu-popover">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false)
+                      onClinical()
+                    }}
+                  >
+                    <span>📋</span> Modo Clínico
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false)
+                      onOpenAnkiImport?.()
+                    }}
+                  >
+                    <span>📥</span> Importar Baralho (.apkg)
+                  </button>
+                  {onExportBackup && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false)
+                        onExportBackup()
+                      }}
+                    >
+                      <span>💾</span> Fazer Backup (.json)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 2, flexShrink: 0 }}>
               {!isOnline && (
                 <span
                   style={{
@@ -2015,10 +2032,11 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     border: '1px solid #fde68a',
                     fontSize: '.75rem',
                     fontWeight: 800,
+                    whiteSpace: 'nowrap',
                   }}
                   title="Você está estudando offline. Suas revisões serão sincronizadas automaticamente ao reconectar."
                 >
-                  📡 Modo Offline {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : ''}
+                  📡 Offline {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : ''}
                 </span>
               )}
               {onInstallPwa && canInstallPwa && (
@@ -2037,7 +2055,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     gap: 5,
                   }}
                 >
-                  📱 Instalar App
+                  📱 App
                 </button>
               )}
               {onToggleTheme && (
@@ -2073,7 +2091,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 type="button"
                 className="mr-legacy-button"
                 onClick={onLogout}
-                style={{ color: '#64748b', borderColor: '#e2e8f0', padding: '8px 12px' }}
+                style={{ color: '#64748b', borderColor: '#e2e8f0', padding: '6px 11px' }}
                 title={`Sair de ${userEmail || 'sua conta'}`}
               >
                 Sair
