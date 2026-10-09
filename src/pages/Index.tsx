@@ -410,6 +410,34 @@ function parseManualInterval(raw: string): { days: number; label: string } | nul
 // Cache global em memória para conteúdo completo dos cartões (carregamento sob demanda sem re-fetch)
 const fullCardsCache = new Map<string, Card>()
 
+// Carrega o catálogo mestre de 1.352 cartas do Vercel Edge CDN (0 egress no Supabase)
+let catalogLoadingPromise: Promise<any> | null = null
+async function ensureCatalogLoaded(): Promise<any> {
+  if (fullCardsCache.size >= 1350) return
+  if (!catalogLoadingPromise) {
+    catalogLoadingPromise = fetch('/catalog.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cat) => {
+        if (cat && cat.cards && Array.isArray(cat.cards)) {
+          for (const c of cat.cards) {
+            if (c.id && c.q && c.q !== 'Carregando cartão...') {
+              fullCardsCache.set(c.id, c)
+            }
+          }
+        }
+        return cat
+      })
+      .catch((err) => {
+        console.warn('Erro ao carregar /catalog.json:', err)
+        return null
+      })
+      .finally(() => {
+        catalogLoadingPromise = null
+      })
+  }
+  return catalogLoadingPromise
+}
+
 function getSchedulerSettings(accountId?: string): SchedulerSettings {
   const defaults = {
     mode: 'automatic' as SchedulerMode,
@@ -2503,47 +2531,59 @@ export default function Index() {
 
   const loadData = useCallback(async () => {
     try {
-      // 1. Carrega todas as pastas do usuário instantaneamente (<450ms)
-      const decksPromise = pb.collection('mr_decks').getFullList({ sort: 'order' })
+      const currentUserId = user?.id || pb.authStore.record?.id
 
-      // 2. Otimização de Egress: se o catálogo completo já está em memória (Vercel Edge CDN),
-      // busca apenas novidades recentes (<2KB), economizando mais de 99% do egress do Supabase.
-      const fetchAllMetaCards = async () => {
-        if (fullCardsCache.size >= 1300) {
-          const { data } = await supabase
-            .from('mr_cards')
-            .select('id, deck_id, suspended, clinical, created_at, tags')
-            .order('created_at', { ascending: false })
-            .limit(30)
-          return data || []
+      // 1. Garante que o catálogo mestre de 1.352 cartas do Vercel Edge CDN está em memória (0 egress Supabase)
+      if (fullCardsCache.size < 1350) {
+        try {
+          const res = await fetch('/catalog.json')
+          if (res.ok) {
+            const cat = await res.json()
+            if (cat.cards && Array.isArray(cat.cards)) {
+              for (const c of cat.cards) {
+                if (c.id && c.q && c.q !== 'Carregando cartão...') {
+                  fullCardsCache.set(c.id, c)
+                }
+              }
+            }
+            if (cat.decks && Array.isArray(cat.decks)) {
+              setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
+            }
+          }
+        } catch (e) {
+          console.warn('Erro ao carregar /catalog.json:', e)
         }
-        const pageSize = 1000
-        let from = 0
-        const all: any[] = []
-        while (true) {
-          const { data, error } = await supabase
-            .from('mr_cards')
-            .select('id, deck_id, suspended, clinical, created_at, tags')
-            .order('id')
-            .range(from, from + pageSize - 1)
-          if (error || !data || data.length === 0) break
-          all.push(...data)
-          if (data.length < pageSize) break
-          from += pageSize
-        }
-        return all
       }
 
-      const reviewsPromise = pb.collection('mr_reviews').getFullList({ sort: 'reviewed_at' })
+      // 2. Busca no Supabase ESTRITAMENTE dados do usuário conectado (zero egress no catálogo mestre)
+      const [customDecksRes, userReviewsRes, customCardsRes] = await Promise.all([
+        supabase
+          .from('mr_decks')
+          .select('*')
+          .order('order'),
+        currentUserId
+          ? supabase
+              .from('mr_reviews')
+              .select('id, card_id, rating, stability, difficulty, state, due, reviewed_at')
+              .eq('user_id', currentUserId)
+              .order('reviewed_at')
+          : Promise.resolve({ data: [] }),
+        currentUserId
+          ? supabase
+              .from('mr_cards')
+              .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, created_at')
+              .eq('user_id', currentUserId)
+          : Promise.resolve({ data: [] }),
+      ])
 
-      // Recebe pastas e renderiza imediatamente na tela
-      const rawDecks = ((await decksPromise) as any[]) || []
+      // 3. Processa Pastas
+      const rawDecks = customDecksRes.data || []
       const frontlineDeckIds = getFrontlineDeckIds()
       const seenDeckIds = new Set<string>()
-      const rootFolder = rawDecks.find((d) => !d.parent && d.title?.trim().toLowerCase() === 'minhas pastas')
+      const rootFolder = rawDecks.find((d: any) => !d.parent && d.title?.trim().toLowerCase() === 'minhas pastas')
       const validDecks = rawDecks
-        .filter((row) => !row.deleted && !seenDeckIds.has(row.id) && seenDeckIds.add(row.id))
-        .map((row) => {
+        .filter((row: any) => !row.deleted && !seenDeckIds.has(row.id) && seenDeckIds.add(row.id))
+        .map((row: any) => {
           let parent = row.parent
           const norm = (row.title || '').trim().toLowerCase()
           if (!parent && (norm === 'uc-1' || norm === 'uc1' || norm === 'uc-2' || norm === 'uc2')) {
@@ -2555,62 +2595,43 @@ export default function Index() {
             (!parent && row.kind === 'custom')
           return { ...row, parent, frontline: isFrontline }
         })
-      setDecks(validDecks)
-      setLocalCache('mr_cached_decks', validDecks)
-
-      // Recebe metadados dos cartões e revisões
-      const [metaRows, revs] = await Promise.all([fetchAllMetaCards(), reviewsPromise])
-      const deletedCardIds = getDeletedCardIds()
-      const rawMeta = metaRows || []
-      const validMetaCards: Card[] = rawMeta
-        .filter((row: any) => !deletedCardIds.has(row.id))
-        .map((row: any) => ({
-          id: row.id,
-          deck: row.deck_id,
-          deck_id: row.deck_id,
-          q: 'Carregando cartão...',
-          a: '',
-          suspended: !!row.suspended,
-          clinical: !!row.clinical,
-          created: row.created_at,
-          created_at: row.created_at,
-          tags: row.tags || [],
-        })) as any[]
-
-      // Atualiza cartões preservando o catálogo completo do Vercel já em memória
-      if (validMetaCards.length > 0) {
-        setCards((prev) => {
-          const prevMap = new Map(prev.map((c) => [c.id, c]))
-          for (const m of validMetaCards) {
-            const existing = prevMap.get(m.id) || fullCardsCache.get(m.id)
-            if (existing && existing.q && existing.q !== 'Carregando cartão...') {
-              prevMap.set(m.id, {
-                ...existing,
-                suspended: m.suspended,
-                clinical: m.clinical,
-                tags: m.tags,
-                deck: m.deck,
-                deck_id: m.deck_id,
-              })
-            } else {
-              prevMap.set(m.id, m)
-            }
-          }
-          return Array.from(prevMap.values())
-        })
-        setLocalCache('mr_cached_meta_cards', validMetaCards)
+      if (validDecks.length > 0) {
+        setDecks(validDecks)
+        setLocalCache('mr_cached_decks', validDecks)
       }
 
-      const validReviews = (revs as any[]) || []
+      // 4. Processa Cartões
+      // Adiciona cartões customizados criados pelo usuário ao cache de memória
+      const customCards = customCardsRes.data || []
+      for (const cc of customCards) {
+        if (cc.id && cc.q) {
+          const cardObj: Card = {
+            ...cc,
+            deck: cc.deck_id,
+            created: cc.created_at,
+            image: cc.image_url,
+          }
+          fullCardsCache.set(cc.id, cardObj)
+        }
+      }
+
+      // Constrói lista completa a partir do cache (que tem os 1.352 cartões + customizados)
+      const allCardsList = Array.from(fullCardsCache.values())
+      const deletedCardIds = getDeletedCardIds()
+      const filteredCards = allCardsList.filter((c) => !deletedCardIds.has(c.id))
+      setCards(filteredCards)
+
+      // 5. Processa Revisões (apenas do usuário conectado!)
+      const validReviews = (userReviewsRes.data as any[]) || []
       setReviews(validReviews)
       setLocalCache('mr_cached_reviews', validReviews)
 
-      return { decks: validDecks, cards: validMetaCards }
+      return { decks: validDecks, cards: filteredCards }
     } catch (e: any) {
-      console.warn('Erro ao carregar dados do Supabase:', e)
+      console.warn('Erro ao carregar dados:', e)
       return null
     }
-  }, [])
+  }, [user?.id])
 
   const reviewsByCard = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -2945,9 +2966,9 @@ export default function Index() {
     const debouncedReload = () => {
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
-        fullCardsCache.clear()
+        // Recarrega apenas dados leves do usuário sem limpar o catálogo mestre
         loadData()
-      }, 150)
+      }, 500)
     }
 
     const channel = supabase
@@ -2957,37 +2978,10 @@ export default function Index() {
       .on('broadcast', { event: 'db_mutation' }, () => {
         debouncedReload()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mr_decks' }, () => {
-        debouncedReload()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mr_cards' }, () => {
-        debouncedReload()
-      })
       .subscribe()
-
-    // Sincroniza também quando a janela/aba ganhar foco (ex: usuário volta para o app no celular)
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        debouncedReload()
-      }
-    }
-    const onFocus = () => debouncedReload()
-
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    window.addEventListener('focus', onFocus)
-
-    // Polling de segurança a cada 20 segundos
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        debouncedReload()
-      }
-    }, 20000)
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
-      clearInterval(interval)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('focus', onFocus)
       supabase.removeChannel(channel)
     }
   }, [auth, loadData])
@@ -3013,13 +3007,11 @@ export default function Index() {
         throw new Error('Conta criada! Aguarde a aprovação do administrador para entrar.')
       }
       
-      fullCardsCache.clear()
       setUser(pb.authStore.record)
       setAuth('in')
       await loadData()
     } catch (e: any) {
       if (pb.authStore.isValid) {
-        fullCardsCache.clear()
         setUser(pb.authStore.record)
         setAuth('in')
         await loadData()
@@ -3035,7 +3027,6 @@ export default function Index() {
   }
   const logout = () => {
     pb.authStore.clear()
-    fullCardsCache.clear()
     setUser(null)
     setAuth('out')
     setDecks([])
@@ -3091,7 +3082,7 @@ export default function Index() {
     setRoute({ view: 'study', deckId, sessionTitle })
 
     // Busca progressiva e assíncrona das cartas em lotes seguros de 15 (sem travar a tela e sem timeout)
-    const missingIds = Array.from(
+    let missingIds = Array.from(
       new Set(
         sorted
           .map((c) => c.id.replace(/::rev$/, ''))
@@ -3104,6 +3095,29 @@ export default function Index() {
 
     if (missingIds.length > 0) {
       ;(async () => {
+        // Tenta resolver primeiro com o catálogo Vercel CDN (zero egress Supabase)
+        if (fullCardsCache.size < 1350) {
+          await ensureCatalogLoaded()
+          const stillMissing = missingIds.filter((id) => {
+            const cached = fullCardsCache.get(id)
+            return !cached || !cached.a || cached.q === 'Carregando cartão...'
+          })
+          if (stillMissing.length === 0) {
+            setQueue((prevQueue) =>
+              prevQueue.map((c) => {
+                const baseId = c.id.replace(/::rev$/, '')
+                const full = fullCardsCache.get(baseId)
+                if (full) {
+                  return c.id.endsWith('::rev') ? { ...full, id: c.id, __reverse: true } : full
+                }
+                return c
+              }),
+            )
+            return
+          }
+          missingIds = stillMissing
+        }
+
         // 1. Busca imediatamente os primeiros 3 cartões prioritários para renderização instantânea
         const priorityIds = missingIds.slice(0, 3)
         if (priorityIds.length > 0) {
@@ -3248,12 +3262,16 @@ export default function Index() {
         return !cached || !cached.a || cached.q === 'Carregando cartão...'
       })
 
-    if (missingQuizIds.length > 0) {
+    if (missingQuizIds.length > 0 && fullCardsCache.size < 1350) {
+      await ensureCatalogLoaded()
+    }
+    const realMissingQuizIds = missingQuizIds.filter((id) => !fullCardsCache.has(id))
+    if (realMissingQuizIds.length > 0) {
       try {
         const { data: qRows } = await supabase
           .from('mr_cards')
           .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
-          .in('id', missingQuizIds)
+          .in('id', realMissingQuizIds)
         if (qRows) {
           for (const r of qRows) {
             const cardObj: Card = {
