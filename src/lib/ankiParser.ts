@@ -1001,15 +1001,7 @@ export function parseCardsFromRawText(rawText: string, defaultTitle = 'Flashcard
     }
   }
 
-  // Se o texto contém tabulações (\t), prioriza TSV (formato padrão de saída de IAs e Anki)
-  if (trimmed.includes('\t')) {
-    const textRes = parseAnkiText(trimmed, defaultTitle)
-    if (textRes.cards && textRes.cards.length > 0) {
-      return textRes
-    }
-  }
-
-  // 2. Interpreta como CSV estruturado RFC 4180
+  // 2. Interpreta como CSV / TSV estruturado RFC 4180 (com suporte a quebras de linha entre aspas)
   const csvRes = parseCardsFromCsv(trimmed)
   if (csvRes.cards && csvRes.cards.length > 0) {
     const cards: ParsedAnkiCard[] = csvRes.cards.map((c) => ({
@@ -1028,7 +1020,7 @@ export function parseCardsFromRawText(rawText: string, defaultTitle = 'Flashcard
     }
   }
 
-  // 3. Fallback para parser de texto simples / Anki export
+  // 3. Fallback para parser de texto simples / Anki TSV sem aspas
   const textRes = parseAnkiText(trimmed, defaultTitle)
   if (textRes.cards && textRes.cards.length > 0) {
     return textRes

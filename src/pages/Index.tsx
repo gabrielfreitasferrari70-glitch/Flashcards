@@ -2558,24 +2558,54 @@ export default function Index() {
       }
 
       // 2. Busca no Supabase ESTRITAMENTE dados do usuário conectado (zero egress no catálogo mestre)
-      const [customDecksRes, userReviewsRes, customCardsRes] = await Promise.all([
-        supabase
-          .from('mr_decks')
-          .select('*')
-          .order('order'),
-        currentUserId
-          ? supabase
-              .from('mr_reviews')
-              .select('id, card_id, rating, stability, difficulty, state, due, reviewed_at')
-              .eq('user_id', currentUserId)
-              .order('reviewed_at')
-          : Promise.resolve({ data: [] }),
-        currentUserId
-          ? supabase
-              .from('mr_cards')
-              .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, created_at')
-              .eq('user_id', currentUserId)
-          : Promise.resolve({ data: [] }),
+      const customDecksPromise = supabase
+        .from('mr_decks')
+        .select('*')
+        .order('order')
+
+      const customCardsPromise = (async () => {
+        if (!currentUserId) return []
+        const list: any[] = []
+        let from = 0
+        const PAGE = 1000
+        while (true) {
+          const { data, error } = await supabase
+            .from('mr_cards')
+            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .eq('user_id', currentUserId)
+            .range(from, from + PAGE - 1)
+          if (error || !data || data.length === 0) break
+          list.push(...data)
+          if (data.length < PAGE) break
+          from += PAGE
+        }
+        return list
+      })()
+
+      const userReviewsPromise = (async () => {
+        if (!currentUserId) return []
+        const list: any[] = []
+        let from = 0
+        const PAGE = 1000
+        while (true) {
+          const { data, error } = await supabase
+            .from('mr_reviews')
+            .select('id, card_id, rating, stability, difficulty, state, due, reviewed_at')
+            .eq('user_id', currentUserId)
+            .order('reviewed_at')
+            .range(from, from + PAGE - 1)
+          if (error || !data || data.length === 0) break
+          list.push(...data)
+          if (data.length < PAGE) break
+          from += PAGE
+        }
+        return list
+      })()
+
+      const [customDecksRes, userReviewsData, customCardsData] = await Promise.all([
+        customDecksPromise,
+        userReviewsPromise,
+        customCardsPromise,
       ])
 
       // 3. Processa Pastas
@@ -2604,7 +2634,7 @@ export default function Index() {
 
       // 4. Processa Cartões
       // Adiciona cartões customizados criados pelo usuário ao cache de memória
-      const customCards = customCardsRes.data || []
+      const customCards = customCardsData || []
       for (const cc of customCards) {
         if (cc.id && cc.q) {
           const cardObj: Card = {
@@ -2624,7 +2654,7 @@ export default function Index() {
       setCards(filteredCards)
 
       // 5. Processa Revisões (apenas do usuário conectado!)
-      const validReviews = (userReviewsRes.data as any[]) || []
+      const validReviews = userReviewsData || []
       setReviews(validReviews)
       setLocalCache('mr_cached_reviews', validReviews)
 
@@ -5167,11 +5197,11 @@ export default function Index() {
             onClose={() => setAnkiImportOpen(false)}
             onSuccess={async (count, deckTitle, deckId) => {
               setAnkiImportOpen(false)
-              const fresh = await loadData()
+              await loadData()
               setMsg(`Sucesso! ${count} cartas importadas para "${deckTitle}".`)
               setTimeout(() => setMsg(''), 4500)
               if (deckId) {
-                openDeck(deckId, fresh?.decks)
+                setRoute({ view: 'home', folderKind: 'custom', deckId })
               }
             }}
           />

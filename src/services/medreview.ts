@@ -217,28 +217,43 @@ export const createCardsBatch = async (
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
 
+  const sanitizeStr = (val: any, fallback: string = ''): string => {
+    if (val === null || val === undefined) return fallback
+    const s = String(val).replace(/\0/g, '').trim()
+    return s || fallback
+  }
+
   const payloads = cards.map((c) => {
+    const cleanQ = sanitizeStr(c.q, 'Flashcard sem pergunta')
+    const cleanA = sanitizeStr(c.a, 'Flashcard sem resposta')
+    const cleanTags = Array.isArray(c.tags)
+      ? c.tags
+          .filter((t) => t !== null && t !== undefined)
+          .map((t) => String(t).replace(/\0/g, '').trim())
+          .filter(Boolean)
+      : []
+
     return {
       user_id: user.user!.id,
       deck_id: deckId,
-      q: (c.q && c.q.trim()) || 'Card sem pergunta',
-      a: (c.a && c.a.trim()) || 'Card sem resposta',
+      q: cleanQ,
+      a: cleanA,
       clinical: !!c.clinical,
       suspended: false,
-      tags: Array.isArray(c.tags) ? c.tags.filter(Boolean) : [],
-      group: c.group || '',
-      ref: c.ref || '',
+      tags: cleanTags,
+      group: sanitizeStr(c.group, ''),
+      ref: sanitizeStr(c.ref, ''),
       reverse: !!(c as any).reverse,
       choices: (c as any).choices || null,
-      image_url: (c as any).image_url || c.imageUrl || null,
-      occlusion: c.occlusion || null,
+      image_url: sanitizeStr((c as any).image_url || c.imageUrl || '', '') || null,
+      occlusion: c.occlusion && typeof c.occlusion === 'object' ? c.occlusion : null,
     }
   })
 
   // Insere em lotes adaptativos para garantir envio rápido e não estourar limite de payload HTTP
   const results: any[] = []
-  const MAX_BYTES_PER_CHUNK = 1_000_000
-  const MAX_CARDS_PER_CHUNK = 20
+  const MAX_BYTES_PER_CHUNK = 800_000
+  const MAX_CARDS_PER_CHUNK = 15
 
   const chunks: Array<typeof payloads> = []
   let currentChunk: typeof payloads = []
@@ -248,6 +263,7 @@ export const createCardsBatch = async (
     const itemBytes =
       (item.q?.length || 0) +
       (item.a?.length || 0) +
+      (item.image_url?.length || 0) +
       (item.occlusion ? JSON.stringify(item.occlusion).length : 0)
 
     if (
@@ -267,13 +283,14 @@ export const createCardsBatch = async (
   for (const chunk of chunks) {
     const { data, error } = await supabase.from('mr_cards').insert(chunk).select('id')
     if (error) {
-      console.warn('Falha no lote de cartões, tentando individualmente:', error.message)
+      console.warn('Falha no lote de cartões, inserindo individualmente com sanitização:', error.message)
       for (const single of chunk) {
         const { data: sData, error: sErr } = await supabase.from('mr_cards').insert([single]).select('id')
-        if (sData) {
+        if (sData && sData.length > 0) {
           results.push(...sData)
         } else if (sErr) {
-          // Fallback ultra-básico sem occlusion ou tags caso o erro seja na serialização
+          console.warn('Tentando fallback básico para cartão:', sErr.message)
+          // Fallback ultra-básico sem occlusion ou tags
           const basic = {
             user_id: single.user_id,
             deck_id: single.deck_id,
@@ -283,8 +300,26 @@ export const createCardsBatch = async (
             suspended: false,
           }
           const { data: bData, error: bErr } = await supabase.from('mr_cards').insert([basic]).select('id')
-          if (bData) results.push(...bData)
-          if (bErr) console.error('Erro definitivo ao salvar cartão:', bErr)
+          if (bData && bData.length > 0) {
+            results.push(...bData)
+          } else if (bErr) {
+            console.error('Erro no fallback básico, tentando fallback de segurança:', bErr.message)
+            // Fallback de segurança: corta campos gigantes que podem estourar limite do PostgreSQL
+            const emergency = {
+              user_id: single.user_id,
+              deck_id: single.deck_id,
+              q: single.q.slice(0, 10000),
+              a: single.a.slice(0, 25000),
+              clinical: false,
+              suspended: false,
+            }
+            const { data: eData, error: eErr } = await supabase.from('mr_cards').insert([emergency]).select('id')
+            if (eData && eData.length > 0) {
+              results.push(...eData)
+            } else if (eErr) {
+              console.error('Não foi possível gravar cartão:', eErr.message, single.q.slice(0, 60))
+            }
+          }
         }
       }
     } else if (data) {

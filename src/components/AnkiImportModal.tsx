@@ -23,6 +23,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
   const [result, setResult] = useState<AnkiPackageResult | null>(null)
   const [targetDeckOption, setTargetDeckOption] = useState<'new' | string>('new')
   const [customDeckName, setCustomDeckName] = useState<string>('')
+  const [autoSplitFolders, setAutoSplitFolders] = useState<boolean>(false)
   const [importing, setImporting] = useState<boolean>(false)
   const [progress, setProgress] = useState<{ current: number; total: number; stage: string }>({
     current: 0,
@@ -92,11 +93,12 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
       let finalDeckId = targetDeckOption
       let finalDeckTitle = customDeckName.trim() || result.deckName
 
-      if (hasAutoFolders && targetDeckOption === 'new') {
+      // Apenas divide em subpastas se o usuário explicitamente marcou essa opção
+      if (hasAutoFolders && targetDeckOption === 'new' && autoSplitFolders) {
         setProgress({
           current: 0,
           total: result.cards.length,
-          stage: 'Distribuindo cartões nas pastas e gravando...',
+          stage: 'Distribuindo cartões nas subpastas e gravando...',
         })
         const res = await importCardsAuto(result.cards as any, result.decks)
         finalDeckId = res.firstDeckId || ''
@@ -105,6 +107,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
         return
       }
 
+      // Por padrão: cria a pasta indicada pelo usuário e insere 100% dos cartões nela
       if (targetDeckOption === 'new') {
         setProgress({ current: 0, total: result.cards.length, stage: 'Criando nova pasta...' })
         const newDeck = await createDeck(finalDeckTitle, 'custom', undefined, 'study', true)
@@ -122,7 +125,7 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
         setProgress({
           current: Math.min(i + batch.length, total),
           total,
-          stage: `Importando cartões (${Math.min(i + batch.length, total)} de ${total})...`,
+          stage: `Gravando cartões (${Math.min(i + batch.length, total)} de ${total})...`,
         })
 
         const saved = await createCardsBatch(
@@ -131,14 +134,14 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
             q: c.q,
             a: c.a,
             tags: c.tags,
-            group: (c as any).group,
+            group: (c as any).group || c.folder,
             ref: (c as any).ref,
             clinical: (c as any).clinical,
             imageUrl: (c as any).imageUrl,
             occlusion: (c as any).occlusion,
           })),
         )
-        savedCount += (saved?.length || batch.length)
+        savedCount += (saved?.length || 0)
       }
 
       if (savedCount === 0) {
@@ -496,22 +499,46 @@ export const AnkiImportModal: React.FC<Props> = ({ decks, onClose, onSuccess }) 
                 </div>
 
                 {targetDeckOption === 'new' ? (
-                  <input
-                    type="text"
-                    value={customDeckName}
-                    onChange={(e) => setCustomDeckName(e.target.value)}
-                    placeholder="Nome da nova pasta"
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '.88rem',
-                      fontFamily: 'inherit',
-                      outline: 'none',
-                    }}
-                  />
+                  <>
+                    <input
+                      type="text"
+                      value={customDeckName}
+                      onChange={(e) => setCustomDeckName(e.target.value)}
+                      placeholder="Nome da nova pasta"
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '.88rem',
+                        fontFamily: 'inherit',
+                        outline: 'none',
+                      }}
+                    />
+                    {result && (result.cards.some((c) => c.folder) || (result.decks && result.decks.length > 1)) && (
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontSize: '.78rem',
+                          color: '#475569',
+                          cursor: 'pointer',
+                          marginTop: 8,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={autoSplitFolders}
+                          onChange={(e) => setAutoSplitFolders(e.target.checked)}
+                        />
+                        <span>
+                          Separar em subpastas automaticamente conforme identificado no arquivo ({result.decks?.length || 'múltiplas'} pastas)
+                        </span>
+                      </label>
+                    )}
+                  </>
                 ) : (
                   <FolderTreeSelect
                     decks={decks}

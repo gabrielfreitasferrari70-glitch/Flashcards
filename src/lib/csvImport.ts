@@ -72,13 +72,14 @@ export function normalizeHeaderKey(key: string): string {
 }
 
 /**
- * Detecta o delimitador mais provável (vírgula ou ponto-e-vírgula)
+ * Detecta o delimitador mais provável (vírgula, ponto-e-vírgula ou tabulação)
  */
-export function detectDelimiter(csvText: string): ',' | ';' {
+export function detectDelimiter(csvText: string): ',' | ';' | '\t' {
   // Analisa as primeiras linhas fora de aspas
   let inQuotes = false
   let commaCount = 0
   let semicolonCount = 0
+  let tabCount = 0
   const maxChars = Math.min(csvText.length, 4096)
 
   for (let i = 0; i < maxChars; i++) {
@@ -88,12 +89,14 @@ export function detectDelimiter(csvText: string): ',' | ';' {
     } else if (!inQuotes) {
       if (char === ',') commaCount++
       else if (char === ';') semicolonCount++
-      else if (char === '\n' && (commaCount > 0 || semicolonCount > 0)) {
+      else if (char === '\t') tabCount++
+      else if (char === '\n' && (commaCount > 0 || semicolonCount > 0 || tabCount > 0)) {
         break
       }
     }
   }
 
+  if (tabCount > commaCount && tabCount > semicolonCount) return '\t'
   return semicolonCount > commaCount ? ';' : ','
 }
 
@@ -101,7 +104,7 @@ export function detectDelimiter(csvText: string): ',' | ';' {
  * Autômato de estados para parsing estrito conforme RFC 4180
  * Suporta quebras de linha dentro de aspas, aspas duplas (""), delimitador variável.
  */
-export function parseCsvRows(csvText: string, delimiter?: ',' | ';'): string[][] {
+export function parseCsvRows(csvText: string, delimiter?: ',' | ';' | '\t'): string[][] {
   const delim = delimiter || detectDelimiter(csvText)
   const rows: string[][] = []
   let currentRow: string[] = []
