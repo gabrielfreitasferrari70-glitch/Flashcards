@@ -2180,6 +2180,51 @@ export default function Index() {
     easy: 0,
   })
   const [msg, setMsg] = useState('')
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('mr_theme') as 'light' | 'dark') || 'light'
+    }
+    return 'light'
+  })
+
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => {
+      const next = t === 'light' ? 'dark' : 'light'
+      localStorage.setItem('mr_theme', next)
+      document.documentElement.setAttribute('data-theme', next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  const [lastReview, setLastReview] = useState<{
+    card: Card
+    qIdx: number
+    reviewId?: string
+    quality: Quality
+    wasAddedToEnd: boolean
+  } | null>(null)
+
+  const undoLastReview = useCallback(async () => {
+    if (!lastReview) return
+    const { card, qIdx: prevQIdx, reviewId, wasAddedToEnd } = lastReview
+    setLastReview(null)
+    setQIdx(prevQIdx)
+    setFlipped(true)
+    if (wasAddedToEnd) {
+      setQueue((q) => q.slice(0, -1))
+    }
+    if (reviewId) {
+      setReviews((rs) => rs.filter((r) => r.id !== reviewId))
+      supabase.from('mr_reviews').delete().eq('id', reviewId).catch(() => {})
+    }
+    setMsg('↺ Última avaliação desfeita!')
+    setTimeout(() => setMsg(''), 2500)
+  }, [lastReview])
+
   const [undoInfo, setUndoInfo] = useState<{
     deckIds: string[]
     restoreKind: 'tutoria' | 'prova' | 'custom'
@@ -3332,6 +3377,14 @@ export default function Index() {
       setMsg(`Carta agendada para daqui ${chosen.label}`)
       setTimeout(() => setMsg(''), 2500)
 
+      setLastReview({
+        card,
+        qIdx,
+        reviewId: savedReview?.id,
+        quality,
+        wasAddedToEnd: quality === 'again',
+      })
+
       // No Anki, se errar a carta ('again'), ela é reinserida no fim da fila para fixação
       if (quality === 'again') {
         setQueue((q) => [...q, card])
@@ -3347,12 +3400,20 @@ export default function Index() {
     }
   }
 
-  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar)
+  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, Ctrl+Z para desfazer)
   useEffect(() => {
     if (route.view !== 'study' || studyMode === 'write') return
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey || !flipped)) {
+        if (lastReview) {
+          e.preventDefault()
+          undoLastReview()
+          return
+        }
+      }
 
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
@@ -3377,7 +3438,7 @@ export default function Index() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [route.view, flipped, studyMode, rate])
+  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview])
 
   // ===== Tela: loading =====
   if (auth === 'loading') return <div style={center}>Carregando…</div>
@@ -3490,6 +3551,16 @@ export default function Index() {
               <strong>{sessionTitle}</strong>
             </nav>
             <div className="mr-legacy-study-controls">
+              {lastReview && (
+                <button
+                  className="mr-legacy-control"
+                  onClick={undoLastReview}
+                  title="Desfazer última avaliação (Ctrl+Z)"
+                  style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 800 }}
+                >
+                  ↺ Desfazer
+                </button>
+              )}
               <span className="mr-legacy-control">
                 {qIdx + 1} / {queue.length}
               </span>
@@ -3532,6 +3603,42 @@ export default function Index() {
                 {label}
               </button>
             ))}
+          </div>
+
+          {/* Barra de Progresso Visual da Sessão */}
+          <div style={{ width: '100%', maxWidth: 760, margin: '8px auto 14px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '.76rem',
+                color: 'var(--mr-muted, #64748b)',
+                fontWeight: 700,
+                marginBottom: 5,
+              }}
+            >
+              <span>Carta {qIdx + 1} de {queue.length}</span>
+              <span>{Math.round(((qIdx) / queue.length) * 100)}% concluído</span>
+            </div>
+            <div
+              style={{
+                width: '100%',
+                height: 6,
+                background: 'var(--mr-mint, #e2e8f0)',
+                borderRadius: 999,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${Math.round(((qIdx) / queue.length) * 100)}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #16a34a, #22c55e)',
+                  borderRadius: 999,
+                  transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              />
+            </div>
           </div>
           <div className="mr-legacy-progress">
             <span>
@@ -4042,18 +4149,23 @@ export default function Index() {
           </article>
           {flipped && (
             <div className="mr-legacy-rating-row">
-              {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q) => (
+              {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
                 <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
-                  <div style={{ fontWeight: 800 }}>
-                    {q === 'again'
-                      ? 'Errei'
-                      : q === 'hard'
-                        ? 'Difícil'
-                        : q === 'good'
-                          ? 'Bom'
-                          : 'Fácil'}
+                  <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                      [{idx + 1}]
+                    </span>
+                    <span>
+                      {q === 'again'
+                        ? 'Errei'
+                        : q === 'hard'
+                          ? 'Difícil'
+                          : q === 'good'
+                            ? 'Bom'
+                            : 'Fácil'}
+                    </span>
                   </div>
-                  <div style={{ fontSize: '.72rem', opacity: 0.9 }}>{pv[q].label}</div>
+                  <div style={{ fontSize: '.74rem', opacity: 0.95, marginTop: 2 }}>{pv[q].label}</div>
                 </button>
               ))}
             </div>
@@ -4269,6 +4381,8 @@ export default function Index() {
           setCramModalOpen(true)
         }}
         onOpenAnkiImport={() => setAnkiImportOpen(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <Suspense fallback={null}>
         {cramModalOpen && (

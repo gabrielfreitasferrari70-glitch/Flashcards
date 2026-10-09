@@ -47,6 +47,84 @@ const legacyCss = `
   --mr-text: #1e293b;
   --mr-muted: #64748b;
 }
+[data-theme="dark"] {
+  --mr-green: #22c55e;
+  --mr-dark: #15803d;
+  --mr-ink: #4ade80;
+  --mr-pale: #0f172a;
+  --mr-mint: #1e293b;
+  --mr-line: #334155;
+  --mr-text: #f8fafc;
+  --mr-muted: #94a3b8;
+}
+[data-theme="dark"] body {
+  background: #090d16 !important;
+  color: #f1f5f9 !important;
+}
+[data-theme="dark"] .mr-legacy-shell,
+[data-theme="dark"].mr-legacy-shell,
+[data-theme="dark"] .mr-legacy-study-page,
+[data-theme="dark"].mr-legacy-study-page {
+  background: #090d16 !important;
+  color: #f1f5f9 !important;
+}
+[data-theme="dark"] .mr-legacy-header {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border-bottom-color: #1e293b !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
+}
+[data-theme="dark"] .mr-legacy-hero,
+[data-theme="dark"] .mr-legacy-metric,
+[data-theme="dark"] .mr-legacy-category,
+[data-theme="dark"] .mr-legacy-study-card,
+[data-theme="dark"] .mr-legacy-session {
+  background: #111827 !important;
+  border-color: #1f2937 !important;
+  color: #f1f5f9 !important;
+}
+[data-theme="dark"] .mr-card-top,
+[data-theme="dark"] .mr-card-foot {
+  background: transparent !important;
+  border-color: #1f2937 !important;
+}
+[data-theme="dark"] .mr-legacy-metric-value,
+[data-theme="dark"] .mr-legacy-question,
+[data-theme="dark"] .mr-card-body h3 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .mr-card-body p,
+[data-theme="dark"] .mr-legacy-section-sub,
+[data-theme="dark"] .mr-legacy-metric-label {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .mr-legacy-button {
+  background: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mr-legacy-button.primary {
+  background: #16a34a !important;
+  color: #fff !important;
+}
+[data-theme="dark"] .mr-legacy-answer-body {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mr-legacy-control {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mr-legacy-menu-popover {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .mr-legacy-menu-popover button {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mr-legacy-menu-popover button:hover {
+  background: #334155 !important;
+}
 .mr-legacy-shell {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f8fafc 320px);
@@ -915,6 +993,8 @@ type HomeProps = {
   onOpenCramMode?: (deckId?: string) => void
   onOpenAnkiImport?: () => void
   onStudyDeck?: (deckId: string) => void
+  theme?: 'light' | 'dark'
+  onToggleTheme?: () => void
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -957,6 +1037,8 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     reviews,
     onOpenCramMode,
     onOpenAnkiImport,
+    theme = 'light',
+    onToggleTheme,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
 
@@ -964,6 +1046,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   const [openMenuDeckId, setOpenMenuDeckId] = useState<string | null>(null)
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [masterMenuOpen, setMasterMenuOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     const handleDocClick = () => {
@@ -1021,6 +1104,17 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     }
     return getCount
   }, [cards, decks])
+
+  const matchingDecks = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return []
+    return decks.filter(
+      (d) =>
+        !d.deleted &&
+        (d.title.toLowerCase().includes(q) ||
+          (d.description && d.description.toLowerCase().includes(q))),
+    )
+  }, [decks, searchQuery])
 
   const title = openDeck
     ? openDeck.title
@@ -1155,6 +1249,17 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 2 }}>
+              {onToggleTheme && (
+                <button
+                  type="button"
+                  className="mr-legacy-button icon-only"
+                  onClick={onToggleTheme}
+                  title={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
+                  aria-label="Alternar tema"
+                >
+                  {theme === 'dark' ? '☀️' : '🌙'}
+                </button>
+              )}
               <button
                 type="button"
                 className="mr-legacy-button icon-only"
@@ -1602,6 +1707,120 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   </button>
                 </div>
               </header>
+
+              <div style={{ margin: '14px 0 20px', position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Buscar pasta médica, tema ou disciplina (ex: Músculos, Neuro, Cardiorrespiratório)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 18px 12px 42px',
+                    borderRadius: 14,
+                    border: '1.5px solid #cbd5e1',
+                    background: 'var(--mr-pale, #fff)',
+                    fontSize: '.95rem',
+                    color: 'var(--mr-text, #1e293b)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    outline: 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 14,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: '1.05rem',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  🔍
+                </span>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    style={{
+                      position: 'absolute',
+                      right: 14,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      background: 'none',
+                      color: '#94a3b8',
+                      fontSize: '1rem',
+                      cursor: 'pointer',
+                      padding: 4,
+                    }}
+                    title="Limpar busca"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {searchQuery.trim() && (
+                <div style={{ marginBottom: 28 }}>
+                  <div style={{ fontSize: '.88rem', color: 'var(--mr-muted, #64748b)', fontWeight: 700, marginBottom: 12 }}>
+                    Resultados para &ldquo;{searchQuery}&rdquo; ({matchingDecks.length} pastas encontradas):
+                  </div>
+                  {matchingDecks.length === 0 ? (
+                    <div className="mr-legacy-empty" style={{ padding: '32px 16px' }}>
+                      Nenhuma pasta médica encontrada com esse termo. Tente buscar por &ldquo;músculo&rdquo;, &ldquo;neuro&rdquo;, &ldquo;uc&rdquo; ou navegue pelas pastas abaixo.
+                    </div>
+                  ) : (
+                    <div className="mr-legacy-category-grid" style={{ marginBottom: 24 }}>
+                      {matchingDecks.map((deck) => {
+                        const total = cardsInSubtree(deck.id)
+                        return (
+                          <div
+                            key={deck.id}
+                            className="mr-legacy-category"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onDeckClick(deck.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') onDeckClick(deck.id)
+                            }}
+                          >
+                            <div className="mr-card-top">
+                              <span className="mr-card-icon">📂</span>
+                              <div className="mr-card-top-right">
+                                <span className="mr-legacy-tag">Resultado</span>
+                              </div>
+                            </div>
+                            <div className="mr-card-body">
+                              <h3>{deck.title}</h3>
+                              <p>{deck.description || 'Pasta do acervo médico MedReview.'}</p>
+                            </div>
+                            <div className="mr-card-foot">
+                              <span className="mr-card-count">📚 {total} cartas</span>
+                              <div className="mr-card-foot-actions">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (onStudyDeck) onStudyDeck(deck.id)
+                                    else onDeckClick(deck.id)
+                                  }}
+                                  style={{ background: '#16a34a', color: '#fff', border: 'none', fontWeight: 800 }}
+                                >
+                                  ⚡ Estudar
+                                </button>
+                                <span className="mr-card-arrow">→</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mr-legacy-category-grid">
                 {categories.map((item) => (
