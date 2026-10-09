@@ -142,13 +142,13 @@ async function runDualAudit() {
 
   let muscleImagesValid = 0;
   for (const c of muscleSample || []) {
-    const hasImgInQ = c.q && c.q.includes('<img') && c.q.includes('data:image/');
-    const hasImgInA = c.a && c.a.includes('<img') && c.a.includes('data:image/');
+    const hasImgInQ = c.q && c.q.includes('<img') && (c.q.includes('/cards-media/') || c.q.includes('data:image/'));
+    const hasImgInA = c.a && c.a.includes('<img') && (c.a.includes('/cards-media/') || c.a.includes('data:image/'));
     if (hasImgInQ || hasImgInA) {
       muscleImagesValid++;
     }
   }
-  console.log(`✓ Cartões de Músculos com imagens Base64 preservadas: ${muscleImagesValid}/${muscleSample?.length}`);
+  console.log(`✓ Cartões de Músculos com imagens CDN/mídia preservadas: ${muscleImagesValid}/${muscleSample?.length}`);
 
   const { data: neuroCards } = await adminClient
     .from('mr_cards')

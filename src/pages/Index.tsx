@@ -2405,28 +2405,30 @@ export default function Index() {
         })) as any[]
 
       // Atualiza cartões mantendo qualquer cartão já completo em memória ou cache global
-      setCards((prev) => {
-        const prevMap = new Map(prev.map((c) => [c.id, c]))
-        return validMetaCards.map((m) => {
-          const existing = prevMap.get(m.id) || fullCardsCache.get(m.id)
-          if (existing && existing.q && existing.q !== 'Carregando cartão...') {
-            return {
-              ...existing,
-              suspended: m.suspended,
-              clinical: m.clinical,
-              tags: m.tags,
-              deck: m.deck,
-              deck_id: m.deck_id,
+      if (validMetaCards.length > 0) {
+        setCards((prev) => {
+          const prevMap = new Map(prev.map((c) => [c.id, c]))
+          return validMetaCards.map((m) => {
+            const existing = prevMap.get(m.id) || fullCardsCache.get(m.id)
+            if (existing && existing.q && existing.q !== 'Carregando cartão...') {
+              return {
+                ...existing,
+                suspended: m.suspended,
+                clinical: m.clinical,
+                tags: m.tags,
+                deck: m.deck,
+                deck_id: m.deck_id,
+              }
             }
-          }
-          return m
+            return m
+          })
         })
-      })
+        setLocalCache('mr_cached_meta_cards', validMetaCards)
+      }
 
       const validReviews = (revs as any[]) || []
       setReviews(validReviews)
       setLocalCache('mr_cached_reviews', validReviews)
-      setLocalCache('mr_cached_meta_cards', validMetaCards)
 
       return { decks: validDecks, cards: validMetaCards }
     } catch (e: any) {
@@ -2717,6 +2719,27 @@ export default function Index() {
                 setCards(cachedCards)
               }
               if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
+            }
+          } catch {}
+        }
+
+        // Fallback instantâneo via catalog.json do Vercel/GitHub (zero delay, renderização imediata de 1352 cartas)
+        if (active) {
+          try {
+            const res = await fetch('/catalog.json')
+            if (res.ok) {
+              const cat = await res.json()
+              if (cat.decks && cat.decks.length > 0) {
+                setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
+              }
+              if (cat.cards && cat.cards.length > 0) {
+                setCards((prev) => (prev.length === 0 ? cat.cards : prev))
+                for (const c of cat.cards) {
+                  if (c.q && c.q !== 'Carregando cartão...' && !fullCardsCache.has(c.id)) {
+                    fullCardsCache.set(c.id, c)
+                  }
+                }
+              }
             }
           } catch {}
         }

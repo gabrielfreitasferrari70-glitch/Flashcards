@@ -74,7 +74,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
         const url = URL.createObjectURL(file)
         img.onload = () => {
           try {
-            const maxDim = 1280
+            const maxDim = 960
             let w = img.naturalWidth || img.width
             let h = img.naturalHeight || img.height
             if (!w || !h) {
@@ -104,7 +104,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
             ctx.fillRect(0, 0, w, h)
             ctx.drawImage(img, 0, 0, w, h)
             URL.revokeObjectURL(url)
-            resolve(canvas.toDataURL('image/jpeg', 0.88))
+            resolve(canvas.toDataURL('image/jpeg', 0.70))
           } catch (err) {
             URL.revokeObjectURL(url)
             reject(err)
@@ -409,7 +409,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
           group: 'Oclusão de Imagem',
           ref: title || 'Anatomia / Histologia',
           clinical: false,
-          imageUrl,
+          imageUrl: '',
           occlusion: {
             imageUrl,
             imageTitle: title || 'Oclusão de Imagem',
