@@ -370,14 +370,30 @@ function cardStateFromReviews(reviews: Review[]): CardState {
     (a, b) => (parsePbDate(a.reviewed_at) || 0) - (parsePbDate(b.reviewed_at) || 0),
   )
   const last = ordered[ordered.length - 1]
-  const due = parsePbDate(last.due) || Date.now()
+  const lastReviewMs = parsePbDate(last.reviewed_at) || Date.now()
+
+  let due = parsePbDate(last.due)
+  // Se scheduled_days for informado (ex: 3h = 0.125 dias, 10 min = 0.0069 dias),
+  // calcula em milissegundos com precisão matemática a partir de lastReviewMs.
+  // Isso previne qualquer perda de horário causada por truncamento de banco ou timezone.
+  if (typeof last.scheduled_days === 'number' && Number.isFinite(last.scheduled_days)) {
+    const calculatedDue = lastReviewMs + Math.round(last.scheduled_days * 86400000)
+    if (!due || due < calculatedDue) {
+      due = calculatedDue
+    }
+  }
+
+  if (!due) {
+    due = Date.now()
+  }
+
   return {
     s: last.stability ?? null,
     d: last.difficulty ?? null,
     state: last.state || 'review',
     reps: ordered.filter((r) => r.rating !== 'again').length,
     lapses: ordered.filter((r) => r.rating === 'again').length,
-    lastReviewMs: parsePbDate(last.reviewed_at),
+    lastReviewMs: lastReviewMs,
     dueMs: due,
   }
 }
@@ -2457,6 +2473,12 @@ export default function Index() {
   const [noteSaving, setNoteSaving] = useState(false)
   const [cramModalOpen, setCramModalOpen] = useState(false)
   const [cramInitialDeckId, setCramInitialDeckId] = useState<string | undefined>(undefined)
+  const [deckCompletionModal, setDeckCompletionModal] = useState<{
+    deckId: string
+    title: string
+    totalCards: number
+    timeLabel: string
+  } | null>(null)
   const [sessionProtectFsrs, setSessionProtectFsrs] = useState(false)
   const [ankiImportOpen, setAnkiImportOpen] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
@@ -2687,7 +2709,7 @@ export default function Index() {
         while (true) {
           const { data, error } = await supabase
             .from('mr_reviews')
-            .select('id, card_id, rating, stability, difficulty, state, due, reviewed_at')
+            .select('id, card_id, rating, stability, difficulty, scheduled_days, elapsed_days, state, due, reviewed_at')
             .eq('user_id', currentUserId)
             .order('reviewed_at')
             .range(from, from + PAGE - 1)
@@ -2754,10 +2776,18 @@ export default function Index() {
 
       // 5. Processa Revisões (apenas do usuário conectado!)
       const validReviews = userReviewsData || []
-      setReviews(validReviews)
+      const offlineReviews = getOfflineReviews()
+      const reviewMap = new Map<string, any>()
+      for (const r of validReviews) reviewMap.set(r.id, r)
+      for (const off of offlineReviews) {
+        if (!reviewMap.has(off.id)) reviewMap.set(off.id, off)
+      }
+      const allReviews = Array.from(reviewMap.values())
+      setReviews(allReviews)
       setTimeout(() => {
-        setLocalCache('mr_cached_reviews', validReviews).catch(() => {})
+        setLocalCache('mr_cached_reviews', allReviews).catch(() => {})
       }, 100)
+      void flushOfflineReviews().catch(() => {})
 
       return { decks: validDecks, cards: filteredCards }
     } catch (e: any) {
@@ -3255,34 +3285,45 @@ export default function Index() {
         studyCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
       )
       const currentTime = Date.now()
-      const rank = (cs: CardState) =>
-        cs.state === 'new' ? 2 : (cs.dueMs || 0) <= currentTime ? 0 : 1
 
-      if (studyOrderMode === 'random') {
-        // Modo aleatório (Anki): agrupa por urgência FSRS (vencidas primeiro), e embaralha aleatoriamente dentro de cada grupo
-        const groups: Record<number, Card[]> = { 0: [], 1: [], 2: [] }
-        for (const c of studyCards) {
-          const r = rank(states.get(stateKey(c))!)
-          groups[r].push(c)
-        }
-        sorted = [
-          ...shuffleArray(groups[0]),
-          ...shuffleArray(groups[1]),
-          ...shuffleArray(groups[2]),
-        ]
+      // Filtra estritamente por urgência FSRS:
+      // - dueCards: cartas de revisão vencidas (dueMs <= agora)
+      // - newCards: cartas nunca estudadas
+      // - futureCards: cartas agendadas para o futuro (dueMs > agora)
+      const dueCards = studyCards.filter((c) => {
+        const cs = states.get(stateKey(c))!
+        return cs.state !== 'new' && (cs.dueMs || 0) <= currentTime
+      })
+      const newCards = studyCards.filter((c) => {
+        const cs = states.get(stateKey(c))!
+        return cs.state === 'new'
+      })
+      const futureCards = studyCards.filter((c) => {
+        const cs = states.get(stateKey(c))!
+        return cs.state !== 'new' && (cs.dueMs || 0) > currentTime
+      })
+
+      // Se houver cartas vencidas ou novas, EXCLUI rigorosamente cartas futuras da sessão normal!
+      // Cartas agendadas para o futuro só entram se não houver nenhuma pendente (treino antecipado)
+      let activeCards: Card[]
+      if (dueCards.length > 0 || newCards.length > 0) {
+        activeCards =
+          studyOrderMode === 'random'
+            ? [...shuffleArray(dueCards), ...shuffleArray(newCards)]
+            : [...sortSequential(dueCards), ...sortSequential(newCards)]
       } else {
-        // Modo sequencial (Anki): mantém a sequência cronológica de adição/criação dentro de cada urgência FSRS
-        sorted = [...studyCards].sort((a, b) => {
-          const ra = rank(states.get(stateKey(a))!)
-          const rb = rank(states.get(stateKey(b))!)
-          if (ra !== rb) return ra - rb
-          const timeA = a.created ? new Date(a.created).getTime() : 0
-          const timeB = b.created ? new Date(b.created).getTime() : 0
-          if (timeA && timeB && timeA !== timeB) return timeA - timeB
-          return (a.id || '').localeCompare(b.id || '')
-        })
+        activeCards = studyOrderMode === 'random' ? shuffleArray(futureCards) : sortSequential(futureCards)
       }
+
+      sorted = activeCards
     }
+
+    if (sorted.length === 0) {
+      setMsg('🎉 Tudo em dia! Nenhuma carta pendente para estudar nesta pasta.')
+      setTimeout(() => setMsg(''), 3000)
+      return
+    }
+
     setQueue(sorted)
     setQIdx(0)
     setFlipped(false)
@@ -3608,7 +3649,7 @@ export default function Index() {
   )
 
   const studyDeck = useCallback(
-    (deckId: string) => {
+    (deckId: string, options?: { allowAhead?: boolean }) => {
       const deck = decks.find((d) => d.id === deckId)
       const targetCards = getSubtreeCardList(deckId)
       if (targetCards.length === 0) {
@@ -3616,9 +3657,48 @@ export default function Index() {
         setTimeout(() => setMsg(''), 3500)
         return
       }
-      startStudy(targetCards, deckId, deck?.title || 'Estudo da Pasta')
+
+      const now = Date.now()
+      const dueOrNewCards = targetCards.filter((c) => {
+        const cs = cardStateFromReviews(reviewsForCard(c))
+        return cs.state === 'new' || (cs.dueMs || 0) <= now
+      })
+
+      if (dueOrNewCards.length === 0 && !options?.allowAhead) {
+        let nextDueMs = Infinity
+        for (const c of targetCards) {
+          const cs = cardStateFromReviews(reviewsForCard(c))
+          if (cs.dueMs && cs.dueMs > now && cs.dueMs < nextDueMs) {
+            nextDueMs = cs.dueMs
+          }
+        }
+        let timeLabel = 'em breve'
+        if (nextDueMs !== Infinity) {
+          const diffMinutes = Math.round((nextDueMs - now) / 60000)
+          if (diffMinutes < 60) timeLabel = `daqui a ~${Math.max(1, diffMinutes)} min`
+          else if (diffMinutes < 1440) timeLabel = `daqui a ~${Math.round(diffMinutes / 60)}h`
+          else timeLabel = `daqui a ~${Math.round(diffMinutes / 1440)} dias`
+        }
+
+        setDeckCompletionModal({
+          deckId,
+          title: deck?.title || 'Esta pasta',
+          totalCards: targetCards.length,
+          timeLabel,
+        })
+        return
+      }
+
+      startStudy(
+        dueOrNewCards.length > 0 ? dueOrNewCards : targetCards,
+        deckId,
+        deck?.title || 'Estudo da Pasta',
+        {
+          protectFsrs: dueOrNewCards.length === 0,
+        },
+      )
     },
-    [decks, getSubtreeCardList, startStudy],
+    [decks, getSubtreeCardList, reviewsForCard, startStudy],
   )
 
   const openDeck = (deckId: string, currentDecks = decks) => {
@@ -3636,13 +3716,18 @@ export default function Index() {
 
   const startStudyNow = () => {
     const allCards = cards
+    const now = Date.now()
     const dueOrNew = allCards.filter((c) => {
       if (c.suspended || c.deleted) return false
       const cs = cardStateFromReviews(reviewsForCard(c))
-      return cs.state === 'new' || (cs.dueMs || 0) <= Date.now()
+      return cs.state === 'new' || (cs.dueMs || 0) <= now
     })
-    const candidates = dueOrNew.length ? dueOrNew : allCards.filter((c) => !c.suspended && !c.deleted)
-    startStudy(candidates, undefined, 'Todas as cartas')
+    if (dueOrNew.length === 0) {
+      setMsg('🎉 Tudo em dia! Todas as cartas da sua biblioteca já foram revisadas por enquanto.')
+      setTimeout(() => setMsg(''), 4000)
+      return
+    }
+    startStudy(dueOrNew, undefined, 'Todas as cartas')
   }
   const startClinicalMode = () => {
     const clinicalCards = cards.filter(
@@ -3891,7 +3976,11 @@ export default function Index() {
     // O próximo cartão é exibido imediatamente, exatamente como no Anki nativo
     const synthId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     const optimisticReview = { id: synthId, ...reviewInput }
-    setReviews((rs) => [...rs, optimisticReview])
+    setReviews((rs) => {
+      const next = [...rs, optimisticReview]
+      setLocalCache('mr_cached_reviews', next).catch(() => {})
+      return next
+    })
     setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
     setMsg(`Carta agendada para daqui ${chosen.label}`)
     setTimeout(() => setMsg(''), 2200)
@@ -5404,6 +5493,103 @@ export default function Index() {
             startStudy(picked, undefined, title || 'Sessão personalizada')
           }}
         />
+      )}
+      {deckCompletionModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+          onClick={() => setDeckCompletionModal(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              maxWidth: 440,
+              width: '100%',
+              borderRadius: 20,
+              padding: '28px 22px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: 10 }}>🎉</div>
+            <h2 style={{ fontSize: '1.28rem', fontWeight: 800, color: '#166534', margin: '0 0 8px' }}>
+              Pasta 100% em dia!
+            </h2>
+            <p style={{ color: '#475569', fontSize: '0.92rem', lineHeight: 1.5, margin: '0 0 16px' }}>
+              Você já revisou todas as cartas de <strong>{deckCompletionModal.title}</strong> ({deckCompletionModal.totalCards} cartas).
+            </p>
+            <div
+              style={{
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: 12,
+                padding: '12px 14px',
+                color: '#15803d',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                marginBottom: 20,
+              }}
+            >
+              ⏰ Próxima revisão agendada: <strong>{deckCompletionModal.timeLabel}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setDeckCompletionModal(null)}
+                style={{
+                  background: '#16a34a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 12,
+                  padding: '12px 18px',
+                  fontWeight: 800,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)',
+                }}
+              >
+                ✓ Entendido, voltar às pastas
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const modal = deckCompletionModal
+                  setDeckCompletionModal(null)
+                  const targetCards = getSubtreeCardList(modal.deckId)
+                  startStudy(targetCards, modal.deckId, modal.title, {
+                    protectFsrs: true,
+                    preserveOrder: false,
+                  })
+                }}
+                style={{
+                  background: 'transparent',
+                  color: '#b45309',
+                  border: '1px solid #fde68a',
+                  borderRadius: 12,
+                  padding: '10px 18px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ⚡ Revisar antecipadamente (Treino de Véspera)
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {deckModal && (
         <div
