@@ -314,9 +314,9 @@ interface Card {
   deck: string
   q: string
   a: string
-  group: string
-  ref: string
-  suspended: boolean
+  group?: string
+  ref?: string
+  suspended?: boolean
   seed_key?: string
   deleted?: boolean
   diagram_svg?: string
@@ -329,11 +329,13 @@ interface Card {
   occlusion?: any
   tags?: string[]
   imageUrl?: string
+  created?: string
 }
 interface Review {
   id: string
   card?: string
   card_ref?: string
+  card_id?: string
   rating: string
   stability: number
   difficulty: number
@@ -1949,8 +1951,8 @@ function FsrDashboardModal({
   reviews: Review[]
   onClose: () => void
 }) {
-  const dayKeyOf = (ms: number) => {
-    const d = new Date(ms)
+  const dayKeyOf = (ms: number | Date) => {
+    const d = typeof ms === 'number' ? new Date(ms) : ms
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
   }
   // Heatmap: últimos 119 dias (17 semanas)
@@ -2295,7 +2297,7 @@ export default function Index() {
     }
     if (reviewId) {
       setReviews((rs) => rs.filter((r) => r.id !== reviewId))
-      supabase.from('mr_reviews').delete().eq('id', reviewId).catch(() => {})
+      void supabase.from('mr_reviews').delete().eq('id', reviewId)
     }
     setMsg('↺ Última avaliação desfeita!')
     setTimeout(() => setMsg(''), 2500)
@@ -4145,6 +4147,7 @@ export default function Index() {
                   else setFlipped(true)
                 }
               }
+              handleTextSelection()
             }}
             onErrorCapture={(e) => {
               const target = e.target as HTMLImageElement
@@ -4162,7 +4165,6 @@ export default function Index() {
               }
             }}
             onMouseUp={handleTextSelection}
-            onTouchEnd={handleTextSelection}
             onClick={(e) => {
               const target = e.target as HTMLElement
               if (target.tagName === 'IMG') {
@@ -4578,7 +4580,7 @@ export default function Index() {
                   }}
                   className="mr-legacy-write-input"
                   placeholder={
-                    studyMode === 'reverse'
+                    queue[qIdx]?.__reverse
                       ? 'Digite a pergunta correspondente…'
                       : 'Digite a resposta…'
                   }
@@ -5138,6 +5140,9 @@ export default function Index() {
         canInstallPwa={!isStandalone}
         onInstallPwa={handleInstallPwa}
         onExportBackup={handleExportBackup}
+        onStudyCards={(cardsToStudy, sessionTitle) => {
+          startStudy(cardsToStudy as any, undefined, sessionTitle, { protectFsrs: false })
+        }}
       />
       <Suspense fallback={null}>
         {cramModalOpen && (
@@ -5149,7 +5154,7 @@ export default function Index() {
             onClose={() => setCramModalOpen(false)}
             onStart={(pickedCards, options) => {
               setCramModalOpen(false)
-              startStudy(pickedCards, undefined, options.title, {
+              startStudy(pickedCards as any, undefined, options.title, {
                 protectFsrs: options.protectFsrs,
                 preserveOrder: true,
               })

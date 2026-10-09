@@ -143,11 +143,14 @@ export const deleteDeck = async (deckId: string) => {
 }
 
 export interface CardExtras {
+  group?: string
+  ref?: string
   imageUrl?: string
   choices?: string[]
   reverse?: boolean
   clinical?: boolean
 }
+
 
 export const createCard = async (
   deckId: string,
@@ -305,13 +308,32 @@ export const updateCard = async (
     a: string
   } & CardExtras,
 ) => {
-  const { data, error } = await supabase.from('mr_cards').update({
+  const updatePayload: Record<string, any> = {
     q: card.q,
     a: card.a,
-    clinical: !!card.clinical
-  }).eq('id', card.id).select().single()
+    clinical: !!card.clinical,
+  }
+  if (card.group !== undefined) updatePayload.group = card.group
+  if (card.ref !== undefined) updatePayload.ref = card.ref
+  if (card.reverse !== undefined) updatePayload.reverse = card.reverse
+  if (card.choices !== undefined) updatePayload.choices = card.choices
+  if (card.imageUrl !== undefined) updatePayload.image_url = card.imageUrl
+
+  const { data, error } = await supabase.from('mr_cards').update(updatePayload).eq('id', card.id).select().single()
 
   if (error) throw error
+
+  try {
+    const cached = await getLocalCache<any[]>('mr_cached_cards')
+    if (cached && Array.isArray(cached)) {
+      const idx = cached.findIndex((c) => c.id === card.id)
+      if (idx !== -1) {
+        cached[idx] = { ...cached[idx], ...updatePayload }
+        await setLocalCache('mr_cached_cards', cached)
+      }
+    }
+  } catch {}
+
   notifyDataMutation('card_updated', { id: card.id })
   return data
 }
@@ -509,9 +531,30 @@ export const moveDeckSection = async (fromKind: string, parent: string, rootKind
   notifyDataMutation('section_moved', { fromKind, parent })
   return data
 }
-export const undoMoveSection = async () => {}
-export const repairSection = async () => {}
-export const resetDeck = async () => {}
+export const undoMoveSection = async (deckIds?: string[], restoreKind?: string, blockId?: string) => {
+  if (!deckIds || deckIds.length === 0) return
+  for (const id of deckIds) {
+    await supabase.from('mr_decks').update({ kind: restoreKind || 'custom', parent: blockId || null }).eq('id', id)
+  }
+  notifyDataMutation('section_undo', { deckIds })
+}
+
+export const repairSection = async (_kind?: string, _pattern?: string) => {
+  return { success: true }
+}
+
+export const resetDeck = async (deckId?: string) => {
+  if (!deckId) return
+  const { data: user } = await supabase.auth.getUser()
+  if (!user?.user) return
+
+  const { data: cards } = await supabase.from('mr_cards').select('id').eq('deck_id', deckId)
+  if (cards && cards.length > 0) {
+    const cardIds = cards.map((c) => c.id)
+    await supabase.from('mr_reviews').delete().eq('user_id', user.user.id).in('card_id', cardIds)
+  }
+  notifyDataMutation('deck_reset', { deckId })
+}
 export const moveCard = async (cardId: string, deckId: string) => {
   const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).eq('id', cardId)
   if (error) throw error

@@ -9,6 +9,7 @@ import {
   setDeckSort,
   type DeckSortMode,
 } from '@/lib/deckSort'
+import { highlightMatch, normalizeSearchText } from '@/lib/searchUtils'
 
 export type LegacyDeck = {
   id: string
@@ -1572,7 +1573,7 @@ type HomeProps = {
   onStudyNow: () => void
   onSessionBuilder: () => void
   onQuiz: () => void
-  onNewFolder: () => void
+  onNewFolder?: () => void
   onLogout: () => void
   onSettings: () => void
   onDashboard: () => void
@@ -1605,6 +1606,8 @@ type HomeProps = {
   canInstallPwa?: boolean
   onInstallPwa?: () => void
   onExportBackup?: () => void
+  reviews?: any[]
+  onStudyCards?: (cards: LegacyCard[], title: string) => void
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -1656,6 +1659,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     canInstallPwa = false,
     onInstallPwa,
     onExportBackup,
+    onStudyCards,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
 
@@ -1722,16 +1726,38 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     return getCount
   }, [cards, decks])
 
+  const [searchCardLimit, setSearchCardLimit] = useState(30)
+  const [searchScopeTab, setSearchScopeTab] = useState<'all' | 'decks' | 'cards'>('all')
+
+  const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery])
+
   const matchingDecks = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return []
+    if (!normalizedQuery) return []
     return decks.filter(
       (d) =>
         !d.deleted &&
-        (d.title.toLowerCase().includes(q) ||
-          (d.description && d.description.toLowerCase().includes(q))),
+        (normalizeSearchText(d.title).includes(normalizedQuery) ||
+          normalizeSearchText(d.description).includes(normalizedQuery)),
     )
-  }, [decks, searchQuery])
+  }, [decks, normalizedQuery])
+
+  const matchingCards = useMemo(() => {
+    if (!normalizedQuery) return []
+    const deckMap = new Map(decks.map((d) => [d.id, d.title]))
+    return cards.filter((c) => {
+      if (c.deleted) return false
+      const qNorm = normalizeSearchText(c.q)
+      const aNorm = normalizeSearchText(c.a)
+      const gNorm = normalizeSearchText(c.group)
+      const dNorm = normalizeSearchText(deckMap.get(c.deck))
+      return (
+        qNorm.includes(normalizedQuery) ||
+        aNorm.includes(normalizedQuery) ||
+        gNorm.includes(normalizedQuery) ||
+        dNorm.includes(normalizedQuery)
+      )
+    })
+  }, [cards, decks, normalizedQuery])
 
   const title = openDeck
     ? openDeck.title
@@ -2457,60 +2483,332 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               </div>
 
               {searchQuery.trim() && (
-                <div style={{ marginBottom: 28 }}>
-                  <div style={{ fontSize: '.88rem', color: 'var(--mr-muted, #64748b)', fontWeight: 700, marginBottom: 12 }}>
-                    Resultados para &ldquo;{searchQuery}&rdquo; ({matchingDecks.length} pastas encontradas):
+                <div style={{ marginBottom: 32 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '.95rem', color: 'var(--mr-text, #1e293b)', fontWeight: 800 }}>
+                        Resultados para &ldquo;{searchQuery}&rdquo;
+                      </div>
+                      <div style={{ fontSize: '.8rem', color: 'var(--mr-muted, #64748b)', marginTop: 2 }}>
+                        {matchingDecks.length} {matchingDecks.length === 1 ? 'pasta' : 'pastas'} · {matchingCards.length} {matchingCards.length === 1 ? 'flashcard' : 'flashcards'}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSearchScopeTab('all')}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 8,
+                          fontSize: '.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: searchScopeTab === 'all' ? '1.5px solid var(--mr-green, #16a34a)' : '1px solid #cbd5e1',
+                          background: searchScopeTab === 'all' ? 'var(--mr-pale, #f0fdf4)' : 'transparent',
+                          color: searchScopeTab === 'all' ? 'var(--mr-ink, #15803d)' : 'var(--mr-muted, #64748b)',
+                        }}
+                      >
+                        Tudo ({matchingDecks.length + matchingCards.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSearchScopeTab('decks')}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 8,
+                          fontSize: '.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: searchScopeTab === 'decks' ? '1.5px solid var(--mr-green, #16a34a)' : '1px solid #cbd5e1',
+                          background: searchScopeTab === 'decks' ? 'var(--mr-pale, #f0fdf4)' : 'transparent',
+                          color: searchScopeTab === 'decks' ? 'var(--mr-ink, #15803d)' : 'var(--mr-muted, #64748b)',
+                        }}
+                      >
+                        Pastas ({matchingDecks.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSearchScopeTab('cards')}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 8,
+                          fontSize: '.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: searchScopeTab === 'cards' ? '1.5px solid var(--mr-green, #16a34a)' : '1px solid #cbd5e1',
+                          background: searchScopeTab === 'cards' ? 'var(--mr-pale, #f0fdf4)' : 'transparent',
+                          color: searchScopeTab === 'cards' ? 'var(--mr-ink, #15803d)' : 'var(--mr-muted, #64748b)',
+                        }}
+                      >
+                        Flashcards ({matchingCards.length})
+                      </button>
+                    </div>
                   </div>
-                  {matchingDecks.length === 0 ? (
-                    <div className="mr-legacy-empty" style={{ padding: '32px 16px' }}>
-                      Nenhuma pasta médica encontrada com esse termo. Tente buscar por &ldquo;músculo&rdquo;, &ldquo;neuro&rdquo;, &ldquo;uc&rdquo; ou navegue pelas pastas abaixo.
+
+                  {matchingCards.length > 0 && onStudyCards && (
+                    <div
+                      style={{
+                        padding: '12px 16px',
+                        background: 'linear-gradient(135deg, #15803d 0%, #16a34a 100%)',
+                        borderRadius: 14,
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 12,
+                        marginBottom: 18,
+                        boxShadow: '0 4px 14px rgba(22,163,74,0.25)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '.92rem' }}>
+                          ⚡ Estudo Focado com o Resultado da Busca
+                        </div>
+                        <div style={{ fontSize: '.78rem', opacity: 0.9, marginTop: 2 }}>
+                          Pratique instantaneamente todos os {matchingCards.length} flashcards contendo &ldquo;{searchQuery}&rdquo;.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onStudyCards(matchingCards, `Busca: "${searchQuery}"`)}
+                        style={{
+                          background: '#fff',
+                          color: '#15803d',
+                          border: 'none',
+                          borderRadius: 9,
+                          padding: '8px 16px',
+                          fontSize: '.82rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        ▶ Iniciar Estudo ({matchingCards.length})
+                      </button>
+                    </div>
+                  )}
+
+                  {matchingDecks.length === 0 && matchingCards.length === 0 ? (
+                    <div className="mr-legacy-empty" style={{ padding: '36px 16px', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: '.95rem' }}>
+                        Nenhum resultado encontrado para &ldquo;{searchQuery}&rdquo;.
+                      </p>
+                      <p style={{ margin: '6px 0 0', fontSize: '.84rem', color: 'var(--mr-muted, #64748b)' }}>
+                        Verifique a digitação ou tente termos mais amplos (ex: &ldquo;músculo&rdquo;, &ldquo;neuro&rdquo;, &ldquo;fármaco&rdquo;).
+                      </p>
                     </div>
                   ) : (
-                    <div className="mr-legacy-category-grid" style={{ marginBottom: 24 }}>
-                      {matchingDecks.map((deck) => {
-                        const total = cardsInSubtree(deck.id)
-                        return (
-                          <div
-                            key={deck.id}
-                            className="mr-legacy-category"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => onDeckClick(deck.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') onDeckClick(deck.id)
-                            }}
-                          >
-                            <div className="mr-card-top">
-                              <span className="mr-card-icon">📂</span>
-                              <div className="mr-card-top-right">
-                                <span className="mr-legacy-tag">Resultado</span>
-                              </div>
-                            </div>
-                            <div className="mr-card-body">
-                              <h3>{deck.title}</h3>
-                              <p>{deck.description || 'Pasta do acervo médico MedReview.'}</p>
-                            </div>
-                            <div className="mr-card-foot">
-                              <span className="mr-card-count">📚 {total} cartas</span>
-                              <div className="mr-card-foot-actions">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (onStudyDeck) onStudyDeck(deck.id)
-                                    else onDeckClick(deck.id)
-                                  }}
-                                  style={{ background: '#16a34a', color: '#fff', border: 'none', fontWeight: 800 }}
-                                >
-                                  ⚡ Estudar
-                                </button>
-                                <span className="mr-card-arrow">→</span>
-                              </div>
-                            </div>
+                    <>
+                      {/* Pastas correspondentes */}
+                      {(searchScopeTab === 'all' || searchScopeTab === 'decks') && matchingDecks.length > 0 && (
+                        <div style={{ marginBottom: 24 }}>
+                          <div style={{ fontSize: '.82rem', fontWeight: 800, color: 'var(--mr-ink, #15803d)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 10 }}>
+                            📁 Pastas Médicas ({matchingDecks.length})
                           </div>
-                        )
-                      })}
-                    </div>
+                          <div className="mr-legacy-category-grid">
+                            {matchingDecks.map((deck) => {
+                              const total = cardsInSubtree(deck.id)
+                              return (
+                                <div
+                                  key={deck.id}
+                                  className="mr-legacy-category"
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => onDeckClick(deck.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') onDeckClick(deck.id)
+                                  }}
+                                >
+                                  <div className="mr-card-top">
+                                    <span className="mr-card-icon">📂</span>
+                                    <div className="mr-card-top-right">
+                                      <span className="mr-legacy-tag">Pasta</span>
+                                    </div>
+                                  </div>
+                                  <div className="mr-card-body">
+                                    <h3>{highlightMatch(deck.title, searchQuery)}</h3>
+                                    <p>{deck.description ? highlightMatch(deck.description, searchQuery) : 'Pasta do acervo médico MedReview.'}</p>
+                                  </div>
+                                  <div className="mr-card-foot">
+                                    <span className="mr-card-count">📚 {total} cartas</span>
+                                    <div className="mr-card-foot-actions">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (onStudyDeck) onStudyDeck(deck.id)
+                                          else onDeckClick(deck.id)
+                                        }}
+                                        style={{ background: '#16a34a', color: '#fff', border: 'none', fontWeight: 800 }}
+                                      >
+                                        ⚡ Estudar
+                                      </button>
+                                      <span className="mr-card-arrow">→</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Flashcards correspondentes */}
+                      {(searchScopeTab === 'all' || searchScopeTab === 'cards') && matchingCards.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: '.82rem', fontWeight: 800, color: 'var(--mr-ink, #15803d)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 10 }}>
+                            🃏 Flashcards Médicos ({matchingCards.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {matchingCards.slice(0, searchCardLimit).map((card) => {
+                              const deckObj = decks.find((d) => d.id === card.deck)
+                              return (
+                                <div
+                                  key={card.id}
+                                  style={{
+                                    border: '1px solid var(--mr-line, #e2e8f0)',
+                                    borderRadius: 14,
+                                    padding: '12px 16px',
+                                    background: 'var(--mr-pale, #fff)',
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'flex-start',
+                                    gap: 14,
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <div style={{ flex: 1, minWidth: 240 }}>
+                                    {deckObj && (
+                                      <div style={{ marginBottom: 6 }}>
+                                        <span
+                                          onClick={() => onDeckClick(deckObj.id)}
+                                          role="button"
+                                          tabIndex={0}
+                                          style={{
+                                            background: '#f1f5f9',
+                                            color: '#334155',
+                                            padding: '2px 8px',
+                                            borderRadius: 6,
+                                            fontSize: '.72rem',
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                          }}
+                                          title="Clique para ir até esta pasta"
+                                        >
+                                          📁 {deckObj.title}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div style={{ fontWeight: 700, fontSize: '.9rem', color: 'var(--mr-text, #1e293b)', lineHeight: 1.4 }}>
+                                      {highlightMatch(card.q, searchQuery)}
+                                    </div>
+                                    {card.a && (
+                                      <div style={{ fontSize: '.82rem', color: 'var(--mr-muted, #64748b)', marginTop: 4, lineHeight: 1.4 }}>
+                                        <strong style={{ color: 'var(--mr-ink, #15803d)' }}>R: </strong>
+                                        {highlightMatch(card.a.length > 200 ? card.a.slice(0, 200) + '…' : card.a, searchQuery)}
+                                      </div>
+                                    )}
+                                    {card.group && (
+                                      <div style={{ marginTop: 6 }}>
+                                        <span
+                                          style={{
+                                            background: 'rgba(22,163,74,0.1)',
+                                            color: 'var(--mr-ink, #15803d)',
+                                            padding: '2px 8px',
+                                            borderRadius: 999,
+                                            fontSize: '.7rem',
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          {highlightMatch(card.group, searchQuery)}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                                    {onStudyCards && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onStudyCards([card], `Card: ${card.q.slice(0, 30)}`)}
+                                        style={{
+                                          background: 'var(--mr-green, #16a34a)',
+                                          color: '#fff',
+                                          border: 'none',
+                                          borderRadius: 8,
+                                          padding: '6px 12px',
+                                          fontSize: '.75rem',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        ⚡ Praticar
+                                      </button>
+                                    )}
+                                    {deckObj && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeckClick(deckObj.id)}
+                                        style={{
+                                          background: 'transparent',
+                                          color: 'var(--mr-muted, #64748b)',
+                                          border: '1px solid #cbd5e1',
+                                          borderRadius: 8,
+                                          padding: '6px 10px',
+                                          fontSize: '.75rem',
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        Abrir pasta
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          {matchingCards.length > searchCardLimit && (
+                            <div style={{ textAlign: 'center', marginTop: 14 }}>
+                              <button
+                                type="button"
+                                onClick={() => setSearchCardLimit((l) => l + 30)}
+                                style={{
+                                  background: 'transparent',
+                                  border: '1.5px solid var(--mr-line, #cbd5e1)',
+                                  borderRadius: 10,
+                                  padding: '8px 18px',
+                                  fontSize: '.82rem',
+                                  fontWeight: 700,
+                                  color: 'var(--mr-ink, #15803d)',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Exibir mais ({matchingCards.length - searchCardLimit} restantes)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}

@@ -13,6 +13,8 @@ interface Card {
   deck: string
   q: string
   a: string
+  group?: string
+  ref?: string
   suspended?: boolean
   deleted?: boolean
   tags?: string[]

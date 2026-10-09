@@ -239,22 +239,31 @@ export function parseCardsFromCsv(csvText: string): CsvParseResult {
     }
   })
 
-  // Validação obrigatória: é necessário ter pelo menos 'frente' e 'verso'
+  let dataRows = allRows.slice(headerRowIndex + 1)
+
+  // Validação: se não achou cabeçalhos com palavras-chave, mas há pelo menos 2 colunas, usa mapeamento posicional
   if (frenteIdx === -1 || versoIdx === -1) {
-    return {
-      cards: [],
-      totalRows: allRows.length - headerRowIndex - 1,
-      validCount: 0,
-      skippedEmptyCount: 0,
-      detectedDelimiter: delimiter,
-      headersFound: rawHeaders.map((h) => h.trim()),
-      error: 'O CSV precisa ter as colunas: pasta, grupo, frente, verso, referencia',
+    if (rawHeaders.length >= 2) {
+      frenteIdx = 0
+      versoIdx = 1
+      if (rawHeaders.length >= 3) grupoIdx = 2
+      if (rawHeaders.length >= 4) pastaIdx = 3
+      dataRows = allRows.slice(headerRowIndex) // Inclui a primeira linha como dados
+    } else {
+      return {
+        cards: [],
+        totalRows: allRows.length - headerRowIndex - 1,
+        validCount: 0,
+        skippedEmptyCount: 0,
+        detectedDelimiter: delimiter,
+        headersFound: rawHeaders.map((h) => h.trim()),
+        error: 'O CSV precisa ter pelo menos duas colunas (frente e verso).',
+      }
     }
   }
 
   const cards: ParsedCsvCard[] = []
   let skippedEmptyCount = 0
-  const dataRows = allRows.slice(headerRowIndex + 1)
 
   for (const row of dataRows) {
     // Linha totalmente vazia

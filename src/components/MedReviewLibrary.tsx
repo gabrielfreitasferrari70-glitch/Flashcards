@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, useCallback } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import { parseCardsFromCsv, type ParsedCsvCard } from '@/lib/csvImport'
+import { highlightMatch, normalizeSearchText } from '@/lib/searchUtils'
 import {
   createCard,
   createDeck,
@@ -24,14 +25,22 @@ import {
 import { downloadFullBackup } from '@/services/fullBackup'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
-type Deck = { id: string; title: string; kind: string; order: number; parent?: string }
+type Deck = {
+  id: string
+  title: string
+  kind: string
+  order: number
+  parent?: string
+  deleted?: boolean
+  description?: string
+}
 type Card = {
   id: string
   deck: string
   q: string
   a: string
-  group: string
-  ref: string
+  group?: string
+  ref?: string
   suspended?: boolean
   diagram_svg?: string
   image?: string
@@ -45,7 +54,7 @@ type Props = {
   cards: Card[]
   reviews?: any[]
   onBack: () => void
-  onRefresh: () => Promise<void>
+  onRefresh: () => Promise<any> | void
   onStudy: (deckId: string) => void
 }
 type ModalState =
@@ -907,6 +916,22 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
       await onRefresh()
     }, 'Cartão excluído.')
   }
+
+  const readFile = (file?: File) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result
+      if (typeof content === 'string') {
+        setImportText(content)
+      }
+    }
+    reader.onerror = () => {
+      setError('Erro ao ler o arquivo selecionado.')
+    }
+    reader.readAsText(file)
+  }
+
   const submitImport = async () => {
     if (modal.type !== 'import') return
     if (!modal.deckId) return setError('Escolha a pasta de destino.')
@@ -1718,7 +1743,7 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
               }}
               onDrop={(e) => {
                 e.preventDefault()
-                if (dragDeckId && dragOverOk(section.key)) submitDragToRoot(section.key)
+                if (dragDeckId && dragOverOk(section.key)) submitDragToRoot(section.kind)
               }}
             >
               <div className="mr-lib-section-head">

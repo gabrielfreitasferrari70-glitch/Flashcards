@@ -833,6 +833,15 @@ export function parseAnkiText(content: string, fileName: string): AnkiPackageRes
       }
     }
 
+    let group = ''
+    let ref = ''
+    if (parts.length >= 3) {
+      group = parts[2].trim()
+    }
+    if (parts.length >= 4) {
+      ref = parts[3].trim()
+    }
+
     if (
       q.includes('Atualize para a versão mais recente') ||
       q.includes('Please update to the latest Anki version')
@@ -846,6 +855,8 @@ export function parseAnkiText(content: string, fileName: string): AnkiPackageRes
         q,
         a: a || (isCloze ? 'Complete a lacuna' : ''),
         tags: tags.length ? tags : undefined,
+        group: group || undefined,
+        ref: ref || undefined,
         isCloze,
       })
     }
@@ -986,7 +997,15 @@ export function parseCardsFromRawText(rawText: string, defaultTitle = 'Flashcard
         }
       }
     } catch {
-      /* não é JSON válido, prossegue para CSV */
+      /* não é JSON válido, prossegue para TSV ou CSV */
+    }
+  }
+
+  // Se o texto contém tabulações (\t), prioriza TSV (formato padrão de saída de IAs e Anki)
+  if (trimmed.includes('\t')) {
+    const textRes = parseAnkiText(trimmed, defaultTitle)
+    if (textRes.cards && textRes.cards.length > 0) {
+      return textRes
     }
   }
 
