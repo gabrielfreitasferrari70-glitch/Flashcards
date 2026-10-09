@@ -43,14 +43,19 @@ export interface ReviewInput {
 }
 
 export const createReview = async (data: ReviewInput) => {
-  const { data: user } = await supabase.auth.getUser()
-  if (!user.user) throw new Error('Not authenticated')
+  const { data: { session } } = await supabase.auth.getSession()
+  let userId = session?.user?.id
+  if (!userId) {
+    const { data: user } = await supabase.auth.getUser()
+    userId = user.user?.id
+  }
+  if (!userId) throw new Error('Not authenticated')
 
   const targetCardId = data.card_id || data.card_ref || data.card
   if (!targetCardId) throw new Error('Identificador do cartão (card_id) não fornecido')
 
   const { data: res, error } = await supabase.from('mr_reviews').insert({
-    user_id: user.user.id,
+    user_id: userId,
     card_id: targetCardId,
     rating: data.rating,
     stability: data.stability,
@@ -61,7 +66,7 @@ export const createReview = async (data: ReviewInput) => {
     state: data.state,
     due: data.due,
     reviewed_at: data.reviewed_at
-  }).select().single()
+  }).select('id').single()
 
   if (error) throw error
   return res

@@ -413,9 +413,10 @@ function parseManualInterval(raw: string): { days: number; label: string } | nul
 const fullCardsCache = new Map<string, Card>()
 
 // Carrega o catálogo mestre de 1.352 cartas do Vercel Edge CDN (0 egress no Supabase)
+let catalogLoaded = false
 let catalogLoadingPromise: Promise<any> | null = null
 async function ensureCatalogLoaded(): Promise<any> {
-  if (fullCardsCache.size >= 1350) return
+  if (catalogLoaded || fullCardsCache.size >= 1350) return
   if (!catalogLoadingPromise) {
     catalogLoadingPromise = fetch('/catalog.json')
       .then((r) => (r.ok ? r.json() : null))
@@ -426,15 +427,13 @@ async function ensureCatalogLoaded(): Promise<any> {
               fullCardsCache.set(c.id, c)
             }
           }
+          catalogLoaded = true
         }
         return cat
       })
       .catch((err) => {
         console.warn('Erro ao carregar /catalog.json:', err)
         return null
-      })
-      .finally(() => {
-        catalogLoadingPromise = null
       })
   }
   return catalogLoadingPromise
@@ -2536,25 +2535,9 @@ export default function Index() {
       const currentUserId = user?.id || pb.authStore.record?.id
 
       // 1. Garante que o catálogo mestre de 1.352 cartas do Vercel Edge CDN está em memória (0 egress Supabase)
-      if (fullCardsCache.size < 1350) {
-        try {
-          const res = await fetch('/catalog.json')
-          if (res.ok) {
-            const cat = await res.json()
-            if (cat.cards && Array.isArray(cat.cards)) {
-              for (const c of cat.cards) {
-                if (c.id && c.q && c.q !== 'Carregando cartão...') {
-                  fullCardsCache.set(c.id, c)
-                }
-              }
-            }
-            if (cat.decks && Array.isArray(cat.decks)) {
-              setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
-            }
-          }
-        } catch (e) {
-          console.warn('Erro ao carregar /catalog.json:', e)
-        }
+      const cat = await ensureCatalogLoaded()
+      if (cat?.decks && Array.isArray(cat.decks)) {
+        setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
       }
 
       // 2. Busca no Supabase ESTRITAMENTE dados do usuário conectado (zero egress no catálogo mestre)
@@ -2571,7 +2554,7 @@ export default function Index() {
         while (true) {
           const { data, error } = await supabase
             .from('mr_cards')
-            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, created_at')
             .eq('user_id', currentUserId)
             .range(from, from + PAGE - 1)
           if (error || !data || data.length === 0) break
@@ -2629,7 +2612,9 @@ export default function Index() {
         })
       if (validDecks.length > 0) {
         setDecks(validDecks)
-        setLocalCache('mr_cached_decks', validDecks)
+        setTimeout(() => {
+          setLocalCache('mr_cached_decks', validDecks).catch(() => {})
+        }, 50)
       }
 
       // 4. Processa Cartões
@@ -2656,7 +2641,9 @@ export default function Index() {
       // 5. Processa Revisões (apenas do usuário conectado!)
       const validReviews = userReviewsData || []
       setReviews(validReviews)
-      setLocalCache('mr_cached_reviews', validReviews)
+      setTimeout(() => {
+        setLocalCache('mr_cached_reviews', validReviews).catch(() => {})
+      }, 100)
 
       return { decks: validDecks, cards: filteredCards }
     } catch (e: any) {
@@ -2956,19 +2943,13 @@ export default function Index() {
         // Fallback instantâneo via catalog.json do Vercel/GitHub (zero delay, renderização imediata de 1352 cartas)
         if (active) {
           try {
-            const res = await fetch('/catalog.json')
-            if (res.ok) {
-              const cat = await res.json()
+            const cat = await ensureCatalogLoaded()
+            if (cat) {
               if (cat.decks && cat.decks.length > 0) {
                 setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
               }
               if (cat.cards && cat.cards.length > 0) {
                 setCards((prev) => (prev.length === 0 ? cat.cards : prev))
-                for (const c of cat.cards) {
-                  if (c.id && c.q && c.q !== 'Carregando cartão...') {
-                    fullCardsCache.set(c.id, c)
-                  }
-                }
               }
             }
           } catch {}

@@ -41,7 +41,16 @@ export async function flushOfflineReviews(): Promise<{ synced: number; error?: s
 
   try {
     // Envia todas as avaliações acumuladas em lote para o Supabase
-    const { error } = await supabase.from('mr_reviews').insert(queue)
+    // Remove IDs sintéticos não-UUID para que o PostgreSQL gere UUIDs válidos
+    const isUuid = (id?: string) =>
+      typeof id === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    const payload = queue.map((r) => {
+      if (r.id && isUuid(r.id)) return r
+      const { id, ...rest } = r
+      return rest
+    })
+    const { error } = await supabase.from('mr_reviews').insert(payload)
     if (error) throw error
 
     // Limpa a fila após confirmação de sucesso
