@@ -1135,18 +1135,17 @@ export default function MedReviewLibrary({ decks, cards, onBack, onRefresh, onSt
             onClick={async () => {
               try {
                 setBusy(true)
-                setMessage('Restaurando suas 34 pastas e 863 cartões do backup...')
-                await restoreBackupData(true)
+                setMessage('Sincronizando pastas e cartões com o servidor...')
                 await onRefresh()
-                setMessage('Sucesso! 34 pastas e 863 cartões restaurados com perfeição.')
+                setMessage('Sucesso! Biblioteca sincronizada.')
               } catch (e: any) {
-                setError('Erro ao restaurar: ' + (e?.message || e))
+                setError('Erro ao sincronizar: ' + (e?.message || e))
               } finally {
                 setBusy(false)
               }
             }}
           >
-            ↺ Restaurar 863 cartas
+            ↻ Sincronizar Biblioteca
           </button>
         )}
         <span className="mr-lib-count">

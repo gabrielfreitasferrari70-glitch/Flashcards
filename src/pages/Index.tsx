@@ -2273,14 +2273,20 @@ export default function Index() {
       const rawDecks = ((await decksPromise) as any[]) || []
       const frontlineDeckIds = getFrontlineDeckIds()
       const seenDeckIds = new Set<string>()
+      const rootFolder = rawDecks.find((d) => !d.parent && d.title?.trim().toLowerCase() === 'minhas pastas')
       const validDecks = rawDecks
         .filter((row) => !row.deleted && !seenDeckIds.has(row.id) && seenDeckIds.add(row.id))
         .map((row) => {
+          let parent = row.parent
+          const norm = (row.title || '').trim().toLowerCase()
+          if (!parent && (norm === 'uc-1' || norm === 'uc1' || norm === 'uc-2' || norm === 'uc2')) {
+            if (rootFolder) parent = rootFolder.id
+          }
           const isFrontline =
             !!row.frontline ||
             frontlineDeckIds.has(row.id) ||
-            (!row.parent && row.kind === 'custom')
-          return { ...row, frontline: isFrontline }
+            (!parent && row.kind === 'custom')
+          return { ...row, parent, frontline: isFrontline }
         })
       setDecks(validDecks)
       setLocalCache('mr_cached_decks', validDecks)
@@ -2408,13 +2414,17 @@ export default function Index() {
 
   const validCards = useMemo(() => {
     const seen = new Set<string>()
+    const validDeckIds = new Set(decks.map((d) => d.id))
     return cards.filter((c) => {
       const baseId = c.id.replace(/::rev$/, '')
       if (seen.has(baseId)) return false
       seen.add(baseId)
-      return !c.deleted
+      if (c.deleted) return false
+      const dId = c.deck || (c as any).deck_id
+      if (dId && !validDeckIds.has(dId)) return false
+      return true
     })
-  }, [cards])
+  }, [cards, decks])
 
   const allCards = validCards
   const totalCards = validCards.length
@@ -2503,6 +2513,28 @@ export default function Index() {
     let active = true
     const boot = async () => {
       try {
+        // Invalidação global de cache para sincronizar 1.352 cartas e sincronização em tempo real
+        const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261009_clean_1352_v1'
+        const isFreshVersion = localStorage.getItem('mr_cache_version') === CURRENT_APP_CACHE_VERSION
+        if (!isFreshVersion) {
+          await clearLocalCache()
+          try {
+            if (window.indexedDB) {
+              window.indexedDB.deleteDatabase('medreview_cache_db')
+              window.indexedDB.deleteDatabase('medreview_local_cache')
+            }
+          } catch {}
+          localStorage.removeItem('mr_cached_decks')
+          localStorage.removeItem('mr_cached_cards')
+          localStorage.removeItem('mr_cached_meta_cards')
+          localStorage.removeItem('mr_cached_reviews')
+          localStorage.removeItem('mr_restored_clean_v6')
+          localStorage.removeItem('mr_frontline_decks_v1')
+          localStorage.removeItem('mr_deleted_cards_v1')
+          localStorage.removeItem('mr_deleted_decks_v1')
+          localStorage.setItem('mr_cache_version', CURRENT_APP_CACHE_VERSION)
+        }
+
         // Verifica se já existe sessão ativa salva no navegador (Supabase Auth em localStorage)
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
@@ -2523,28 +2555,6 @@ export default function Index() {
         if (active) {
           setUser(pb.authStore.record)
           setAuth('in')
-        }
-
-        // Invalidação global de cache para sincronizar 1.352 cartas e sincronização em tempo real
-        const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_realtime_v4'
-        const isFreshVersion = localStorage.getItem('mr_cache_version') === CURRENT_APP_CACHE_VERSION
-        if (!isFreshVersion) {
-          await clearLocalCache()
-          try {
-            if (window.indexedDB) {
-              window.indexedDB.deleteDatabase('medreview_cache_db')
-              window.indexedDB.deleteDatabase('medreview_local_cache')
-            }
-          } catch {}
-          localStorage.removeItem('mr_cached_decks')
-          localStorage.removeItem('mr_cached_cards')
-          localStorage.removeItem('mr_cached_meta_cards')
-          localStorage.removeItem('mr_cached_reviews')
-          localStorage.removeItem('mr_restored_clean_v6')
-          localStorage.removeItem('mr_frontline_decks_v1')
-          localStorage.removeItem('mr_deleted_cards_v1')
-          localStorage.removeItem('mr_deleted_decks_v1')
-          localStorage.setItem('mr_cache_version', CURRENT_APP_CACHE_VERSION)
         }
 
         // 1. Carregamento ultra-rápido instantâneo do cache local apenas se a versão for válida
@@ -2569,6 +2579,7 @@ export default function Index() {
                 const dedupedDecks = cachedDecks.filter((d) => {
                   if (d.parent) return true
                   const norm = d.title.trim().toLowerCase()
+                  if (norm === 'uc-1' || norm === 'uc1' || norm === 'uc-2' || norm === 'uc2') return false
                   if (seenTitles.has(norm)) return false
                   seenTitles.add(norm)
                   return true
@@ -2678,11 +2689,13 @@ export default function Index() {
         throw new Error('Conta criada! Aguarde a aprovação do administrador para entrar.')
       }
       
+      fullCardsCache.clear()
       setUser(pb.authStore.record)
       setAuth('in')
       await loadData()
     } catch (e: any) {
       if (pb.authStore.isValid) {
+        fullCardsCache.clear()
         setUser(pb.authStore.record)
         setAuth('in')
         await loadData()
@@ -2698,6 +2711,7 @@ export default function Index() {
   }
   const logout = () => {
     pb.authStore.clear()
+    fullCardsCache.clear()
     setUser(null)
     setAuth('out')
     setDecks([])
@@ -4138,6 +4152,7 @@ export default function Index() {
     )
     .filter((d) => {
       const norm = d.title.trim().toLowerCase()
+      if (norm === 'uc-1' || norm === 'uc1' || norm === 'uc-2' || norm === 'uc2') return false
       if (seenUserDeckTitles.has(norm)) return false
       seenUserDeckTitles.add(norm)
       return true

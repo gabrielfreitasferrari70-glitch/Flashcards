@@ -550,6 +550,12 @@ export const restoreBackupData = async (force = false) => {
   if (!userAuth.user) return { ok: false, error: 'Usuário não autenticado' }
   const userId = userAuth.user.id
 
+  // Apenas a conta Administrador / Docente gerencia o catálogo mestre.
+  // Usuários comuns compartilham os 1.352 cartões centralizados do Docente e não devem duplicá-los.
+  if (userId !== '2c337bd5-b283-4ce8-9c0a-c817e4cdd697') {
+    return { ok: true, skipped: true }
+  }
+
   // Se não for forçado, verifica se já foi restaurado e se os cartões estão saudáveis
   if (!force) {
     const alreadyRestored = localStorage.getItem('mr_restored_clean_v6') === 'done'
