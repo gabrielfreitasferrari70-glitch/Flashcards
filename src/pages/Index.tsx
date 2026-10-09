@@ -449,6 +449,7 @@ function parseManualInterval(raw: string): { days: number; label: string } | nul
 
 // Cache global em memória para conteúdo completo dos cartões (carregamento sob demanda sem re-fetch)
 const fullCardsCache = new Map<string, Card>()
+const catalogCardIds = new Set<string>()
 
 // Carrega o catálogo mestre de 1.352 cartas do Vercel Edge CDN (0 egress no Supabase)
 let catalogLoaded = false
@@ -463,6 +464,7 @@ async function ensureCatalogLoaded(): Promise<any> {
           for (const c of cat.cards) {
             if (c.id && c.q && c.q !== 'Carregando cartão...') {
               fullCardsCache.set(c.id, c)
+              catalogCardIds.add(c.id)
             }
           }
           catalogLoaded = true
@@ -2897,22 +2899,20 @@ export default function Index() {
         setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
       }
 
-      // 2. Busca no Supabase ESTRITAMENTE dados do usuário conectado (zero egress no catálogo mestre)
+      // 2. Busca no Supabase pastas e todos os cartões compartilhados entre os usuários
       const customDecksPromise = supabase
         .from('mr_decks')
         .select('*')
         .order('order')
 
       const customCardsPromise = (async () => {
-        if (!currentUserId) return []
         const list: any[] = []
         let from = 0
         const PAGE = 1000
         while (true) {
           const { data, error } = await supabase
             .from('mr_cards')
-            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, created_at')
-            .eq('user_id', currentUserId)
+            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
             .range(from, from + PAGE - 1)
           if (error || !data || data.length === 0) break
           list.push(...data)
@@ -2975,17 +2975,27 @@ export default function Index() {
       }
 
       // 4. Processa Cartões
-      // Adiciona cartões customizados criados pelo usuário ao cache de memória
+      // Adiciona todos os cartões do Supabase (compartilhados entre usuários) ao cache de memória
       const customCards = customCardsData || []
+      const currentSupabaseCardIds = new Set<string>()
       for (const cc of customCards) {
         if (cc.id && cc.q) {
+          currentSupabaseCardIds.add(cc.id)
           const cardObj: Card = {
             ...cc,
             deck: cc.deck_id,
             created: cc.created_at,
             image: cc.image_url,
+            imageUrl: cc.image_url,
           }
           fullCardsCache.set(cc.id, cardObj)
+        }
+      }
+
+      // Remove do cache cartões customizados que foram excluídos do Supabase por outros usuários
+      for (const cachedId of Array.from(fullCardsCache.keys())) {
+        if (!catalogCardIds.has(cachedId) && !currentSupabaseCardIds.has(cachedId)) {
+          fullCardsCache.delete(cachedId)
         }
       }
 
@@ -3372,6 +3382,20 @@ export default function Index() {
       .on('broadcast', { event: 'db_mutation' }, () => {
         debouncedReload()
       })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mr_cards' },
+        () => {
+          debouncedReload()
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mr_decks' },
+        () => {
+          debouncedReload()
+        },
+      )
       .subscribe()
 
     return () => {

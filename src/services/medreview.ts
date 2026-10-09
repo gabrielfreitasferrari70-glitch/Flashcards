@@ -109,7 +109,6 @@ export const createDeck = async (
   let siblings = supabase
     .from('mr_decks')
     .select('order')
-    .eq('user_id', user.user.id)
     .order('order', { ascending: false })
     .limit(1)
   siblings = parentId ? siblings.eq('parent', parentId) : siblings.is('parent', null)
