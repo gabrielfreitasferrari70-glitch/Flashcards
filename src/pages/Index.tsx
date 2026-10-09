@@ -2291,9 +2291,11 @@ export default function Index() {
   const [flipped, setFlipped] = useState(false)
   const [studyMode, setStudyMode] = useState<'flip' | 'write' | 'reverse'>('flip')
   const [typedAnswer, setTypedAnswer] = useState('')
-  const [writeFeedback, setWriteFeedback] = useState<null | { ok: boolean; similarity: number }>(
-    null,
-  )
+  const [writeFeedback, setWriteFeedback] = useState<null | {
+    ok: boolean
+    similarity: number
+    userText?: string
+  }>(null)
   const [mcPicked, setMcPicked] = useState<string | null>(null)
   const [queue, setQueue] = useState<Card[]>([])
   const [qIdx, setQIdx] = useState(0)
@@ -3307,11 +3309,11 @@ export default function Index() {
     if (!card) return
     const expected = studyMode === 'reverse' ? card.q : card.a
     const sim = answerSimilarity(typedAnswer, expected)
-    setWriteFeedback({ ok: sim >= 0.7, similarity: sim })
+    setWriteFeedback({ ok: sim >= 0.7, similarity: sim, userText: typedAnswer })
     setFlipped(true)
   }
   const skipWrite = () => {
-    setWriteFeedback(null)
+    setWriteFeedback(typedAnswer ? { ok: false, similarity: 0, userText: typedAnswer } : null)
     setFlipped(true)
   }
 
@@ -4814,19 +4816,60 @@ export default function Index() {
                 {writeFeedback && (
                   <div
                     style={{
-                      marginBottom: 12,
-                      padding: '0.6rem 0.9rem',
-                      borderRadius: 10,
+                      marginBottom: 14,
+                      padding: '0.75rem 1rem',
+                      borderRadius: 12,
                       background: writeFeedback.ok ? '#f0fdf4' : '#fef2f2',
+                      border: `1.5px solid ${writeFeedback.ok ? '#bbf7d0' : '#fecaca'}`,
                       color: writeFeedback.ok ? '#166534' : '#991b1b',
-                      fontWeight: 700,
-                      fontSize: '.86rem',
                     }}
                   >
-                    {writeFeedback.ok ? '✅ Correto!' : '❌ Não exatamente —'}{' '}
-                    <span style={{ fontWeight: 600, opacity: 0.85 }}>
-                      semelhança {Math.round(writeFeedback.similarity * 100)}%
-                    </span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontWeight: 700,
+                        fontSize: '.88rem',
+                      }}
+                    >
+                      <span>
+                        {writeFeedback.ok ? '✅ Correto!' : '❌ Não exatamente —'}{' '}
+                        <span style={{ fontWeight: 600, opacity: 0.85 }}>
+                          semelhança {Math.round(writeFeedback.similarity * 100)}%
+                        </span>
+                      </span>
+                    </div>
+                    {writeFeedback.userText && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: '8px 12px',
+                          background: '#ffffff',
+                          borderRadius: 8,
+                          border: `1px solid ${writeFeedback.ok ? '#86efac' : '#fca5a5'}`,
+                          color: '#1e293b',
+                          fontSize: '.88rem',
+                          lineHeight: 1.45,
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '.72rem',
+                            fontWeight: 800,
+                            letterSpacing: '.06em',
+                            textTransform: 'uppercase',
+                            color: writeFeedback.ok ? '#15803d' : '#b91c1c',
+                            marginBottom: 3,
+                          }}
+                        >
+                          Sua resposta
+                        </span>
+                        <span>{writeFeedback.userText}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <strong
