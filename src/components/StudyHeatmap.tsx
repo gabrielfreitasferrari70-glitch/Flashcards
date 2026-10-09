@@ -165,6 +165,7 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
 
   return (
     <div
+      className="mr-legacy-study-heatmap"
       style={{
         background: '#ffffff',
         border: '1.5px solid #d1fae5',

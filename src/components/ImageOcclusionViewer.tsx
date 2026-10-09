@@ -20,6 +20,7 @@ export const ImageOcclusionViewer = React.memo<Props>(({
   const [isExpanded, setIsExpanded] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [manuallyRevealed, setManuallyRevealed] = useState<Record<string, boolean>>({})
+  const [benchMode, setBenchMode] = useState(false)
   const [imgError, setImgError] = useState(false)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
@@ -138,6 +139,22 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     e.stopPropagation()
     setManuallyRevealed((prev) => ({ ...prev, [id]: !prev[id] }))
   }
+
+  const revealAllMasks = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const all: Record<string, boolean> = {}
+    normalizedMasks.forEach((m) => { all[m.id] = true })
+    setManuallyRevealed(all)
+  }
+
+  const coverAllMasks = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setManuallyRevealed({})
+  }
+
+  const benchIdentifiedCount = useMemo(() => {
+    return normalizedMasks.filter((m) => !!manuallyRevealed[m.id]).length
+  }, [normalizedMasks, manuallyRevealed])
 
   // Cálculo de zoom e ponto focal com suporte a pan suave
   let transformStyle = 'none'
@@ -266,12 +283,12 @@ export const ImageOcclusionViewer = React.memo<Props>(({
             />
           )}
 
-          {/* Occlusion Rectangles (estilo clássico Anki com opacidade 100% sólida) */}
+          {/* Occlusion Rectangles (estilo clássico Anki com opacidade 100% sólida e suporte ao Modo Bancada) */}
           {normalizedMasks.map((mask: OcclusionMask, idx: number) => {
             const isActive = mask.id === activeMask?.id
-            if (isHideOne && !isActive) return null
+            if (isHideOne && !isActive && !benchMode) return null
 
-            const isShown = (revealed && isActive) || !!manuallyRevealed[mask.id]
+            const isShown = (!benchMode && revealed && isActive) || !!manuallyRevealed[mask.id]
 
             return (
               <div
@@ -279,10 +296,12 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                 onClick={(e) => toggleMask(mask.id, e)}
                 title={
                   isShown
-                    ? 'Estrutura revelada (clique para ocultar)'
-                    : isActive
-                      ? 'Pergunta atual (clique para espiar)'
-                      : 'Clique para espiar'
+                    ? (mask.label || `Estrutura ${idx + 1} (clique para cobrir)`)
+                    : benchMode
+                      ? `Alfinete ${idx + 1}: clique para revelar resposta`
+                      : isActive
+                        ? 'Pergunta atual (clique para espiar)'
+                        : 'Clique para espiar'
                 }
                 style={{
                   position: 'absolute',
@@ -297,27 +316,69 @@ export const ImageOcclusionViewer = React.memo<Props>(({
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxSizing: 'border-box',
-                  // ESTILO FIEL AO ANKI:
-                  // 1. REVELADO: TRANSPARENTE para enxergar 100% da anatomia por baixo
-                  // 2. ATIVO (pergunta): 100% OPACO VERMELHO (#dc2626) para nada vazar
-                  // 3. OUTROS (Hide All): 100% OPACO AMARELO (#ffea79)
+                  // ESTILO FIEL AO ANKI / BANCADA:
                   border: isShown
                     ? '2.5px solid #16a34a'
-                    : isActive
-                      ? '2.5px solid #b91c1c'
-                      : '1.5px solid #ca8a04',
+                    : benchMode
+                      ? '2px solid #7c3aed'
+                      : isActive
+                        ? '2.5px solid #b91c1c'
+                        : '1.5px solid #ca8a04',
                   background: isShown
                     ? 'transparent'
-                    : isActive
-                      ? '#ef4444'
-                      : '#fde047',
+                    : benchMode
+                      ? '#8b5cf6'
+                      : isActive
+                        ? '#ef4444'
+                        : '#fde047',
                   boxShadow: isShown
                     ? 'none'
-                    : isActive
-                      ? '0 0 12px rgba(239, 68, 68, 0.7)'
-                      : '0 1px 3px rgba(0,0,0,0.2)',
+                    : benchMode
+                      ? '0 0 10px rgba(139, 92, 246, 0.6)'
+                      : isActive
+                        ? '0 0 12px rgba(239, 68, 68, 0.7)'
+                        : '0 1px 3px rgba(0,0,0,0.2)',
+                  userSelect: 'none',
                 }}
-              />
+              >
+                {benchMode && !isShown && (
+                  <span
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      borderRadius: '50%',
+                      width: 20,
+                      height: 20,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      color: '#fff',
+                    }}
+                  >
+                    {idx + 1}
+                  </span>
+                )}
+                {benchMode && isShown && mask.label && !/^Estrutura\s+\d+$/i.test(mask.label.trim()) && (
+                  <span
+                    style={{
+                      background: 'rgba(255,255,255,0.92)',
+                      color: '#15803d',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: '92%',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    {mask.label}
+                  </span>
+                )}
+              </div>
             )
           })}
         </div>
@@ -517,11 +578,104 @@ export const ImageOcclusionViewer = React.memo<Props>(({
           >
             ⛶ Tela Cheia
           </button>
+
+          {/* Botão de Modo Bancada (Simulado de Prova Prática) */}
+          <button
+            type="button"
+            className="mr-occlusion-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              setBenchMode((prev) => !prev)
+            }}
+            title="Simulado de Prova Prática: todas as estruturas numeradas (estilo bancada/goteira)"
+            style={{
+              border: benchMode ? '1.5px solid #8b5cf6' : '1px solid #cbd5e1',
+              background: benchMode ? '#ede9fe' : '#fff',
+              color: benchMode ? '#6d28d9' : '#475569',
+              padding: '5px 10px',
+              borderRadius: 8,
+              fontSize: '.75rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            🧪 {benchMode ? 'Bancada Ativa' : 'Modo Bancada'}
+          </button>
         </div>
       </div>
 
       {/* Renderização normal da Imagem e Oclusões */}
       {renderImageCanvas(false)}
+
+      {/* Banner de Modo Bancada quando ativo */}
+      {benchMode && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '10px 16px',
+            background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)',
+            border: '1.5px solid #c4b5fd',
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            maxWidth: '920px',
+            boxSizing: 'border-box',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '1.2rem' }}>🧪</span>
+            <div>
+              <strong style={{ fontSize: '.88rem', color: '#5b21b6', display: 'block' }}>
+                Simulado de Prova Prática (Bancada)
+              </strong>
+              <span style={{ fontSize: '.76rem', color: '#6d28d9' }}>
+                Identificadas: <strong>{benchIdentifiedCount}</strong> de <strong>{normalizedMasks.length}</strong> alfinetes/estruturas
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              onClick={revealAllMasks}
+              style={{
+                background: '#fff',
+                border: '1px solid #c4b5fd',
+                color: '#6d28d9',
+                padding: '4px 10px',
+                borderRadius: 6,
+                fontSize: '.75rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              👁️ Revelar Todas
+            </button>
+            <button
+              type="button"
+              onClick={coverAllMasks}
+              style={{
+                background: '#fff',
+                border: '1px solid #c4b5fd',
+                color: '#6d28d9',
+                padding: '4px 10px',
+                borderRadius: 6,
+                fontSize: '.75rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              🔄 Cobrir Todas
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Banner de Gabarito com botão de alternar quando virado */}
       {revealed && (

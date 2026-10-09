@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import { Fragment, useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
@@ -2282,6 +2282,28 @@ export default function Index() {
   const [speechRate, setSpeechRate] = useState(1.0)
   const [lightboxImage, setLightboxImage] = useState<{ src: string; title?: string } | null>(null)
 
+  // Timer de Foco Rápido (Speed Focus Timer)
+  const [speedTimerSetting, setSpeedTimerSetting] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem('mr_speed_timer') || 0)
+    } catch {
+      return 0
+    }
+  })
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState<number>(0)
+
+  // Escala Dinâmica de Tipografia (A- / A+)
+  const [fontScale, setFontScale] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem('mr_font_scale') || 1.0)
+    } catch {
+      return 1.0
+    }
+  })
+
+  // Ref para gestos de swipe no touch (Mobile e iPad)
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+
   useEffect(() => {
     return speechService.subscribe(setIsSpeaking)
   }, [])
@@ -2290,6 +2312,23 @@ export default function Index() {
   useEffect(() => {
     speechService.stop()
   }, [qIdx, route.view, flipped])
+
+  // Contagem regressiva do Speed Focus Timer
+  useEffect(() => {
+    if (route.view !== 'study' || speedTimerSetting <= 0 || flipped) return
+    setTimerSecondsLeft(speedTimerSetting)
+    const interval = setInterval(() => {
+      setTimerSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          setFlipped(true)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [route.view, qIdx, flipped, speedTimerSetting])
 
   const retention = useMemo(() => getRetention(), [route, retentionTick])
   const schedulerSettings = useMemo(() => getSchedulerSettings(user?.id), [user?.id, retentionTick])
@@ -2412,6 +2451,36 @@ export default function Index() {
     (card: Card, cardId = card.id.replace(/::rev$/, '')) => reviewsByCard.get(cardId) || [],
     [reviewsByCard],
   )
+
+  // Detecção de Cartas Críticas (Leeches / Sanguessugas) — cartões com 2+ avaliações "Errei"
+  const leechCardIds = useMemo(() => {
+    const errorCountMap = new Map<string, number>()
+    for (const r of reviews) {
+      if (r.rating === 'again') {
+        const id = (r.card_id || r.card_ref || r.card) as string
+        if (id) {
+          errorCountMap.set(id, (errorCountMap.get(id) || 0) + 1)
+        }
+      }
+    }
+    const leeches = new Set<string>()
+    for (const [id, count] of errorCountMap.entries()) {
+      if (count >= 2) {
+        leeches.add(id)
+      }
+    }
+    return leeches
+  }, [reviews])
+
+  const leechCount = useMemo(() => {
+    let count = 0
+    for (const c of cards) {
+      if (!c.suspended && !c.deleted && leechCardIds.has(c.id)) {
+        count++
+      }
+    }
+    return count
+  }, [cards, leechCardIds])
 
   useEffect(() => {
     if (route.view === 'study' && queue[qIdx]) {
@@ -3157,6 +3226,15 @@ export default function Index() {
     }
     startStudy(clinicalCards, undefined, 'Modo Caso Clínico')
   }
+  const startLeechesMode = () => {
+    const targetCards = cards.filter((c) => !c.suspended && !c.deleted && leechCardIds.has(c.id))
+    if (!targetCards.length) {
+      setMsg('Nenhuma carta crítica (com 2+ erros acumulados) no momento! Seu domínio está excelente.')
+      window.setTimeout(() => setMsg(''), 3500)
+      return
+    }
+    startStudy(targetCards, undefined, `🩸 Cartas Críticas (${targetCards.length})`)
+  }
   const openNewFolder = (kind: 'tutoria' | 'prova' | 'custom' = 'custom') => {
     setDeckTitle('')
     setDeckKind(kind)
@@ -3585,6 +3663,79 @@ export default function Index() {
               <button className="mr-legacy-control" onClick={() => setQIdx(queue.length)}>
                 ✓ Concluído
               </button>
+              {/* Ajuste Dinâmico de Tipografia A- / A+ */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'var(--mr-card-bg, #fff)',
+                  border: '1px solid var(--mr-card-border, #cbd5e1)',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = Math.max(0.85, Number((fontScale - 0.15).toFixed(2)))
+                    setFontScale(next)
+                    localStorage.setItem('mr_font_scale', String(next))
+                  }}
+                  title="Reduzir tamanho do texto da carta (A-)"
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: '5px 8px',
+                    fontSize: '.72rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: 'var(--mr-text, #0f172a)',
+                  }}
+                >
+                  A-
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = Math.min(1.45, Number((fontScale + 0.15).toFixed(2)))
+                    setFontScale(next)
+                    localStorage.setItem('mr_font_scale', String(next))
+                  }}
+                  title="Aumentar tamanho do texto da carta (A+)"
+                  style={{
+                    border: 'none',
+                    borderLeft: '1px solid var(--mr-card-border, #cbd5e1)',
+                    background: 'transparent',
+                    padding: '5px 8px',
+                    fontSize: '.82rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: 'var(--mr-text, #0f172a)',
+                  }}
+                >
+                  A+
+                </button>
+              </div>
+              {/* Timer de Foco Rápido */}
+              <button
+                type="button"
+                className="mr-legacy-control"
+                onClick={() => {
+                  const nextVal = speedTimerSetting === 0 ? 10 : speedTimerSetting === 10 ? 15 : speedTimerSetting === 15 ? 30 : 0
+                  setSpeedTimerSetting(nextVal)
+                  localStorage.setItem('mr_speed_timer', String(nextVal))
+                  if (nextVal > 0) setTimerSecondsLeft(nextVal)
+                }}
+                title="Timer de Foco Rápido: vira a carta automaticamente após 10s, 15s ou 30s"
+                style={{
+                  background: speedTimerSetting > 0 ? '#ede9fe' : undefined,
+                  color: speedTimerSetting > 0 ? '#6d28d9' : undefined,
+                  border: speedTimerSetting > 0 ? '1px solid #c4b5fd' : undefined,
+                  fontWeight: 700,
+                }}
+              >
+                ⏱️ {speedTimerSetting > 0 ? `${speedTimerSetting}s` : 'Timer'}
+              </button>
               <button
                 type="button"
                 className="mr-legacy-control"
@@ -3694,6 +3845,35 @@ export default function Index() {
           </div>
           <article
             className="mr-legacy-study-card"
+            style={{ ['--mr-font-scale' as any]: fontScale }}
+            onTouchStart={(e) => {
+              const t = e.touches[0]
+              touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() }
+            }}
+            onTouchEnd={(e) => {
+              if (!touchStartRef.current) return
+              const t = e.changedTouches[0]
+              const dx = t.clientX - touchStartRef.current.x
+              const dy = t.clientY - touchStartRef.current.y
+              const elapsed = Date.now() - touchStartRef.current.time
+              touchStartRef.current = null
+              if (elapsed < 550) {
+                if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
+                  // Swipe horizontal
+                  if (dx > 0) {
+                    if (flipped) rate('good')
+                    else setFlipped(true)
+                  } else {
+                    if (flipped) rate('again')
+                    else setFlipped(true)
+                  }
+                } else if (dy < -55 && Math.abs(dy) > Math.abs(dx)) {
+                  // Swipe vertical para cima
+                  if (flipped) rate('hard')
+                  else setFlipped(true)
+                }
+              }
+            }}
             onErrorCapture={(e) => {
               const target = e.target as HTMLImageElement
               if (target && target.tagName === 'IMG' && target.src) {
@@ -3720,6 +3900,28 @@ export default function Index() {
               setFlipped((f) => !f)
             }}
           >
+            {/* Linha de contagem regressiva visual do Timer de Foco */}
+            {speedTimerSetting > 0 && !flipped && (
+              <div
+                style={{
+                  width: '100%',
+                  height: 4,
+                  background: 'rgba(0,0,0,0.06)',
+                  borderRadius: 4,
+                  overflow: 'hidden',
+                  marginBottom: 12,
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.max(0, (timerSecondsLeft / speedTimerSetting) * 100)}%`,
+                    background: timerSecondsLeft <= 3 ? '#ef4444' : '#8b5cf6',
+                    transition: 'width 1s linear',
+                  }}
+                />
+              </div>
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span className="mr-legacy-badge">
@@ -3733,6 +3935,25 @@ export default function Index() {
                           ? '🩺 Cartão de Modo Clínico'
                           : '🩺 Cartão de revisão'}
                 </span>
+                {leechCardIds.has(card.id.replace(/::rev$/, '')) && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 9px',
+                      borderRadius: 999,
+                      background: '#fee2e2',
+                      color: '#b91c1c',
+                      fontSize: '.72rem',
+                      fontWeight: 800,
+                      border: '1px solid #fca5a5',
+                    }}
+                    title="Esta carta foi errada 2 ou mais vezes em sessões recentes (Carta Crítica/Leech)."
+                  >
+                    🩸 Carta Crítica
+                  </span>
+                )}
                 {(card.q?.includes('<img') || card.a?.includes('<img') || card.image || card.diagram_svg) && (
                   <span
                     style={{
@@ -4400,6 +4621,8 @@ export default function Index() {
           setCramModalOpen(true)
         }}
         onOpenAnkiImport={() => setAnkiImportOpen(true)}
+        onStudyLeeches={startLeechesMode}
+        leechCount={leechCount}
         theme={theme}
         onToggleTheme={toggleTheme}
       />

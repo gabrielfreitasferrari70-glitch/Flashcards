@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { StudyHeatmap } from './StudyHeatmap'
+import { launchConfetti } from '@/lib/confetti'
 import {
   compareDecks,
   DECK_SORT_EVENT,
@@ -555,6 +556,26 @@ const legacyCss = `
 [data-theme="dark"] .mr-legacy-session-note,
 .dark .mr-legacy-session-note {
   color: #94a3b8 !important;
+}
+
+/* Study Heatmap in Dark Mode */
+[data-theme="dark"] .mr-legacy-study-heatmap,
+.dark .mr-legacy-study-heatmap {
+  background: #111827 !important;
+  border-color: #1f2937 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+[data-theme="dark"] .mr-legacy-study-heatmap h3,
+.dark .mr-legacy-study-heatmap h3 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .mr-legacy-study-heatmap p,
+.dark .mr-legacy-study-heatmap p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .mr-legacy-study-heatmap strong,
+.dark .mr-legacy-study-heatmap strong {
+  color: #4ade80 !important;
 }
 
 /* Card Preview in Folder View */
@@ -1285,7 +1306,7 @@ const legacyCss = `
 .mr-legacy-question {
   margin: 12px 0 0;
   color: #1f2937;
-  font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+  font-size: calc(clamp(1.2rem, 2.5vw, 1.6rem) * var(--mr-font-scale, 1));
   line-height: 1.45;
   font-weight: 800;
 }
@@ -1318,7 +1339,7 @@ const legacyCss = `
   padding-top: 18px;
   border-top: 1px solid #d1fae5;
   color: #334155;
-  font-size: 1rem;
+  font-size: calc(1rem * var(--mr-font-scale, 1));
   line-height: 1.7;
 }
 .mr-legacy-mode-row {
@@ -1543,6 +1564,8 @@ type HomeProps = {
   onStudyDeck?: (deckId: string) => void
   theme?: 'light' | 'dark'
   onToggleTheme?: () => void
+  onStudyLeeches?: () => void
+  leechCount?: number
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -1587,6 +1610,8 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onOpenAnkiImport,
     theme = 'light',
     onToggleTheme,
+    onStudyLeeches,
+    leechCount = 0,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
 
@@ -2213,6 +2238,11 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   </div>
                 </div>
               </div>
+
+              <div style={{ marginTop: 22 }}>
+                <StudyHeatmap reviews={reviews || []} cards={cards} />
+              </div>
+
               <div className="mr-legacy-actions">
                 <button className="mr-legacy-button primary" onClick={onStudyNow}>
                   ⚡ Estudar Agora
@@ -2220,6 +2250,22 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 <button className="mr-legacy-button" onClick={onSessionBuilder}>
                   🎛️ Montar Sessão
                 </button>
+                {onStudyLeeches && (
+                  <button
+                    type="button"
+                    className="mr-legacy-button"
+                    onClick={onStudyLeeches}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      borderColor: 'rgba(239, 68, 68, 0.35)',
+                      color: '#ef4444',
+                      fontWeight: 800,
+                    }}
+                    title="Revisar cartas em que você mais errou"
+                  >
+                    🩸 Cartas Críticas {leechCount > 0 ? `(${leechCount})` : ''}
+                  </button>
+                )}
                 <button className="mr-legacy-button" onClick={onQuiz}>
                   ⏱️ Quiz Rápido
                 </button>
@@ -2527,10 +2573,6 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 })}
               </div>
             </section>
-
-            <div style={{ marginTop: 28 }}>
-              <StudyHeatmap reviews={reviews || []} cards={cards} />
-            </div>
           </>
         )}
       </main>
@@ -2552,6 +2594,10 @@ export function MedReviewLegacySessionComplete({
   onRestart,
   onExit,
 }: SessionCompleteProps) {
+  useEffect(() => {
+    launchConfetti()
+  }, [])
+
   const total = tally.again + tally.hard + tally.good + tally.easy
   const recall = total ? Math.round(((tally.good + tally.easy) * 100) / total) : 0
   const minutes = Math.max(1, Math.round((Date.now() - tally.startMs) / 60000))
