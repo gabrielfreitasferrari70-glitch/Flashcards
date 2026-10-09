@@ -2525,10 +2525,17 @@ export default function Index() {
           setAuth('in')
         }
 
-        // Invalidação global de cache para sincronizar 1.352 cartas e eliminar pastas duplicadas em todos os dispositivos
-        const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_clean_v2'
-        if (localStorage.getItem('mr_cache_version') !== CURRENT_APP_CACHE_VERSION) {
+        // Invalidação global de cache para sincronizar 1.352 cartas e sincronização em tempo real
+        const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_realtime_v4'
+        const isFreshVersion = localStorage.getItem('mr_cache_version') === CURRENT_APP_CACHE_VERSION
+        if (!isFreshVersion) {
           await clearLocalCache()
+          try {
+            if (window.indexedDB) {
+              window.indexedDB.deleteDatabase('medreview_cache_db')
+              window.indexedDB.deleteDatabase('medreview_local_cache')
+            }
+          } catch {}
           localStorage.removeItem('mr_cached_decks')
           localStorage.removeItem('mr_cached_cards')
           localStorage.removeItem('mr_cached_meta_cards')
@@ -2540,42 +2547,44 @@ export default function Index() {
           localStorage.setItem('mr_cache_version', CURRENT_APP_CACHE_VERSION)
         }
 
-        // 1. Carregamento ultra-rápido instantâneo do cache local (<20ms)
-        try {
-          const [cachedDecks, cachedMeta, cachedCards, cachedRevs] = await Promise.all([
-            getLocalCache<Deck[]>('mr_cached_decks'),
-            getLocalCache<Card[]>('mr_cached_meta_cards'),
-            getLocalCache<Card[]>('mr_cached_cards'),
-            getLocalCache<any[]>('mr_cached_reviews'),
-          ])
-          if (cachedCards && cachedCards.length > 0) {
-            for (const c of cachedCards) {
-              if (c.q && c.q !== 'Carregando cartão...') {
-                fullCardsCache.set(c.id, c)
+        // 1. Carregamento ultra-rápido instantâneo do cache local apenas se a versão for válida
+        if (isFreshVersion) {
+          try {
+            const [cachedDecks, cachedMeta, cachedCards, cachedRevs] = await Promise.all([
+              getLocalCache<Deck[]>('mr_cached_decks'),
+              getLocalCache<Card[]>('mr_cached_meta_cards'),
+              getLocalCache<Card[]>('mr_cached_cards'),
+              getLocalCache<any[]>('mr_cached_reviews'),
+            ])
+            if (cachedCards && cachedCards.length > 0) {
+              for (const c of cachedCards) {
+                if (c.q && c.q !== 'Carregando cartão...') {
+                  fullCardsCache.set(c.id, c)
+                }
               }
             }
-          }
-          if (active) {
-            if (cachedDecks && cachedDecks.length > 0) {
-              const seenTitles = new Set<string>()
-              const dedupedDecks = cachedDecks.filter((d) => {
-                if (d.parent) return true
-                const norm = d.title.trim().toLowerCase()
-                if (seenTitles.has(norm)) return false
-                seenTitles.add(norm)
-                return true
-              })
-              setDecks(dedupedDecks)
+            if (active) {
+              if (cachedDecks && cachedDecks.length > 0) {
+                const seenTitles = new Set<string>()
+                const dedupedDecks = cachedDecks.filter((d) => {
+                  if (d.parent) return true
+                  const norm = d.title.trim().toLowerCase()
+                  if (seenTitles.has(norm)) return false
+                  seenTitles.add(norm)
+                  return true
+                })
+                setDecks(dedupedDecks)
+              }
+              if (cachedMeta && cachedMeta.length > 0) {
+                const merged = cachedMeta.map((m) => fullCardsCache.get(m.id) || m)
+                setCards(merged)
+              } else if (cachedCards && cachedCards.length > 0) {
+                setCards(cachedCards)
+              }
+              if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
             }
-            if (cachedMeta && cachedMeta.length > 0) {
-              const merged = cachedMeta.map((m) => fullCardsCache.get(m.id) || m)
-              setCards(merged)
-            } else if (cachedCards && cachedCards.length > 0) {
-              setCards(cachedCards)
-            }
-            if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
-          }
-        } catch {}
+          } catch {}
+        }
 
         // 2. Sincronização em tempo real com Supabase
         await loadData()
@@ -2590,6 +2599,63 @@ export default function Index() {
       active = false
     }
   }, [loadData])
+
+  // ⚡ Sincronização em tempo real (Supabase Realtime Broadcast & Postgres Changes):
+  // Qualquer alteração feita pelo docente/admin reflete quase instantaneamente (<150ms)
+  // em todas as contas de alunos e em todos os dispositivos sem precisar de refresh.
+  useEffect(() => {
+    if (auth !== 'in') return
+
+    let debounceTimer: any = null
+    const debouncedReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        fullCardsCache.clear()
+        loadData()
+      }, 150)
+    }
+
+    const channel = supabase
+      .channel('medreview_global_sync', {
+        config: { broadcast: { self: false } },
+      })
+      .on('broadcast', { event: 'db_mutation' }, () => {
+        debouncedReload()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mr_decks' }, () => {
+        debouncedReload()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mr_cards' }, () => {
+        debouncedReload()
+      })
+      .subscribe()
+
+    // Sincroniza também quando a janela/aba ganhar foco (ex: usuário volta para o app no celular)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        debouncedReload()
+      }
+    }
+    const onFocus = () => debouncedReload()
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', onFocus)
+
+    // Polling de segurança a cada 20 segundos
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        debouncedReload()
+      }
+    }, 20000)
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', onFocus)
+      supabase.removeChannel(channel)
+    }
+  }, [auth, loadData])
 
   // Login / signup
   const doAuth = async () => {

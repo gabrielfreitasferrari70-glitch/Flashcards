@@ -20,12 +20,13 @@
     <!-- @skip-protected: Do not remove. App entrypoint. -->
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Invalidação global de cache para sincronizar 1.352 cartas e eliminar pastas duplicadas em todos os dispositivos
-      const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_clean_v2';
+      // Invalidação global de cache para sincronizar 1.352 cartas e sincronização em tempo real
+      const CURRENT_APP_CACHE_VERSION = 'mr_cache_v20261008_realtime_v4';
       try {
         if (localStorage.getItem('mr_cache_version') !== CURRENT_APP_CACHE_VERSION) {
           if (window.indexedDB) {
             window.indexedDB.deleteDatabase('medreview_cache_db');
+            window.indexedDB.deleteDatabase('medreview_local_cache');
           }
           const keysToRemove = [
             'mr_cached_decks',

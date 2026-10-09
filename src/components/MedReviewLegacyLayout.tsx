@@ -663,6 +663,30 @@ const legacyCss = `
   line-height: 1.45;
   font-weight: 800;
 }
+.mr-legacy-question img,
+.mr-legacy-answer-body img,
+.mr-legacy-answer img,
+.mr-legacy-study-card img {
+  display: block;
+  max-width: 100%;
+  max-height: 440px;
+  width: auto;
+  height: auto;
+  margin: 16px auto;
+  border-radius: 12px;
+  object-fit: contain;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e2e8f0;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.mr-legacy-question img:hover,
+.mr-legacy-answer-body img:hover,
+.mr-legacy-answer img:hover,
+.mr-legacy-study-card img:hover {
+  transform: scale(1.015);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
 .mr-legacy-answer {
   margin-top: 20px;
   padding-top: 18px;

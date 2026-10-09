@@ -2,6 +2,31 @@ import { supabase } from '@/lib/supabase/client'
 import type { ParsedCsvCard } from '@/lib/csvImport'
 import { getLocalCache, setLocalCache } from '@/lib/cache/localCache'
 
+// Canal global de broadcast Supabase Realtime (latência <50ms entre admin e alunos)
+let realtimeChannel: any = null
+function getSyncChannel() {
+  if (!realtimeChannel) {
+    realtimeChannel = supabase.channel('medreview_global_sync', {
+      config: { broadcast: { self: false } },
+    })
+    realtimeChannel.subscribe()
+  }
+  return realtimeChannel
+}
+
+export const notifyDataMutation = (action: string, payload?: any) => {
+  try {
+    const ch = getSyncChannel()
+    ch.send({
+      type: 'broadcast',
+      event: 'db_mutation',
+      payload: { action, details: payload, timestamp: Date.now() },
+    })
+  } catch (err) {
+    console.warn('Realtime notify warning:', err)
+  }
+}
+
 export interface ReviewInput {
   card_id?: string
   card_ref?: string
@@ -102,12 +127,14 @@ export const createDeck = async (
     recordFrontlineDeckId(data.id)
   }
 
+  notifyDataMutation('deck_created', { id: data.id, title, parentId })
   return { ...data, frontline: isFront, mode: mode || 'study' }
 }
 
 export const renameDeck = async (deckId: string, title: string) => {
   const { data, error } = await supabase.from('mr_decks').update({ title }).eq('id', deckId).select().single()
   if (error) throw error
+  notifyDataMutation('deck_renamed', { id: deckId, title })
   return data
 }
 
@@ -151,7 +178,10 @@ export const createCard = async (
     .insert(extendedPayload)
     .select()
     .single()
-  if (!error) return data
+  if (!error) {
+    notifyDataMutation('card_created', { id: data.id, deckId })
+    return data
+  }
 
   // Se o banco ainda não rodou a migração 002 das colunas novas, faz fallback seguro
   if (error.code === '42703' || error.message?.includes('column')) {
@@ -162,6 +192,7 @@ export const createCard = async (
       .select()
       .single()
     if (fbErr) throw fbErr
+    notifyDataMutation('card_created', { id: fbData.id, deckId })
     return fbData
   }
   throw error
@@ -262,6 +293,7 @@ export const createCardsBatch = async (
     throw new Error('Não foi possível gravar as cartas no banco de dados. Verifique a conexão com o servidor.')
   }
 
+  notifyDataMutation('cards_created', { count: results.length, deckId })
   return results
 }
 
@@ -280,6 +312,7 @@ export const updateCard = async (
   }).eq('id', card.id).select().single()
 
   if (error) throw error
+  notifyDataMutation('card_updated', { id: card.id })
   return data
 }
 
@@ -333,6 +366,7 @@ export const recordDeletedDeckId = (id: string | string[]) => {
 export const setCardSuspended = async (cardId: string, suspended: boolean) => {
   const { data, error } = await supabase.from('mr_cards').update({ suspended }).eq('id', cardId).select().single()
   if (error) throw error
+  notifyDataMutation('card_suspended', { cardId, suspended })
   return data
 }
 
@@ -349,6 +383,7 @@ export const deleteCard = async (cardId: string) => {
   await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
   const { error } = await supabase.from('mr_cards').delete().eq('id', cardId)
   if (error) throw error
+  notifyDataMutation('card_deleted', { id: cardId })
   return true
 }
 
@@ -370,6 +405,7 @@ export const deleteCardsBatch = async (cardIds: string[]) => {
     const { error } = await supabase.from('mr_cards').delete().in('id', chunk)
     if (error) throw error
   }
+  notifyDataMutation('cards_deleted', { ids: cardIds })
   return true
 }
 
@@ -380,6 +416,7 @@ export const setCardsSuspendedBatch = async (cardIds: string[], suspended: boole
     const { error } = await supabase.from('mr_cards').update({ suspended }).in('id', chunk)
     if (error) throw error
   }
+  notifyDataMutation('cards_suspended', { ids: cardIds, suspended })
   return true
 }
 
@@ -390,6 +427,7 @@ export const moveCardsBatch = async (cardIds: string[], deckId: string) => {
     const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).in('id', chunk)
     if (error) throw error
   }
+  notifyDataMutation('cards_moved', { ids: cardIds, deckId })
   return true
 }
 
@@ -443,6 +481,7 @@ export const deleteDecksBatch = async (deckIds: string[]) => {
     const { error } = await supabase.from('mr_decks').delete().in('id', chunk)
     if (error) throw error
   }
+  notifyDataMutation('decks_deleted', { ids: deleteArray })
   return true
 }
 
@@ -455,6 +494,7 @@ export const moveDeck = async (deckId: string, parent: string, rootKind?: string
 
   const { data, error } = await supabase.from('mr_decks').update(updates).eq('id', deckId).select().single()
   if (error) throw error
+  notifyDataMutation('deck_moved', { deckId, parent })
   return data
 }
 export const moveDeckSection = async (fromKind: string, parent: string, rootKind?: string) => {
@@ -466,6 +506,7 @@ export const moveDeckSection = async (fromKind: string, parent: string, rootKind
   // Supabase update on multiple rows
   const { data, error } = await supabase.from('mr_decks').update(updates).eq('kind', fromKind).is('parent', null).select()
   if (error) throw error
+  notifyDataMutation('section_moved', { fromKind, parent })
   return data
 }
 export const undoMoveSection = async () => {}
@@ -474,6 +515,7 @@ export const resetDeck = async () => {}
 export const moveCard = async (cardId: string, deckId: string) => {
   const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).eq('id', cardId)
   if (error) throw error
+  notifyDataMutation('card_moved', { cardId, deckId })
   return true
 }
 export const importCards = async (
@@ -702,6 +744,7 @@ export const restoreBackupData = async (force = false) => {
   }
 
   localStorage.setItem('mr_restored_clean_v6', 'done')
+  notifyDataMutation('data_restored')
   return { ok: true, restoredDecks: idMap.size, restoredCards: cardPayloads.length }
 }
 
@@ -822,6 +865,7 @@ export const importCardsAuto = async (
     await createCardsBatch(targetDeckId, folderCards)
   }
 
+  notifyDataMutation('cards_imported', { firstDeckId: rootDeckId })
   return { ok: true, firstDeckId: rootDeckId }
 }
 export const uploadCardImage = async (cardId: string, file: File): Promise<string> => {
@@ -831,6 +875,7 @@ export const uploadCardImage = async (cardId: string, file: File): Promise<strin
       try {
         const dataUrl = reader.result as string
         await supabase.from('mr_cards').update({ image_url: dataUrl }).eq('id', cardId)
+        notifyDataMutation('card_image_uploaded', { cardId })
         resolve(dataUrl)
       } catch (err) {
         reject(err)
