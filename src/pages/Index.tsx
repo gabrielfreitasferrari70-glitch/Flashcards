@@ -522,21 +522,18 @@ function getSchedulerSettings(accountId?: string): SchedulerSettings {
     return defaults
   }
 }
-function previewIntervalsForSettings(
+// Induz os próximos valores de repetição espaçada no modo manual a partir da base configurada para cada botão
+export function calculateInducedManualIntervals(
+  baseIntervals: ManualIntervals,
   cs: CardState,
-  retention: number,
-  settings: SchedulerSettings,
-) {
-  const automatic = previewIntervals(cs, retention)
-  if (settings.mode !== 'manual') return automatic
+): Record<Quality, { label: string; value: number; g: number; state: string; newS: number; newD: number }> {
+  const parsedAgain = parseManualInterval(baseIntervals.again) || { days: 10 / 1440, label: '10min' }
+  const parsedHard = parseManualInterval(baseIntervals.hard) || { days: 1, label: '1d' }
+  const parsedGood = parseManualInterval(baseIntervals.good) || { days: 2, label: '2d' }
+  const parsedEasy = parseManualInterval(baseIntervals.easy) || { days: 3, label: '3d' }
 
-  const parsedAgain = parseManualInterval(settings.intervals.again) || { days: 10 / 1440, label: '10min' }
-  const parsedHard = parseManualInterval(settings.intervals.hard) || { days: 1, label: '1d' }
-  const parsedGood = parseManualInterval(settings.intervals.good) || { days: 2, label: '2d' }
-  const parsedEasy = parseManualInterval(settings.intervals.easy) || { days: 3, label: '3d' }
-
-  // 1ª Visualização: cartão novo ou sem histórico de revisão
-  const isFirstView = (cs.reps === 0 && cs.state === 'new') || !cs.lastReviewMs
+  const reps = Math.max(0, cs.reps || 0)
+  const isFirstView = (reps === 0 && cs.state === 'new') || !cs.lastReviewMs
 
   if (isFirstView) {
     return {
@@ -575,24 +572,35 @@ function previewIntervalsForSettings(
     }
   }
 
-  // Revisões Subsequentes (o flashcard voltou após o primeiro estudo):
-  // Os intervalos progridem de forma espaçada e multiplicada com base nas repetições
-  const prevIntervalDays =
+  // Intervalo da última revisão do cartão em dias (estabilidade prévia)
+  const prevInterval =
     typeof cs.s === 'number' && Number.isFinite(cs.s) && cs.s > 0
       ? cs.s
-      : parsedGood.days * Math.pow(2.2, Math.max(0, cs.reps - 1))
+      : parsedGood.days * Math.pow(2.2, Math.max(0, reps - 1))
 
-  // Errei: recai para o passo de reaprendizado configurado
+  // 1. Errei: retorna sempre ao passo de erro base configurado para este botão
   const againDays = parsedAgain.days
 
-  // Difícil: avanço moderado (1.25x do intervalo anterior, no mínimo o passo base de difícil)
-  const hardDays = Math.max(parsedHard.days, prevIntervalDays * 1.25)
+  // 2. Difícil: induzido DIRETAMENTE a partir da base que o usuário definiu para Difícil
+  // multiplicado pela progressão das repetições (1.5x por nível), garantindo avanço
+  const hardInducedFromBase = parsedHard.days * Math.pow(1.5, reps)
+  const hardDays = Math.max(parsedHard.days, prevInterval * 1.25, hardInducedFromBase)
 
-  // Bom: fator clássico de repetição espaçada SM-2 / Anki (2.5x sobre o anterior)
-  const goodDays = Math.max(parsedGood.days * 1.5, prevIntervalDays * 2.5)
+  // 3. Bom: induzido DIRETAMENTE a partir da base que o usuário definiu para Bom
+  // com a multiplicação clássica de consolidação SM-2/Anki (2.5x por repetição)
+  const goodInducedFromBase = parsedGood.days * Math.pow(2.5, reps)
+  let goodDays = Math.max(parsedGood.days * 1.5, prevInterval * 2.5, goodInducedFromBase)
+  if (goodDays <= hardDays) {
+    goodDays = hardDays * 1.35
+  }
 
-  // Fácil: avanço acelerado com bônus (1.4x além do bom, ou 3.5x sobre o anterior)
-  const easyDays = Math.max(parsedEasy.days * 1.5, goodDays * 1.4, prevIntervalDays * 3.5)
+  // 4. Fácil: induzido DIRETAMENTE a partir da base que o usuário definiu para Fácil
+  // com multiplicação acelerada e bônus de retenção (3.0x por repetição)
+  const easyInducedFromBase = parsedEasy.days * Math.pow(3.0, reps)
+  let easyDays = Math.max(parsedEasy.days * 1.8, prevInterval * 3.5, easyInducedFromBase, goodDays * 1.35)
+  if (easyDays <= goodDays) {
+    easyDays = goodDays * 1.4
+  }
 
   return {
     again: {
@@ -628,6 +636,17 @@ function previewIntervalsForSettings(
       newD: Math.max(1, (cs.d ?? 5) - 0.3),
     },
   }
+}
+
+function previewIntervalsForSettings(
+  cs: CardState,
+  retention: number,
+  settings: SchedulerSettings,
+) {
+  if (settings.mode === 'manual') {
+    return calculateInducedManualIntervals(settings.intervals, cs)
+  }
+  return previewIntervals(cs, retention)
 }
 function getRetention(): number {
   try {
@@ -665,6 +684,23 @@ function SettingsModal({
   )
   const [scheduleError, setScheduleError] = useState('')
   const [saving, setSaving] = useState(false)
+  const previewProjection = useMemo(() => {
+    return [0, 1, 2, 3].map((r) => {
+      const fakeState: CardState = {
+        s: null,
+        d: 5,
+        state: r === 0 ? 'new' : 'review',
+        reps: r,
+        lapses: 0,
+        lastReviewMs: r === 0 ? null : Date.now() - 86400000,
+        dueMs: Date.now(),
+      }
+      return {
+        stepName: r === 0 ? '1ª vez (Novo)' : `${r + 1}ª vez`,
+        res: calculateInducedManualIntervals(manualIntervals, fakeState),
+      }
+    })
+  }, [manualIntervals])
   const [repairing, setRepairing] = useState('')
   const repair = async (kind: 'tutoria' | 'prova' | 'custom') => {
     if (!onRepair) return
@@ -889,8 +925,94 @@ function SettingsModal({
               ))}
               <span style={{ color: '#64748b', fontSize: '.72rem' }}>
                 Aceita “20 min”, “1h”, “2 horas”, “3 dias” ou “5d”. Número sem unidade significa dias. Esses
-                tempos valem para as próximas avaliações.
+                tempos valem como ponto de partida (1ª vez).
               </span>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '10px 12px',
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 10,
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: '.76rem', color: '#166534', marginBottom: 6 }}>
+                  📈 Projeção induzida das próximas revisões:
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '74px repeat(4, 1fr)',
+                    gap: 4,
+                    fontSize: '.72rem',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: '#64748b' }}>Fase</div>
+                  <div style={{ fontWeight: 800, color: '#dc2626', textAlign: 'center' }}>Errei</div>
+                  <div style={{ fontWeight: 800, color: '#d97706', textAlign: 'center' }}>Difícil</div>
+                  <div style={{ fontWeight: 800, color: '#16a34a', textAlign: 'center' }}>Bom</div>
+                  <div style={{ fontWeight: 800, color: '#2563eb', textAlign: 'center' }}>Fácil</div>
+
+                  {previewProjection.map((p) => (
+                    <React.Fragment key={p.stepName}>
+                      <div style={{ fontWeight: 700, color: '#475569' }}>{p.stepName}</div>
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          background: '#fee2e2',
+                          color: '#991b1b',
+                          padding: '2px 4px',
+                          borderRadius: 4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {p.res.again.label}
+                      </div>
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          background: '#fef3c7',
+                          color: '#92400e',
+                          padding: '2px 4px',
+                          borderRadius: 4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {p.res.hard.label}
+                      </div>
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          background: '#dcfce7',
+                          color: '#166534',
+                          padding: '2px 4px',
+                          borderRadius: 4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {p.res.good.label}
+                      </div>
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          background: '#dbeafe',
+                          color: '#1e40af',
+                          padding: '2px 4px',
+                          borderRadius: 4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {p.res.easy.label}
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div style={{ marginTop: 6, fontSize: '.68rem', color: '#64748b', lineHeight: 1.3 }}>
+                  💡 Cada botão multiplica e induz os próximos prazos proporcionalmente ao padrão base que você definiu acima.
+                </div>
+              </div>
             </div>
           )}
 
