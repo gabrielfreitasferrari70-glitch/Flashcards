@@ -2494,8 +2494,17 @@ export default function Index() {
       // 1. Carrega todas as pastas do usuário instantaneamente (<450ms)
       const decksPromise = pb.collection('mr_decks').getFullList({ sort: 'order' })
 
-      // 2. Carrega metadados leves dos cartões com paginação garantida (sem cortar no limite de 1000) e revisões em paralelo
+      // 2. Otimização de Egress: se o catálogo completo já está em memória (Vercel Edge CDN),
+      // busca apenas novidades recentes (<2KB), economizando mais de 99% do egress do Supabase.
       const fetchAllMetaCards = async () => {
+        if (fullCardsCache.size >= 1300) {
+          const { data } = await supabase
+            .from('mr_cards')
+            .select('id, deck_id, suspended, clinical, created_at, tags')
+            .order('created_at', { ascending: false })
+            .limit(30)
+          return data || []
+        }
         const pageSize = 1000
         let from = 0
         const all: any[] = []
@@ -2556,24 +2565,26 @@ export default function Index() {
           tags: row.tags || [],
         })) as any[]
 
-      // Atualiza cartões mantendo qualquer cartão já completo em memória ou cache global
+      // Atualiza cartões preservando o catálogo completo do Vercel já em memória
       if (validMetaCards.length > 0) {
         setCards((prev) => {
           const prevMap = new Map(prev.map((c) => [c.id, c]))
-          return validMetaCards.map((m) => {
+          for (const m of validMetaCards) {
             const existing = prevMap.get(m.id) || fullCardsCache.get(m.id)
             if (existing && existing.q && existing.q !== 'Carregando cartão...') {
-              return {
+              prevMap.set(m.id, {
                 ...existing,
                 suspended: m.suspended,
                 clinical: m.clinical,
                 tags: m.tags,
                 deck: m.deck,
                 deck_id: m.deck_id,
-              }
+              })
+            } else {
+              prevMap.set(m.id, m)
             }
-            return m
-          })
+          }
+          return Array.from(prevMap.values())
         })
         setLocalCache('mr_cached_meta_cards', validMetaCards)
       }
@@ -2889,7 +2900,7 @@ export default function Index() {
               if (cat.cards && cat.cards.length > 0) {
                 setCards((prev) => (prev.length === 0 ? cat.cards : prev))
                 for (const c of cat.cards) {
-                  if (c.q && c.q !== 'Carregando cartão...' && !fullCardsCache.has(c.id)) {
+                  if (c.id && c.q && c.q !== 'Carregando cartão...') {
                     fullCardsCache.set(c.id, c)
                   }
                 }
