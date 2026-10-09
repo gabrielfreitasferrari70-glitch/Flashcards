@@ -397,16 +397,30 @@ function parseManualInterval(raw: string): { days: number; label: string } | nul
   const match = String(raw || '')
     .trim()
     .toLowerCase()
-    .match(/^(\d+(?:[.,]\d+)?)\s*(m|min|mins|minuto|minutos|d|dia|dias)?$/i)
+    .match(/^(\d+(?:[.,]\d+)?)\s*(m|min|mins|minuto|minutos|h|hr|hrs|hora|horas|d|dia|dias)?$/i)
   if (!match) return null
   const amount = Number(match[1].replace(',', '.'))
   if (!Number.isFinite(amount) || amount <= 0) return null
-  const unit = match[2] || 'd'
+  const unit = (match[2] || 'd').toLowerCase()
   const isMinutes = unit === 'm' || unit.startsWith('min')
-  const days = isMinutes ? amount / 1440 : amount
+  const isHours = unit === 'h' || unit.startsWith('hr') || unit.startsWith('hora')
+
+  let days: number
+  let labelUnit: string
+  if (isMinutes) {
+    days = amount / 1440
+    labelUnit = 'min'
+  } else if (isHours) {
+    days = amount / 24
+    labelUnit = 'h'
+  } else {
+    days = amount
+    labelUnit = 'd'
+  }
+
   if (days < 1 / 1440 || days > FSRS_MAX_INTERVAL) return null
   const amountLabel = String(amount).replace('.', ',')
-  return { days, label: `${amountLabel}${isMinutes ? 'min' : 'd'}` }
+  return { days, label: `${amountLabel}${labelUnit}` }
 }
 
 // Cache global em memória para conteúdo completo dos cartões (carregamento sob demanda sem re-fetch)
@@ -440,13 +454,35 @@ async function ensureCatalogLoaded(): Promise<any> {
 }
 
 function getSchedulerSettings(accountId?: string): SchedulerSettings {
-  const defaults = {
-    mode: 'automatic' as SchedulerMode,
+  const defaults: SchedulerSettings = {
+    mode: 'automatic',
     intervals: { ...DEFAULT_MANUAL_INTERVALS },
   }
-  if (!accountId) return defaults
   try {
-    const saved = JSON.parse(localStorage.getItem(SCHEDULER_SETTINGS_KEY + accountId) || 'null')
+    let raw: string | null = null
+    // 1. Procura na chave vinculada à conta específica
+    if (accountId) {
+      raw = localStorage.getItem(SCHEDULER_SETTINGS_KEY + accountId)
+    }
+    // 2. Fallback para a chave global do navegador (garante que nunca volte ao default por deslogar ou trocar rota)
+    if (!raw) {
+      raw = localStorage.getItem('mr_scheduler_settings')
+    }
+    // 3. Fallback vasculhando qualquer chave anterior de agendamento salva
+    if (!raw && typeof localStorage !== 'undefined') {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith(SCHEDULER_SETTINGS_KEY)) {
+          const candidate = localStorage.getItem(key)
+          if (candidate) {
+            raw = candidate
+            break
+          }
+        }
+      }
+    }
+    if (!raw) return defaults
+    const saved = JSON.parse(raw)
     if (!saved || (saved.mode !== 'automatic' && saved.mode !== 'manual')) return defaults
     const intervals = { ...DEFAULT_MANUAL_INTERVALS }
     for (const quality of ['again', 'hard', 'good', 'easy'] as Quality[]) {
@@ -523,10 +559,6 @@ function SettingsModal({
   }
   const save = () => {
     setScheduleError('')
-    if (!accountId) {
-      setScheduleError('Entre novamente na sua conta para salvar estas preferências.')
-      return
-    }
     if (schedulerMode === 'manual') {
       const invalid = (['again', 'hard', 'good', 'easy'] as Quality[]).find(
         (quality) => !parseManualInterval(manualIntervals[quality]),
@@ -539,7 +571,7 @@ function SettingsModal({
           easy: 'Fácil',
         }
         setScheduleError(
-          `Informe um intervalo válido para “${labels[invalid]}”, como 20 min ou 3 dias.`,
+          `Informe um intervalo válido para “${labels[invalid]}”, como 20 min, 1h ou 3 dias.`,
         )
         return
       }
@@ -547,10 +579,28 @@ function SettingsModal({
     setSaving(true)
     const v = Math.min(97, Math.max(80, val))
     localStorage.setItem(RETENTION_KEY, String(v / 100))
-    localStorage.setItem(
-      SCHEDULER_SETTINGS_KEY + accountId,
-      JSON.stringify({ mode: schedulerMode, intervals: manualIntervals }),
-    )
+
+    const payload = { mode: schedulerMode, intervals: manualIntervals }
+    const serialized = JSON.stringify(payload)
+
+    // Salva na chave global para que NUNCA seja resetado no navegador
+    localStorage.setItem('mr_scheduler_settings', serialized)
+
+    // Salva também na chave da conta se disponível
+    const effectiveId = accountId || pb.authStore.record?.id
+    if (effectiveId) {
+      localStorage.setItem(SCHEDULER_SETTINGS_KEY + effectiveId, serialized)
+    }
+
+    // Persiste no Supabase Auth metadata em segundo plano para persistir entre dispositivos/limpeza de cache
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase.auth.updateUser({
+          data: { scheduler_settings: payload },
+        }).catch(() => {})
+      }
+    }).catch(() => {})
+
     setTimeout(() => {
       onSaved()
       onClose()
@@ -699,7 +749,7 @@ function SettingsModal({
                     type="text"
                     inputMode="decimal"
                     aria-label={`Intervalo manual ${label}`}
-                    placeholder="ex.: 20 min ou 3 dias"
+                    placeholder="ex.: 20 min, 1h ou 3 dias"
                     value={manualIntervals[quality]}
                     onChange={(e) => {
                       setManualIntervals((current) => ({ ...current, [quality]: e.target.value }))
@@ -718,7 +768,7 @@ function SettingsModal({
                 </label>
               ))}
               <span style={{ color: '#64748b', fontSize: '.72rem' }}>
-                Aceita “20 min”, “5m”, “3 dias” ou “5d”. Número sem unidade significa dias. Esses
+                Aceita “20 min”, “1h”, “2 horas”, “3 dias” ou “5d”. Número sem unidade significa dias. Esses
                 tempos valem para as próximas avaliações.
               </span>
             </div>
@@ -2898,6 +2948,22 @@ export default function Index() {
         if (active) {
           setUser(pb.authStore.record)
           setAuth('in')
+        }
+
+        // Restaura preferências de agendamento manual do metadata se disponíveis
+        if (session.user?.user_metadata?.scheduler_settings) {
+          const remoteSettings = session.user.user_metadata.scheduler_settings
+          if (remoteSettings && (remoteSettings.mode === 'manual' || remoteSettings.mode === 'automatic')) {
+            const currentLocal = localStorage.getItem('mr_scheduler_settings')
+            if (!currentLocal) {
+              const str = JSON.stringify(remoteSettings)
+              localStorage.setItem('mr_scheduler_settings', str)
+              if (session.user.id) {
+                localStorage.setItem(SCHEDULER_SETTINGS_KEY + session.user.id, str)
+              }
+              setRetentionTick((t) => t + 1)
+            }
+          }
         }
 
         // 1. Carregamento ultra-rápido instantâneo do cache local apenas se a versão for válida
