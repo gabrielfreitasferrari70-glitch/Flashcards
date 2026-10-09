@@ -31,6 +31,8 @@ import { ImageLightboxModal } from '@/components/ImageLightboxModal'
 import { parseOcclusion } from '@/services/imageOcclusion'
 import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
 import { extractCardTags } from '@/services/cardTags'
+import { saveOfflineReview, flushOfflineReviews, initOfflineSync, getOfflineReviews } from '@/services/offlineSync'
+import { getCardHighlights, saveCardHighlight, clearCardHighlights, applyHighlightsToHtml, CardHighlight } from '@/services/cardHighlights'
 
 // Modais pesados carregados sob demanda (Code-splitting / Bundle 75% menor)
 const MedReviewLibrary = lazy(() => import('@/components/MedReviewLibrary'))
@@ -461,11 +463,13 @@ function SettingsModal({
   onClose,
   onSaved,
   onRepair,
+  onInstallPwa,
 }: {
   accountId?: string
   onClose: () => void
   onSaved: () => void
   onRepair?: (kind: 'tutoria' | 'prova' | 'custom') => Promise<boolean>
+  onInstallPwa?: () => void
 }) {
   const [val, setVal] = useState(() => getRetention() * 100)
   const [schedulerMode, setSchedulerMode] = useState<SchedulerMode>(
@@ -730,6 +734,39 @@ function SettingsModal({
             Cancelar
           </button>
         </div>
+        {onInstallPwa && (
+          <div
+            style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: '1px solid #e2e8f0',
+            }}
+          >
+            <strong style={{ display: 'block', color: '#15803d', fontSize: '.85rem', marginBottom: 4 }}>
+              📱 Aplicativo Nativo (PWA Offline)
+            </strong>
+            <p style={{ margin: '0 0 10px', color: '#64748b', fontSize: '.76rem' }}>
+              Instale o MedReview no celular ou PC para estudar em tela cheia 100% offline (hospital, metrô ou biblioteca).
+            </p>
+            <button
+              type="button"
+              onClick={onInstallPwa}
+              style={{
+                border: '1px solid #86efac',
+                borderRadius: 9,
+                padding: '0.55rem 0.9rem',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '.8rem',
+                background: '#f0fdf4',
+                color: '#15803d',
+                width: '100%',
+              }}
+            >
+              📲 Adicionar à Tela de Início / Instalar
+            </button>
+          </div>
+        )}
         {onRepair && (
           <div
             style={{
@@ -2304,6 +2341,121 @@ export default function Index() {
   // Ref para gestos de swipe no touch (Mobile e iPad)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
 
+  // PWA Offline Sync e Instalação
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null)
+  const [isStandalone, setIsStandalone] = useState(false)
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  const [pendingOfflineReviews, setPendingOfflineReviews] = useState<number>(0)
+
+  // Marca-texto (Highlighter) e Anotações no Cartão
+  const [cardHighlights, setCardHighlights] = useState<CardHighlight[]>([])
+  const [floatingHighlightPos, setFloatingHighlightPos] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [showPersonalNotes, setShowPersonalNotes] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const standalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as any).standalone === true
+      setIsStandalone(standalone)
+    }
+
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault()
+      setDeferredInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall)
+
+    const cleanupSync = initOfflineSync((online, pendingCount) => {
+      setIsOnline(online)
+      setPendingOfflineReviews(pendingCount)
+    })
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
+      cleanupSync()
+    }
+  }, [])
+
+  const handleInstallPwa = useCallback(async () => {
+    if (deferredInstallPrompt) {
+      try {
+        await deferredInstallPrompt.prompt()
+        const choice = await deferredInstallPrompt.userChoice
+        if (choice.outcome === 'accepted') {
+          setDeferredInstallPrompt(null)
+          setMsg('✨ MedReview instalado com sucesso!')
+          setTimeout(() => setMsg(''), 3000)
+        }
+      } catch (err) {
+        console.error('Erro ao acionar prompt PWA:', err)
+      }
+    } else {
+      alert(
+        '📱 Para instalar o MedReview no seu celular ou tablet:\n\n' +
+        '• No iPhone/iPad (Safari):\n' +
+        '1. Toque no botão "Compartilhar" (ícone com quadrado e seta ⎋)\n' +
+        '2. Role e selecione "Adicionar à Tela de Início" ➕\n' +
+        '3. Toque em "Adicionar".\n\n' +
+        '• No Android (Chrome):\n' +
+        'Toque nos 3 pontinhos do navegador e selecione "Instalar aplicativo" ou "Adicionar à tela inicial".'
+      )
+    }
+  }, [deferredInstallPrompt])
+
+  const handleTextSelection = useCallback(() => {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed) {
+      setFloatingHighlightPos(null)
+      return
+    }
+    const text = selection.toString().trim()
+    if (text.length >= 2) {
+      try {
+        const range = selection.getRangeAt(0)
+        const rect = range.getBoundingClientRect()
+        setFloatingHighlightPos({
+          x: rect.left + rect.width / 2,
+          y: rect.top - 8,
+          text,
+        })
+      } catch {
+        setFloatingHighlightPos(null)
+      }
+    } else {
+      setFloatingHighlightPos(null)
+    }
+  }, [])
+
+  const applyHighlight = useCallback((color: string, explicitText?: string) => {
+    const card = queue[qIdx]
+    if (!card) return
+    const realId = card.id.replace(/::rev$/, '')
+    const selectedText = explicitText || floatingHighlightPos?.text || window.getSelection()?.toString().trim()
+    if (!selectedText) {
+      setMsg('Selecione uma palavra ou trecho no cartão para grifar')
+      setTimeout(() => setMsg(''), 2000)
+      return
+    }
+    const updated = saveCardHighlight(realId, selectedText, color)
+    setCardHighlights(updated)
+    setFloatingHighlightPos(null)
+    window.getSelection()?.removeAllRanges()
+    setMsg('Palavra grifada com sucesso!')
+    setTimeout(() => setMsg(''), 1500)
+  }, [queue, qIdx, floatingHighlightPos])
+
+  const handleClearHighlights = useCallback(() => {
+    const card = queue[qIdx]
+    if (!card) return
+    const realId = card.id.replace(/::rev$/, '')
+    clearCardHighlights(realId)
+    setCardHighlights([])
+    setFloatingHighlightPos(null)
+    setMsg('Grifos do cartão removidos!')
+    setTimeout(() => setMsg(''), 1500)
+  }, [queue, qIdx])
+
   useEffect(() => {
     return speechService.subscribe(setIsSpeaking)
   }, [])
@@ -2489,6 +2641,8 @@ export default function Index() {
       const cur = queue[qIdx]
       const realId = cur.id.replace(/::rev$/, '')
       fetchCardNote(realId).then((n) => setCurrentCardNote(n || ''))
+      setCardHighlights(getCardHighlights(realId))
+      setFloatingHighlightPos(null)
 
       // Se o cartão atual ainda não teve o conteúdo completo carregado, busca sob demanda imediatamente
       if (cur.q === 'Carregando cartão...' || !cur.a) {
@@ -3481,11 +3635,53 @@ export default function Index() {
         due: dueDate.toISOString(),
         reviewed_at: now.toISOString(),
       }
-      const created = await createReview(reviewInput)
-      const savedReview = { ...(created as any), ...reviewInput, card_id: realId, card_ref: realId, card: realId }
-      setReviews((rs) => [...rs, savedReview])
-      setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
-      setMsg(`Carta agendada para daqui ${chosen.label}`)
+      let savedReview: any
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const synthId = `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        const offlineItem = {
+          id: synthId,
+          user_id: user?.id || 'offline_user',
+          card_id: realId,
+          rating: quality,
+          stability: chosen.newS ?? fsrsInitialStability(chosen.g),
+          difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
+          elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
+          scheduled_days: chosen.value,
+          state: chosen.state,
+          due: dueDate.toISOString(),
+          reviewed_at: now.toISOString(),
+        }
+        saveOfflineReview(offlineItem)
+        savedReview = { ...offlineItem, ...reviewInput }
+        setPendingOfflineReviews(getOfflineReviews().length)
+        setMsg(`📶 Revisão salva offline (${chosen.label})! Sincronizará com Wi-Fi.`)
+      } else {
+        try {
+          const created = await createReview(reviewInput)
+          savedReview = { ...(created as any), ...reviewInput, card_id: realId, card_ref: realId, card: realId }
+          setMsg(`Carta agendada para daqui ${chosen.label}`)
+        } catch (netErr: any) {
+          console.warn('Falha de rede ao salvar revisão; enfileirando offline:', netErr)
+          const synthId = `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          const offlineItem = {
+            id: synthId,
+            user_id: user?.id || 'offline_user',
+            card_id: realId,
+            rating: quality,
+            stability: chosen.newS ?? fsrsInitialStability(chosen.g),
+            difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
+            elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
+            scheduled_days: chosen.value,
+            state: chosen.state,
+            due: dueDate.toISOString(),
+            reviewed_at: now.toISOString(),
+          }
+          saveOfflineReview(offlineItem)
+          savedReview = { ...offlineItem, ...reviewInput }
+          setPendingOfflineReviews(getOfflineReviews().length)
+          setMsg(`📶 Conexão oscilou. Revisão salva offline (${chosen.label})!`)
+        }
+      }
       setTimeout(() => setMsg(''), 2500)
 
       setLastReview({
@@ -3662,6 +3858,15 @@ export default function Index() {
               <strong>{sessionTitle}</strong>
             </nav>
             <div className="mr-legacy-study-controls">
+              {!isOnline && (
+                <span
+                  className="mr-legacy-control"
+                  style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 800 }}
+                  title="Estudando offline. As revisões sincronizarão automaticamente quando conectar."
+                >
+                  📡 Offline {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : ''}
+                </span>
+              )}
               {lastReview && (
                 <button
                   className="mr-legacy-control"
@@ -3912,6 +4117,8 @@ export default function Index() {
                 }
               }
             }}
+            onMouseUp={handleTextSelection}
+            onTouchEnd={handleTextSelection}
             onClick={(e) => {
               const target = e.target as HTMLElement
               if (target.tagName === 'IMG') {
@@ -4066,6 +4273,166 @@ export default function Index() {
                 </select>
               </div>
             </div>
+
+            {/* Balão flutuante de marca-texto ao selecionar texto */}
+            {floatingHighlightPos && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  left: floatingHighlightPos.x,
+                  top: Math.max(10, floatingHighlightPos.y - 42),
+                  transform: 'translateX(-50%)',
+                  zIndex: 9999,
+                  background: '#1e293b',
+                  color: '#fff',
+                  borderRadius: 8,
+                  padding: '4px 8px',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: '.75rem',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Grifar:</span>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#fef08a', floatingHighlightPos.text)}
+                  style={{ background: '#fef08a', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#854d0e' }}
+                  title="Grifar em amarelo"
+                >
+                  🟡 Amarelo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#bbf7d0', floatingHighlightPos.text)}
+                  style={{ background: '#bbf7d0', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#166534' }}
+                  title="Grifar em verde"
+                >
+                  🟢 Verde
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#fbcfe8', floatingHighlightPos.text)}
+                  style={{ background: '#fbcfe8', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#9d174d' }}
+                  title="Grifar em rosa"
+                >
+                  🌸 Rosa
+                </button>
+              </div>
+            )}
+
+            {/* Barra de Ferramentas: Marca-texto e Anotações Rápidas */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8,
+                padding: '6px 12px',
+                background: 'rgba(0,0,0,0.02)',
+                border: '1px solid var(--mr-card-border, #e2e8f0)',
+                borderRadius: 10,
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: '.74rem', fontWeight: 700, color: 'var(--mr-muted, #64748b)' }}>
+                  🖍️ Grifar:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#fef08a')}
+                  style={{
+                    background: '#fef08a',
+                    border: '1px solid #fde047',
+                    borderRadius: 999,
+                    padding: '2px 9px',
+                    fontSize: '.72rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: '#854d0e',
+                  }}
+                  title="Grifar texto selecionado em amarelo"
+                >
+                  🟡 Amarelo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#bbf7d0')}
+                  style={{
+                    background: '#bbf7d0',
+                    border: '1px solid #86efac',
+                    borderRadius: 999,
+                    padding: '2px 9px',
+                    fontSize: '.72rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: '#166534',
+                  }}
+                  title="Grifar texto selecionado em verde"
+                >
+                  🟢 Verde
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyHighlight('#fbcfe8')}
+                  style={{
+                    background: '#fbcfe8',
+                    border: '1px solid #f472b6',
+                    borderRadius: 999,
+                    padding: '2px 9px',
+                    fontSize: '.72rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: '#9d174d',
+                  }}
+                  title="Grifar texto selecionado em rosa"
+                >
+                  🌸 Rosa
+                </button>
+                {cardHighlights.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearHighlights}
+                    style={{
+                      background: 'transparent',
+                      border: '1px dashed #cbd5e1',
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      fontSize: '.7rem',
+                      color: '#64748b',
+                      cursor: 'pointer',
+                    }}
+                    title="Remover todos os grifos deste cartão"
+                  >
+                    🧹 Limpar ({cardHighlights.length})
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPersonalNotes(!showPersonalNotes)}
+                  style={{
+                    background: showPersonalNotes ? '#dcfce7' : 'transparent',
+                    border: `1px solid ${showPersonalNotes ? '#86efac' : '#cbd5e1'}`,
+                    borderRadius: 999,
+                    padding: '2px 10px',
+                    fontSize: '.72rem',
+                    fontWeight: 700,
+                    color: showPersonalNotes ? '#15803d' : '#475569',
+                    cursor: 'pointer',
+                  }}
+                >
+                  📝 {showPersonalNotes ? 'Ocultar Anotação' : 'Minhas Anotações'}{currentCardNote ? ' •' : ''}
+                </button>
+              </div>
+            </div>
+
             {card.q === 'Carregando cartão...' ? (
               <div style={{ padding: '3.5rem 1rem', textAlign: 'center' }}>
                 <div
@@ -4090,13 +4457,16 @@ export default function Index() {
                 <h1
                   className="mr-legacy-question"
                   dangerouslySetInnerHTML={{
-                    __html: currentOcclusionData
-                      ? (renderClozeHtml(card.q, flipped) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
-                      : card.__reverse
-                        ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
-                        : studyMode === 'reverse' && !flipped
-                          ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
-                          : (renderClozeHtml(card.q, flipped) || 'Card sem pergunta'),
+                    __html: applyHighlightsToHtml(
+                      currentOcclusionData
+                        ? (renderClozeHtml(card.q, flipped) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
+                        : card.__reverse
+                          ? (renderClozeHtml(card.a, flipped) || '📸 Identifique a estrutura ilustrada:')
+                          : studyMode === 'reverse' && !flipped
+                            ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
+                            : (renderClozeHtml(card.q, flipped) || 'Card sem pergunta'),
+                      cardHighlights
+                    ),
                   }}
                 />
                 {currentOcclusionData && (
@@ -4249,6 +4619,70 @@ export default function Index() {
                   </p>
                 </div>
               )}
+            {!flipped && showPersonalNotes && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="mr-legacy-card-note-box"
+                style={{
+                  marginTop: 18,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: '#f8fafc',
+                  border: '1.5px solid #e2e8f0',
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '.76rem',
+                      fontWeight: 800,
+                      color: 'var(--mr-ink, #15803d)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span>💡</span> MINHA ANOTAÇÃO PESSOAL (PRIVADA)
+                  </span>
+                  {noteSaving && (
+                    <span style={{ fontSize: '.72rem', color: '#16a34a', fontWeight: 700 }}>
+                      ✓ Salvo
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  value={currentCardNote}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setCurrentCardNote(val)
+                    setNoteSaving(true)
+                    saveCardNote(card.id.replace(/::rev$/, ''), val).then(() => {
+                      setTimeout(() => setNoteSaving(false), 800)
+                    })
+                  }}
+                  className="mr-legacy-card-note-input"
+                  placeholder="Escreva seus mnemônicos, observações ou pegadinhas pessoais sobre esta carta..."
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid #cbd5e1',
+                    fontSize: '.84rem',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+            )}
             {flipped && (
               <div className="mr-legacy-answer">
                 {writeFeedback && (
@@ -4303,7 +4737,10 @@ export default function Index() {
                   className="mr-legacy-answer-body"
                   style={{ fontSize: '1.05rem', lineHeight: 1.6, color: '#1e293b' }}
                   dangerouslySetInnerHTML={{
-                    __html: getAnswerDisplay(card, studyMode),
+                    __html: applyHighlightsToHtml(
+                      getAnswerDisplay(card, studyMode),
+                      cardHighlights
+                    ),
                   }}
                 />
                 {(() => {
@@ -4648,6 +5085,10 @@ export default function Index() {
         leechCount={leechCount}
         theme={theme}
         onToggleTheme={toggleTheme}
+        isOnline={isOnline}
+        pendingOfflineReviews={pendingOfflineReviews}
+        canInstallPwa={!isStandalone}
+        onInstallPwa={handleInstallPwa}
       />
       <Suspense fallback={null}>
         {cramModalOpen && (
@@ -4761,6 +5202,7 @@ export default function Index() {
           accountId={user?.id}
           onClose={() => setSettingsOpen(false)}
           onSaved={() => setRetentionTick((t) => t + 1)}
+          onInstallPwa={handleInstallPwa}
           onRepair={async (kind) => {
             try {
               const pattern = kind === 'tutoria' ? '^Tutoria ' : '^Prova '

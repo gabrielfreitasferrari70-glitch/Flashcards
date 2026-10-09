@@ -1566,6 +1566,10 @@ type HomeProps = {
   onToggleTheme?: () => void
   onStudyLeeches?: () => void
   leechCount?: number
+  isOnline?: boolean
+  pendingOfflineReviews?: number
+  canInstallPwa?: boolean
+  onInstallPwa?: () => void
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -1612,6 +1616,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onToggleTheme,
     onStudyLeeches,
     leechCount = 0,
+    isOnline = true,
+    pendingOfflineReviews = 0,
+    canInstallPwa = false,
+    onInstallPwa,
   } = props
   const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
 
@@ -1822,6 +1830,44 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 2 }}>
+              {!isOnline && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    border: '1px solid #fde68a',
+                    fontSize: '.75rem',
+                    fontWeight: 800,
+                  }}
+                  title="Você está estudando offline. Suas revisões serão sincronizadas automaticamente ao reconectar."
+                >
+                  📡 Modo Offline {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : ''}
+                </span>
+              )}
+              {onInstallPwa && canInstallPwa && (
+                <button
+                  type="button"
+                  className="mr-legacy-button"
+                  onClick={onInstallPwa}
+                  title="Instalar MedReview como aplicativo no celular ou computador"
+                  style={{
+                    background: '#f0fdf4',
+                    borderColor: '#86efac',
+                    color: '#15803d',
+                    fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}
+                >
+                  📱 Instalar App
+                </button>
+              )}
               {onToggleTheme && (
                 <button
                   type="button"
