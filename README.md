@@ -1,6 +1,6 @@
-# Projeto Criado com o Skip
+# MedReview — Plataforma de Flashcards Médicos FSRS-5
 
-Este projeto foi criado de ponta a ponta com o [Skip](https://goskip.dev).
+Plataforma inteligente de repetição espaçada, oclusão de imagem e fixação médica.
 
 ## 🚀 Stack Tecnológica
 

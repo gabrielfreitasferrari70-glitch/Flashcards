@@ -4,7 +4,6 @@ import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import './main.css'
 
-// @skip-protected: Do not remove. Required for React rendering.
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <App />
