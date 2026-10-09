@@ -384,6 +384,7 @@ function cardStateFromReviews(reviews: Review[]): CardState {
 
 const RETENTION_KEY = 'mr_retention'
 type SchedulerMode = 'automatic' | 'manual'
+export type StudyOrderMode = 'sequential' | 'random'
 type ManualIntervals = Record<Quality, string>
 type SchedulerSettings = { mode: SchedulerMode; intervals: ManualIntervals }
 const SCHEDULER_SETTINGS_KEY = 'mr_scheduler_settings_'
@@ -544,6 +545,9 @@ function SettingsModal({
   const [manualIntervals, setManualIntervals] = useState<ManualIntervals>(
     () => getSchedulerSettings(accountId).intervals,
   )
+  const [modalStudyOrder, setModalStudyOrder] = useState<StudyOrderMode>(
+    () => ((typeof localStorage !== 'undefined' && localStorage.getItem('mr_study_order_mode')) as StudyOrderMode) || 'sequential',
+  )
   const [scheduleError, setScheduleError] = useState('')
   const [saving, setSaving] = useState(false)
   const [repairing, setRepairing] = useState('')
@@ -579,6 +583,7 @@ function SettingsModal({
     setSaving(true)
     const v = Math.min(97, Math.max(80, val))
     localStorage.setItem(RETENTION_KEY, String(v / 100))
+    localStorage.setItem('mr_study_order_mode', modalStudyOrder)
 
     const payload = { mode: schedulerMode, intervals: manualIntervals }
     const serialized = JSON.stringify(payload)
@@ -782,6 +787,57 @@ function SettingsModal({
               {scheduleError}
             </p>
           )}
+        </section>
+
+        <section
+          style={{
+            margin: '0 0 16px',
+            padding: 12,
+            border: '1px solid #d1fae5',
+            borderRadius: 12,
+            background: '#f8fffb',
+          }}
+        >
+          <strong style={{ display: 'block', color: '#14532d', fontSize: '.85rem' }}>
+            Ordem de estudo dos cartões (Estilo Anki)
+          </strong>
+          <p style={{ margin: '5px 0 10px', color: '#64748b', fontSize: '.76rem' }}>
+            Defina como os cartões serão apresentados durante suas sessões de estudo.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {(
+              [
+                ['sequential', '🔢 Sequencial (Ordem de adição)'],
+                ['random', '🔀 Aleatória (Embaralhada)'],
+              ] as [StudyOrderMode, string][]
+            ).map(([mode, label]) => (
+              <label
+                key={mode}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 10px',
+                  border: `1px solid ${modalStudyOrder === mode ? '#16a34a' : '#cbd5e1'}`,
+                  borderRadius: 9,
+                  background: modalStudyOrder === mode ? '#f0fdf4' : '#fff',
+                  color: '#334155',
+                  fontSize: '.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="study-order-mode-settings"
+                  checked={modalStudyOrder === mode}
+                  onChange={() => setModalStudyOrder(mode)}
+                  style={{ accentColor: '#16a34a' }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
         </section>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -2297,6 +2353,12 @@ export default function Index() {
     userText?: string
   }>(null)
   const [mcPicked, setMcPicked] = useState<string | null>(null)
+  const [studyOrderMode, setStudyOrderMode] = useState<StudyOrderMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('mr_study_order_mode') as StudyOrderMode) || 'sequential'
+    }
+    return 'sequential'
+  })
   const [queue, setQueue] = useState<Card[]>([])
   const [qIdx, setQIdx] = useState(0)
   const [studySession, setStudySession] = useState({
@@ -3116,7 +3178,51 @@ export default function Index() {
     setRoute({ view: 'home' })
   }
 
-  // Fila FSRS: vencidas → novas → futuras. Cartas com "reverse" geram uma variante invertida (verso→frente) na fila.
+  function shuffleArray<T>(array: T[]): T[] {
+    const result = [...array]
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[result[i], result[j]] = [result[j], result[i]]
+    }
+    return result
+  }
+
+  function sortSequential(cardsList: Card[]): Card[] {
+    return [...cardsList].sort((a, b) => {
+      const timeA = a.created ? new Date(a.created).getTime() : 0
+      const timeB = b.created ? new Date(b.created).getTime() : 0
+      if (timeA && timeB && timeA !== timeB) return timeA - timeB
+      return (a.id || '').localeCompare(b.id || '')
+    })
+  }
+
+  const toggleStudyOrder = () => {
+    const nextMode: StudyOrderMode = studyOrderMode === 'sequential' ? 'random' : 'sequential'
+    setStudyOrderMode(nextMode)
+    localStorage.setItem('mr_study_order_mode', nextMode)
+
+    if (queue.length > 0) {
+      const pastAndCurrent = queue.slice(0, qIdx + 1)
+      const remaining = queue.slice(qIdx + 1)
+      if (remaining.length > 0) {
+        let newRemaining: Card[]
+        if (nextMode === 'random') {
+          newRemaining = shuffleArray(remaining)
+          setMsg('🔀 Cartões restantes embaralhados em ordem aleatória!')
+        } else {
+          newRemaining = sortSequential(remaining)
+          setMsg('🔢 Cartões restantes organizados na ordem de adição!')
+        }
+        setQueue([...pastAndCurrent, ...newRemaining])
+        setTimeout(() => setMsg(''), 2500)
+      } else {
+        setMsg(nextMode === 'random' ? '🔀 Modo aleatório ativado!' : '🔢 Modo sequencial ativado!')
+        setTimeout(() => setMsg(''), 2000)
+      }
+    }
+  }
+
+  // Fila FSRS com suporte à ordem Anki: Sequencial (adição) vs Aleatória (embaralhada)
   const startStudy = (
     candidateCards: Card[],
     deckId?: string,
@@ -3136,22 +3242,46 @@ export default function Index() {
       }
     }
     const studyCards = withVariants
-    let sorted = studyCards
-    if (!options?.preserveOrder) {
+    let sorted: Card[]
+
+    if (options?.preserveOrder) {
+      if (studyOrderMode === 'random') {
+        sorted = shuffleArray(studyCards)
+      } else {
+        sorted = sortSequential(studyCards)
+      }
+    } else {
       const states = new Map(
         studyCards.map((c) => [stateKey(c), cardStateFromReviews(reviewsForCard(c))]),
       )
       const currentTime = Date.now()
       const rank = (cs: CardState) =>
         cs.state === 'new' ? 2 : (cs.dueMs || 0) <= currentTime ? 0 : 1
-      sorted = [...studyCards].sort((a, b) => {
-        const ra = rank(states.get(stateKey(a))!),
-          rb = rank(states.get(stateKey(b))!)
-        if (ra !== rb) return ra - rb
-        if (ra === 0)
-          return (states.get(stateKey(a))!.dueMs || 0) - (states.get(stateKey(b))!.dueMs || 0)
-        return 0
-      })
+
+      if (studyOrderMode === 'random') {
+        // Modo aleatório (Anki): agrupa por urgência FSRS (vencidas primeiro), e embaralha aleatoriamente dentro de cada grupo
+        const groups: Record<number, Card[]> = { 0: [], 1: [], 2: [] }
+        for (const c of studyCards) {
+          const r = rank(states.get(stateKey(c))!)
+          groups[r].push(c)
+        }
+        sorted = [
+          ...shuffleArray(groups[0]),
+          ...shuffleArray(groups[1]),
+          ...shuffleArray(groups[2]),
+        ]
+      } else {
+        // Modo sequencial (Anki): mantém a sequência cronológica de adição/criação dentro de cada urgência FSRS
+        sorted = [...studyCards].sort((a, b) => {
+          const ra = rank(states.get(stateKey(a))!)
+          const rb = rank(states.get(stateKey(b))!)
+          if (ra !== rb) return ra - rb
+          const timeA = a.created ? new Date(a.created).getTime() : 0
+          const timeB = b.created ? new Date(b.created).getTime() : 0
+          if (timeA && timeB && timeA !== timeB) return timeA - timeB
+          return (a.id || '').localeCompare(b.id || '')
+        })
+      }
     }
     setQueue(sorted)
     setQIdx(0)
@@ -3976,20 +4106,27 @@ export default function Index() {
         <header className="mr-legacy-header">
           <div className="mr-legacy-study-top">
             <nav className="mr-legacy-breadcrumb">
-              <button onClick={() => setRoute({ view: 'home' })}>Início</button>
-              <span>/</span>
-              <button onClick={returnToFolders}>{categoryTitle}</button>
-              <span>/</span>
-              <strong>{sessionTitle}</strong>
+              <button onClick={returnToFolders} className="mr-legacy-back-link" title="Voltar para as pastas">
+                ← <span style={{ opacity: 0.85 }}>{categoryTitle}</span>
+                <span style={{ margin: '0 4px', opacity: 0.5 }}>/</span>
+                <strong>{sessionTitle}</strong>
+              </button>
             </nav>
+
+            <div className="mr-legacy-counter-badge" title="Progresso na fila de estudos">
+              <span>{qIdx + 1}</span>
+              <span style={{ opacity: 0.5 }}>/</span>
+              <span>{queue.length}</span>
+            </div>
+
             <div className="mr-legacy-study-controls">
               {!isOnline && (
                 <span
                   className="mr-legacy-control"
-                  style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 800 }}
-                  title="Estudando offline. As revisões sincronizarão automaticamente quando conectar."
+                  style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}
+                  title="Estudando offline. Sincronização automática ao reconectar."
                 >
-                  📡 Offline {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : ''}
+                  📡 {pendingOfflineReviews > 0 ? `(${pendingOfflineReviews})` : 'Offline'}
                 </span>
               )}
               {lastReview && (
@@ -4002,31 +4139,40 @@ export default function Index() {
                   ↺ Desfazer
                 </button>
               )}
-              <span className="mr-legacy-control">
-                {qIdx + 1} / {queue.length}
-              </span>
+              {/* Botão de Alternância de Ordem Anki */}
               <button
-                className="mr-legacy-control"
-                onClick={() => setCardReportTarget(card)}
-                title="Reportar erro nesta carta"
-                style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}
+                className="mr-legacy-control order-btn"
+                onClick={toggleStudyOrder}
+                title={
+                  studyOrderMode === 'random'
+                    ? 'Ordem atual: Aleatória (clique para alternar para Sequencial)'
+                    : 'Ordem atual: Sequencial por adição (clique para alternar para Aleatória)'
+                }
               >
-                ⚠️ Reportar
+                {studyOrderMode === 'random' ? '🔀 Aleatório' : '🔢 Sequencial'}
               </button>
-              <button className="mr-legacy-control" onClick={() => setQIdx(queue.length)}>
-                ✓ Concluído
-              </button>
-              {/* Ajuste Dinâmico de Tipografia A- / A+ */}
-              <div
+
+              <button
+                type="button"
+                className="mr-legacy-control"
+                onClick={() => {
+                  const nextVal = speedTimerSetting === 0 ? 10 : speedTimerSetting === 10 ? 15 : speedTimerSetting === 15 ? 30 : 0
+                  setSpeedTimerSetting(nextVal)
+                  localStorage.setItem('mr_speed_timer', String(nextVal))
+                  if (nextVal > 0) setTimerSecondsLeft(nextVal)
+                }}
+                title="Timer de Foco: 10s, 15s ou 30s"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'var(--mr-card-bg, #fff)',
-                  border: '1px solid var(--mr-card-border, #cbd5e1)',
-                  borderRadius: 8,
-                  overflow: 'hidden',
+                  background: speedTimerSetting > 0 ? '#ede9fe' : undefined,
+                  color: speedTimerSetting > 0 ? '#6d28d9' : undefined,
+                  border: speedTimerSetting > 0 ? '1px solid #c4b5fd' : undefined,
+                  fontWeight: 700,
                 }}
               >
+                ⏱️ {speedTimerSetting > 0 ? `${speedTimerSetting}s` : ''}
+              </button>
+
+              <div className="mr-legacy-font-stepper">
                 <button
                   type="button"
                   onClick={() => {
@@ -4034,16 +4180,7 @@ export default function Index() {
                     setFontScale(next)
                     localStorage.setItem('mr_font_scale', String(next))
                   }}
-                  title="Reduzir tamanho do texto da carta (A-)"
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    padding: '5px 8px',
-                    fontSize: '.72rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: 'var(--mr-text, #0f172a)',
-                  }}
+                  title="Diminuir texto (A-)"
                 >
                   A-
                 </button>
@@ -4054,147 +4191,92 @@ export default function Index() {
                     setFontScale(next)
                     localStorage.setItem('mr_font_scale', String(next))
                   }}
-                  title="Aumentar tamanho do texto da carta (A+)"
-                  style={{
-                    border: 'none',
-                    borderLeft: '1px solid var(--mr-card-border, #cbd5e1)',
-                    background: 'transparent',
-                    padding: '5px 8px',
-                    fontSize: '.82rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: 'var(--mr-text, #0f172a)',
-                  }}
+                  title="Aumentar texto (A+)"
                 >
                   A+
                 </button>
               </div>
-              {/* Timer de Foco Rápido */}
-              <button
-                type="button"
-                className="mr-legacy-control"
-                onClick={() => {
-                  const nextVal = speedTimerSetting === 0 ? 10 : speedTimerSetting === 10 ? 15 : speedTimerSetting === 15 ? 30 : 0
-                  setSpeedTimerSetting(nextVal)
-                  localStorage.setItem('mr_speed_timer', String(nextVal))
-                  if (nextVal > 0) setTimerSecondsLeft(nextVal)
-                }}
-                title="Timer de Foco Rápido: vira a carta automaticamente após 10s, 15s ou 30s"
-                style={{
-                  background: speedTimerSetting > 0 ? '#ede9fe' : undefined,
-                  color: speedTimerSetting > 0 ? '#6d28d9' : undefined,
-                  border: speedTimerSetting > 0 ? '1px solid #c4b5fd' : undefined,
-                  fontWeight: 700,
-                }}
-              >
-                ⏱️ {speedTimerSetting > 0 ? `${speedTimerSetting}s` : 'Timer'}
-              </button>
+
               <button
                 type="button"
                 className="mr-legacy-control"
                 onClick={toggleTheme}
-                title={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
-                style={{ padding: '8px 11px', fontSize: '1rem' }}
+                title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+                style={{ padding: '6px 8px', fontSize: '.9rem' }}
               >
                 {theme === 'dark' ? '☀️' : '🌙'}
               </button>
-              <button className="mr-legacy-control exit" onClick={returnToFolders}>
-                ✕ Sair da sessão
+
+              <button
+                className="mr-legacy-control"
+                onClick={() => setCardReportTarget(card)}
+                title="Reportar erro no cartão"
+                style={{ padding: '6px 8px' }}
+              >
+                ⚠️
+              </button>
+
+              <button className="mr-legacy-control exit" onClick={returnToFolders} title="Sair da sessão">
+                ✕ Sair
               </button>
             </div>
           </div>
         </header>
-        <main className="mr-legacy-study-main">
-          <div className="mr-legacy-mode-row">
-            {(
-              [
-                ['flip', '🔄 Virar'],
-                ['write', '✍️ Escrever'],
-                ['reverse', '🔁 Invertido'],
-              ] as const
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                className={'mr-legacy-mode-btn' + (studyMode === mode ? ' active' : '')}
-                onClick={() => {
-                  setStudyMode(mode)
-                  setTypedAnswer('')
-                  setWriteFeedback(null)
-                  setFlipped(false)
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
 
-          {/* Barra de Progresso Visual da Sessão */}
-          <div style={{ width: '100%', maxWidth: 760, margin: '8px auto 14px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '.76rem',
-                color: 'var(--mr-muted, #64748b)',
-                fontWeight: 700,
-                marginBottom: 5,
-              }}
-            >
-              <span>Carta {qIdx + 1} de {queue.length}</span>
-              <span>{Math.round(((qIdx) / queue.length) * 100)}% concluído</span>
+        <main className="mr-legacy-study-main">
+          {/* Barra integrada de modos e informações de estudo */}
+          <div className="mr-study-header-bar">
+            <div className="mr-study-modes">
+              {(
+                [
+                  ['flip', '🔄 Virar'],
+                  ['write', '✍️ Escrever'],
+                  ['reverse', '🔁 Invertido'],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  className={studyMode === mode ? 'active' : ''}
+                  onClick={() => {
+                    setStudyMode(mode)
+                    setTypedAnswer('')
+                    setWriteFeedback(null)
+                    setFlipped(false)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <div
-              style={{
-                width: '100%',
-                height: 6,
-                background: 'var(--mr-mint, #e2e8f0)',
-                borderRadius: 999,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.round(((qIdx) / queue.length) * 100)}%`,
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #16a34a, #22c55e)',
-                  borderRadius: 999,
-                  transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-              />
-            </div>
-          </div>
-          <div className="mr-legacy-progress">
-            <span>
-              {cs.state === 'new'
-                ? '🆕 Nova'
-                : (cs.dueMs || 0) <= Date.now()
-                  ? '⏰ Vencida'
-                  : '📅 Futura'}{' '}
-              · {card.group || 'Revisão médica'}
-            </span>
-            <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+
+            <div className="mr-study-meta-cluster">
+              <span className="mr-study-card-tag">
+                {cs.state === 'new'
+                  ? '🆕 Nova'
+                  : (cs.dueMs || 0) <= Date.now()
+                    ? '⏰ Vencida'
+                    : '📅 Futura'}{' '}
+                · {card.group || 'Revisão médica'}
+              </span>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   setCardStatsOpen(true)
                 }}
-                className="mr-legacy-control"
-                style={{
-                  borderRadius: 8,
-                  padding: '4px 9px',
-                  font: '700 .74rem Inter, system-ui, sans-serif',
-                  cursor: 'pointer',
-                }}
+                className="mr-study-tool-pill"
                 title="Estatísticas deste cartão"
               >
                 📊 Stats
               </button>
-              <span>
-                {schedulerSettings.mode === 'manual'
-                  ? '✍️ Agendamento manual'
-                  : `Retenção alvo: ${Math.round(retention * 100)}%`}
-              </span>
-            </span>
+            </div>
+          </div>
+
+          {/* Barra de Progresso Fluida */}
+          <div className="mr-study-progress-container" title={`${Math.round(((qIdx) / queue.length) * 100)}% concluído`}>
+            <div
+              className="mr-study-progress-bar"
+              style={{ width: `${Math.round(((qIdx) / queue.length) * 100)}%` }}
+            />
           </div>
           <article
             className="mr-legacy-study-card"
@@ -4280,18 +4362,19 @@ export default function Index() {
                 />
               </div>
             )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            {/* Cabeçalho Interno Elegante e Compacto do Cartão */}
+            <div className="mr-card-internal-header" onClick={(e) => e.stopPropagation()}>
+              <div className="mr-card-badges-group">
                 <span className="mr-legacy-badge">
                   {card.__reverse
-                    ? '🔁 Cartão reverso (verso → frente)'
+                    ? '🔁 Reverso'
                     : currentOcclusionData
-                      ? '🎯 Oclusão de Imagem (Anatomia)'
+                      ? '🎯 Oclusão de Imagem'
                       : isCloze(card.q)
-                        ? `🧩 Cartão Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
+                        ? `🧩 Cloze (${clozeCount(card.q)} lacuna${clozeCount(card.q) > 1 ? 's' : ''})`
                         : card.clinical
-                          ? '🩺 Cartão de Modo Clínico'
-                          : '🩺 Cartão de revisão'}
+                          ? '🩺 Caso Clínico'
+                          : '🩺 Revisão'}
                 </span>
                 {leechCardIds.has(card.id.replace(/::rev$/, '')) && (
                   <span
@@ -4299,7 +4382,7 @@ export default function Index() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 4,
-                      padding: '3px 9px',
+                      padding: '3px 8px',
                       borderRadius: 999,
                       background: '#fee2e2',
                       color: '#b91c1c',
@@ -4309,7 +4392,7 @@ export default function Index() {
                     }}
                     title="Esta carta foi errada 2 ou mais vezes em sessões recentes (Carta Crítica/Leech)."
                   >
-                    🩸 Carta Crítica
+                    🩸 Crítica
                   </span>
                 )}
                 {(card.q?.includes('<img') || card.a?.includes('<img') || card.image || card.diagram_svg) && (
@@ -4318,16 +4401,16 @@ export default function Index() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 4,
-                      padding: '3px 9px',
+                      padding: '3px 8px',
                       borderRadius: 999,
                       background: '#eff6ff',
                       color: '#1d4ed8',
                       fontSize: '.72rem',
                       fontWeight: 800,
                     }}
-                    title="Imagens em alta definição. Clique na imagem para zoom 4K, arrastar e modo contraste."
+                    title="Imagens em alta definição. Clique para zoom 4K."
                   >
-                    🔍 Zoom 4K disponível (clique na imagem)
+                    🔍 Zoom 4K
                   </span>
                 )}
                 {extractCardTags(card).map((tag) => (
@@ -4336,7 +4419,7 @@ export default function Index() {
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      padding: '3px 9px',
+                      padding: '3px 8px',
                       borderRadius: 999,
                       background: '#fef3c7',
                       color: '#b45309',
@@ -4349,14 +4432,77 @@ export default function Index() {
                 ))}
               </div>
 
-              {/* Controles de Áudio TTS */}
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              >
+              <div className="mr-card-tools-group">
+                {/* Ferramentas de Marca-Texto */}
+                <div className="mr-highlighter-cluster">
+                  <span style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--mr-muted, #64748b)' }}>Grifar:</span>
+                  <button
+                    type="button"
+                    onClick={() => applyHighlight('#fef08a')}
+                    style={{ background: '#fef08a' }}
+                    title="Grifar texto selecionado em amarelo"
+                  >
+                    🟡
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyHighlight('#bbf7d0')}
+                    style={{ background: '#bbf7d0' }}
+                    title="Grifar texto selecionado em verde"
+                  >
+                    🟢
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyHighlight('#fbcfe8')}
+                    style={{ background: '#fbcfe8' }}
+                    title="Grifar texto selecionado em rosa"
+                  >
+                    🌸
+                  </button>
+                  {cardHighlights.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearHighlights}
+                      style={{
+                        background: 'transparent',
+                        border: '1px dashed #cbd5e1',
+                        borderRadius: 4,
+                        padding: '1px 5px',
+                        fontSize: '.68rem',
+                        color: '#64748b',
+                        cursor: 'pointer',
+                      }}
+                      title="Remover grifos deste cartão"
+                    >
+                      🧹
+                    </button>
+                  )}
+                </div>
+
+                {/* Minhas Anotações */}
                 <button
                   type="button"
-                  className="mr-legacy-tts-btn"
+                  onClick={() => setShowPersonalNotes(!showPersonalNotes)}
+                  style={{
+                    background: showPersonalNotes ? '#dcfce7' : 'transparent',
+                    border: `1px solid ${showPersonalNotes ? '#86efac' : '#cbd5e1'}`,
+                    borderRadius: 8,
+                    padding: '3px 8px',
+                    fontSize: '.72rem',
+                    fontWeight: 700,
+                    color: showPersonalNotes ? '#15803d' : '#475569',
+                    cursor: 'pointer',
+                  }}
+                  title="Anotações pessoais privadas"
+                >
+                  📝 {currentCardNote ? 'Anotações •' : 'Anotações'}
+                </button>
+
+                {/* Controles de Áudio TTS */}
+                <button
+                  type="button"
+                  className="mr-tts-btn"
                   onClick={() => {
                     if (isSpeaking) {
                       speechService.stop()
@@ -4365,33 +4511,21 @@ export default function Index() {
                       speechService.speak(textToRead, flipped, speechRate)
                     }
                   }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    border: `1.5px solid ${isSpeaking ? '#f59e0b' : '#86efac'}`,
-                    background: isSpeaking ? '#fffbeb' : '#f0fdf4',
-                    color: isSpeaking ? '#b45309' : '#15803d',
-                    borderRadius: 999,
-                    padding: '3px 10px',
-                    fontSize: '.74rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
                   title="Ouvir em voz alta em português"
                 >
-                  {isSpeaking ? '⏹️ Parar' : flipped ? '🔊 Ouvir Resposta' : '🔊 Ouvir Pergunta'}
+                  {isSpeaking ? '⏹️ Parar' : flipped ? '🔊 Resposta' : '🔊 Pergunta'}
                 </button>
                 <select
                   value={speechRate}
                   onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
-                  className="mr-legacy-control"
                   style={{
                     borderRadius: 6,
                     padding: '2px 4px',
-                    fontSize: '.7rem',
+                    fontSize: '.68rem',
                     cursor: 'pointer',
+                    border: '1px solid #cbd5e1',
+                    background: 'transparent',
+                    color: 'inherit',
                   }}
                   title="Velocidade de leitura"
                 >
@@ -4399,165 +4533,6 @@ export default function Index() {
                   <option value={1.2}>1.2x</option>
                   <option value={1.5}>1.5x</option>
                 </select>
-              </div>
-            </div>
-
-            {/* Balão flutuante de marca-texto ao selecionar texto */}
-            {floatingHighlightPos && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: 'fixed',
-                  left: floatingHighlightPos.x,
-                  top: Math.max(10, floatingHighlightPos.y - 42),
-                  transform: 'translateX(-50%)',
-                  zIndex: 9999,
-                  background: '#1e293b',
-                  color: '#fff',
-                  borderRadius: 8,
-                  padding: '4px 8px',
-                  boxShadow: '0 8px 20px rgba(0,0,0,0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: '.75rem',
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>Grifar:</span>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#fef08a', floatingHighlightPos.text)}
-                  style={{ background: '#fef08a', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#854d0e' }}
-                  title="Grifar em amarelo"
-                >
-                  🟡 Amarelo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#bbf7d0', floatingHighlightPos.text)}
-                  style={{ background: '#bbf7d0', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#166534' }}
-                  title="Grifar em verde"
-                >
-                  🟢 Verde
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#fbcfe8', floatingHighlightPos.text)}
-                  style={{ background: '#fbcfe8', border: 'none', borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontWeight: 800, color: '#9d174d' }}
-                  title="Grifar em rosa"
-                >
-                  🌸 Rosa
-                </button>
-              </div>
-            )}
-
-            {/* Barra de Ferramentas: Marca-texto e Anotações Rápidas */}
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 8,
-                padding: '6px 12px',
-                background: 'rgba(0,0,0,0.02)',
-                border: '1px solid var(--mr-card-border, #e2e8f0)',
-                borderRadius: 10,
-                marginBottom: 12,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: '.74rem', fontWeight: 700, color: 'var(--mr-muted, #64748b)' }}>
-                  🖍️ Grifar:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#fef08a')}
-                  style={{
-                    background: '#fef08a',
-                    border: '1px solid #fde047',
-                    borderRadius: 999,
-                    padding: '2px 9px',
-                    fontSize: '.72rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: '#854d0e',
-                  }}
-                  title="Grifar texto selecionado em amarelo"
-                >
-                  🟡 Amarelo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#bbf7d0')}
-                  style={{
-                    background: '#bbf7d0',
-                    border: '1px solid #86efac',
-                    borderRadius: 999,
-                    padding: '2px 9px',
-                    fontSize: '.72rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: '#166534',
-                  }}
-                  title="Grifar texto selecionado em verde"
-                >
-                  🟢 Verde
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyHighlight('#fbcfe8')}
-                  style={{
-                    background: '#fbcfe8',
-                    border: '1px solid #f472b6',
-                    borderRadius: 999,
-                    padding: '2px 9px',
-                    fontSize: '.72rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: '#9d174d',
-                  }}
-                  title="Grifar texto selecionado em rosa"
-                >
-                  🌸 Rosa
-                </button>
-                {cardHighlights.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearHighlights}
-                    style={{
-                      background: 'transparent',
-                      border: '1px dashed #cbd5e1',
-                      borderRadius: 999,
-                      padding: '2px 8px',
-                      fontSize: '.7rem',
-                      color: '#64748b',
-                      cursor: 'pointer',
-                    }}
-                    title="Remover todos os grifos deste cartão"
-                  >
-                    🧹 Limpar ({cardHighlights.length})
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowPersonalNotes(!showPersonalNotes)}
-                  style={{
-                    background: showPersonalNotes ? '#dcfce7' : 'transparent',
-                    border: `1px solid ${showPersonalNotes ? '#86efac' : '#cbd5e1'}`,
-                    borderRadius: 999,
-                    padding: '2px 10px',
-                    fontSize: '.72rem',
-                    fontWeight: 700,
-                    color: showPersonalNotes ? '#15803d' : '#475569',
-                    cursor: 'pointer',
-                  }}
-                >
-                  📝 {showPersonalNotes ? 'Ocultar Anotação' : 'Minhas Anotações'}{currentCardNote ? ' •' : ''}
-                </button>
               </div>
             </div>
 
@@ -5966,8 +5941,8 @@ const tabBtn = (active: boolean): React.CSSProperties => ({
 })
 const qualityBtn = (q: Quality): React.CSSProperties => ({
   flex: 1,
-  minWidth: 100,
-  padding: '0.75rem 0.5rem',
+  minWidth: 0,
+  padding: '0.65rem 0.35rem',
   borderRadius: 12,
   border: 'none',
   cursor: 'pointer',

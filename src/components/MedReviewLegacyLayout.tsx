@@ -1312,61 +1312,272 @@ mark {
 .mr-legacy-study-top {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 14px 22px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-.mr-legacy-study-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.mr-legacy-control {
-  border: 1px solid #bbf7d0;
-  border-radius: 10px;
-  padding: 9px 12px;
-  background: #fff;
-  color: #15803d;
-  font-weight: 800;
-  cursor: pointer;
-}
-.mr-legacy-control.exit {
-  border-color: #e5e7eb;
-  color: #475569;
-}
-.mr-legacy-study-main {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 12px 22px 55px;
-}
-.mr-legacy-study-card {
-  background: #fff;
-  border: 1.5px solid #d1fae5;
-  border-radius: 21px;
-  padding: clamp(20px, 3.5vw, 36px);
-  box-shadow: 0 10px 30px rgba(20, 83, 45, 0.07);
-  cursor: pointer;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.mr-legacy-study-card:hover {
-  box-shadow: 0 14px 38px rgba(20, 83, 45, 0.11);
-}
-.mr-legacy-progress {
+  padding: 10px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 10px 0 16px;
+}
+.mr-legacy-back-link {
+  border: none;
+  background: transparent;
   color: #15803d;
-  font-size: 0.83rem;
+  font-weight: 800;
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mr-legacy-back-link:hover {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+.mr-legacy-counter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 0.82rem;
   font-weight: 800;
 }
+.mr-legacy-study-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mr-legacy-control {
+  border: 1px solid #bbf7d0;
+  border-radius: 9px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #15803d;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.mr-legacy-control:hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.mr-legacy-control.exit {
+  border-color: #e2e8f0;
+  color: #64748b;
+  background: #f8fafc;
+}
+.mr-legacy-control.exit:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.mr-legacy-control.order-btn {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+  font-weight: 800;
+}
+.mr-legacy-font-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.mr-legacy-font-stepper button {
+  border: none;
+  background: transparent;
+  padding: 5px 7px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #334155;
+  cursor: pointer;
+}
+.mr-legacy-font-stepper button:first-child {
+  border-right: 1px solid #e2e8f0;
+}
+.mr-legacy-study-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 8px 18px 45px;
+}
+/* Barra integrada de comandos de estudo */
+.mr-study-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 8px;
+  flex-wrap: wrap;
+}
+.mr-study-modes {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 10px;
+}
+[data-theme="dark"] .mr-study-modes,
+.dark .mr-study-modes {
+  background: #1e293b;
+}
+.mr-study-modes button {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  padding: 6px 11px;
+  border-radius: 8px;
+  font: 700 0.77rem Inter, system-ui, sans-serif;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mr-study-modes button.active {
+  background: #fff;
+  color: #16a34a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .mr-study-modes button.active,
+.dark .mr-study-modes button.active {
+  background: #0f172a;
+  color: #4ade80;
+}
+.mr-study-meta-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mr-study-card-tag {
+  color: #15803d;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.mr-study-tool-pill {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  padding: 4px 9px;
+  border-radius: 8px;
+  font: 700 0.74rem Inter, system-ui, sans-serif;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.mr-study-tool-pill:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.mr-study-progress-container {
+  width: 100%;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+[data-theme="dark"] .mr-study-progress-container,
+.dark .mr-study-progress-container {
+  background: #334155;
+}
+.mr-study-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.mr-legacy-study-card {
+  background: #fff;
+  border: 1.5px solid #d1fae5;
+  border-radius: 18px;
+  padding: clamp(16px, 3vw, 32px);
+  box-shadow: 0 8px 26px rgba(20, 83, 45, 0.06);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.mr-legacy-study-card:hover {
+  box-shadow: 0 12px 34px rgba(20, 83, 45, 0.09);
+}
+/* Cabeçalho interno compacto da carta */
+.mr-card-internal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.mr-card-badges-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.mr-card-tools-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mr-highlighter-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 3px 6px;
+  border-radius: 8px;
+}
+.mr-highlighter-cluster button {
+  border: none;
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.mr-tts-btn {
+  border: 1.5px solid #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.mr-tts-btn:hover {
+  background: #dcfce7;
+}
 .mr-legacy-question {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   color: #1f2937;
-  font-size: calc(clamp(1.2rem, 2.5vw, 1.6rem) * var(--mr-font-scale, 1));
+  font-size: calc(clamp(1.15rem, 2.3vw, 1.5rem) * var(--mr-font-scale, 1));
   line-height: 1.45;
   font-weight: 800;
 }
@@ -1633,9 +1844,62 @@ mark {
     width: 100%;
     box-sizing: border-box;
   }
+  .mr-legacy-study-top {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .mr-legacy-study-controls {
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 70vw;
+  }
+  .mr-legacy-study-controls::-webkit-scrollbar {
+    display: none;
+  }
+  .mr-legacy-study-main {
+    padding: 6px 10px 30px;
+  }
+  .mr-legacy-study-card {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+  .mr-legacy-control {
+    padding: 5px 8px;
+    font-size: 0.74rem;
+  }
+  .mr-legacy-back-link {
+    font-size: 0.8rem;
+    max-width: 140px;
+  }
+  .mr-study-header-bar {
+    gap: 6px;
+    margin: 4px 0 6px;
+  }
+  .mr-study-modes button {
+    padding: 5px 8px;
+    font-size: 0.72rem;
+  }
+  .mr-study-tool-pill {
+    padding: 3px 7px;
+    font-size: 0.7rem;
+  }
+  .mr-card-internal-header {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .mr-legacy-rating-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+  }
+}
+@media (max-width: 440px) {
   .mr-legacy-rating-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
   }
 }
 `
