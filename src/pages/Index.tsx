@@ -456,7 +456,7 @@ const catalogCardIds = new Set<string>()
 let catalogLoaded = false
 let catalogLoadingPromise: Promise<any> | null = null
 async function ensureCatalogLoaded(): Promise<any> {
-  if (catalogLoaded || fullCardsCache.size >= 1350) return
+  if (catalogLoaded && catalogCardIds.size >= 1300) return
   if (!catalogLoadingPromise) {
     catalogLoadingPromise = fetch('/catalog.json')
       .then((r) => (r.ok ? r.json() : null))
@@ -2804,36 +2804,6 @@ export default function Index() {
     }
   }, [decks, cards, reviews])
 
-  const [isSyncing, setIsSyncing] = useState(false)
-  const handleForceSync = useCallback(async () => {
-    if (isSyncing) return
-    setIsSyncing(true)
-    try {
-      // 1. Envia quaisquer revisões offline pendentes para o banco
-      await flushOfflineReviews().catch(() => {})
-
-      // 2. Dispara broadcast global pelo Supabase para todos os navegadores e dispositivos de alunos
-      notifyDataMutation('manual_force_sync', {
-        triggered_by: user?.email || 'admin',
-        userId: user?.id,
-        timestamp: Date.now(),
-      })
-
-      // 3. Recarrega dados completos (cartões de todos os usuários + pastas compartilhadas)
-      const res = await loadData()
-      const totalCount = res?.cards?.length || cards.length
-
-      setMsg(`✨ Sincronizado com sucesso! ${totalCount} flashcards atualizados e transmitidos para todos os alunos.`)
-      setTimeout(() => setMsg(''), 4500)
-    } catch (e: any) {
-      console.warn('Erro ao forçar sincronização:', e)
-      setMsg('⚠️ Erro ao sincronizar. Verifique sua conexão com o servidor.')
-      setTimeout(() => setMsg(''), 4000)
-    } finally {
-      setIsSyncing(false)
-    }
-  }, [isSyncing, loadData, user?.email, user?.id, cards.length])
-
   const handleTextSelection = useCallback(() => {
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed) {
@@ -3024,9 +2994,11 @@ export default function Index() {
       }
 
       // Remove do cache cartões customizados que foram excluídos do Supabase por outros usuários
-      for (const cachedId of Array.from(fullCardsCache.keys())) {
-        if (!catalogCardIds.has(cachedId) && !currentSupabaseCardIds.has(cachedId)) {
-          fullCardsCache.delete(cachedId)
+      if (catalogCardIds.size > 0) {
+        for (const cachedId of Array.from(fullCardsCache.keys())) {
+          if (!catalogCardIds.has(cachedId) && !currentSupabaseCardIds.has(cachedId)) {
+            fullCardsCache.delete(cachedId)
+          }
         }
       }
 
@@ -3057,6 +3029,36 @@ export default function Index() {
       return null
     }
   }, [user?.id])
+
+  const [isSyncing, setIsSyncing] = useState(false)
+  const handleForceSync = useCallback(async () => {
+    if (isSyncing) return
+    setIsSyncing(true)
+    try {
+      // 1. Envia quaisquer revisões offline pendentes para o banco
+      await flushOfflineReviews().catch(() => {})
+
+      // 2. Dispara broadcast global pelo Supabase para todos os navegadores e dispositivos de alunos
+      notifyDataMutation('manual_force_sync', {
+        triggered_by: user?.email || 'admin',
+        userId: user?.id,
+        timestamp: Date.now(),
+      })
+
+      // 3. Recarrega dados completos (cartões de todos os usuários + pastas compartilhadas)
+      const res = await loadData()
+      const totalCount = res?.cards?.length || cards.length
+
+      setMsg(`✨ Sincronizado com sucesso! ${totalCount} flashcards atualizados e transmitidos para todos os alunos.`)
+      setTimeout(() => setMsg(''), 4500)
+    } catch (e: any) {
+      console.warn('Erro ao forçar sincronização:', e)
+      setMsg('⚠️ Erro ao sincronizar. Verifique sua conexão com o servidor.')
+      setTimeout(() => setMsg(''), 4000)
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [isSyncing, loadData, user?.email, user?.id, cards.length])
 
   const reviewsByCard = useMemo(() => {
     const map = new Map<string, any[]>()
