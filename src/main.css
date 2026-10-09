@@ -120,6 +120,11 @@ body .folder-stats:not(#global-stats-modal *) {
     padding: 0 !important;
     margin: 0 !important;
   }
+
+  html, body {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 @layer utilities {

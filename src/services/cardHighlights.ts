@@ -53,7 +53,7 @@ export function applyHighlightsToHtml(html: string, highlights: CardHighlight[])
     const regex = new RegExp(`(?![^<]*>)(${escaped})`, 'gi')
     result = result.replace(
       regex,
-      `<mark style="background: ${h.color}; border-radius: 4px; padding: 1px 4px; color: inherit; font-weight: inherit; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">$1</mark>`
+      `<mark style="background: ${h.color}; border-radius: 4px; padding: 1px 4px; color: #0f172a; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">$1</mark>`
     )
   }
 

@@ -3615,29 +3615,56 @@ export default function Index() {
     }
     const now = new Date()
     const dueDate = new Date(now.getTime() + chosen.value * 86400000)
-    try {
-      const reviewInput = {
-        card_id: realId,
-        card_ref: realId,
-        card: realId,
-        rating: quality,
-        stability: chosen.newS ?? fsrsInitialStability(chosen.g),
-        difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
-        retrievability: cs.s
-          ? fsrsRetrievability(
-              cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
-              cs.s,
-            )
-          : null,
-        elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
-        scheduled_days: chosen.value,
-        state: chosen.state,
-        due: dueDate.toISOString(),
-        reviewed_at: now.toISOString(),
-      }
-      let savedReview: any
+    const reviewInput = {
+      card_id: realId,
+      card_ref: realId,
+      card: realId,
+      rating: quality,
+      stability: chosen.newS ?? fsrsInitialStability(chosen.g),
+      difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
+      retrievability: cs.s
+        ? fsrsRetrievability(
+            cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
+            cs.s,
+          )
+        : null,
+      elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
+      scheduled_days: chosen.value,
+      state: chosen.state,
+      due: dueDate.toISOString(),
+      reviewed_at: now.toISOString(),
+    }
+
+    // ⚡ Resposta Instantânea ao Clique (0ms / Latência Zero)
+    // O próximo cartão é exibido imediatamente, exatamente como no Anki nativo
+    const synthId = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    const optimisticReview = { id: synthId, ...reviewInput }
+    setReviews((rs) => [...rs, optimisticReview])
+    setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
+    setMsg(`Carta agendada para daqui ${chosen.label}`)
+    setTimeout(() => setMsg(''), 2200)
+
+    setLastReview({
+      card,
+      qIdx,
+      reviewId: synthId,
+      quality,
+      wasAddedToEnd: quality === 'again',
+    })
+
+    if (quality === 'again') {
+      setQueue((q) => [...q, card])
+    }
+
+    setFlipped(false)
+    setMcPicked(null)
+    setTypedAnswer('')
+    setWriteFeedback(null)
+    setQIdx((i) => i + 1)
+
+    // Gravação assíncrona em segundo plano sem congelar a tela
+    ;(async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const synthId = `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
         const offlineItem = {
           id: synthId,
           user_id: user?.id || 'offline_user',
@@ -3652,17 +3679,17 @@ export default function Index() {
           reviewed_at: now.toISOString(),
         }
         saveOfflineReview(offlineItem)
-        savedReview = { ...offlineItem, ...reviewInput }
         setPendingOfflineReviews(getOfflineReviews().length)
-        setMsg(`📶 Revisão salva offline (${chosen.label})! Sincronizará com Wi-Fi.`)
       } else {
         try {
           const created = await createReview(reviewInput)
-          savedReview = { ...(created as any), ...reviewInput, card_id: realId, card_ref: realId, card: realId }
-          setMsg(`Carta agendada para daqui ${chosen.label}`)
+          if (created && (created as any).id) {
+            const finalId = (created as any).id
+            setReviews((rs) => rs.map((r) => (r.id === synthId ? { ...r, id: finalId } : r)))
+            setLastReview((prev) => (prev && prev.reviewId === synthId ? { ...prev, reviewId: finalId } : prev))
+          }
         } catch (netErr: any) {
-          console.warn('Falha de rede ao salvar revisão; enfileirando offline:', netErr)
-          const synthId = `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          console.warn('Falha de conexão ao salvar revisão; enfileirando offline:', netErr)
           const offlineItem = {
             id: synthId,
             user_id: user?.id || 'offline_user',
@@ -3677,34 +3704,10 @@ export default function Index() {
             reviewed_at: now.toISOString(),
           }
           saveOfflineReview(offlineItem)
-          savedReview = { ...offlineItem, ...reviewInput }
           setPendingOfflineReviews(getOfflineReviews().length)
-          setMsg(`📶 Conexão oscilou. Revisão salva offline (${chosen.label})!`)
         }
       }
-      setTimeout(() => setMsg(''), 2500)
-
-      setLastReview({
-        card,
-        qIdx,
-        reviewId: savedReview?.id,
-        quality,
-        wasAddedToEnd: quality === 'again',
-      })
-
-      // No Anki, se errar a carta ('again'), ela é reinserida no fim da fila para fixação
-      if (quality === 'again') {
-        setQueue((q) => [...q, card])
-      }
-
-      setFlipped(false)
-      setMcPicked(null)
-      setTypedAnswer('')
-      setWriteFeedback(null)
-      setQIdx((i) => i + 1)
-    } catch (e: any) {
-      setMsg('Erro ao salvar revisão: ' + (e?.message || e))
-    }
+    })()
   }
 
   // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, Ctrl+Z para desfazer)
@@ -3714,7 +3717,7 @@ export default function Index() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
 
-      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey || !flipped)) {
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
         if (lastReview) {
           e.preventDefault()
           undoLastReview()
@@ -4127,6 +4130,9 @@ export default function Index() {
                 setLightboxImage({ src: img.src, title: img.alt || 'Visualização Anatômica em Alta Resolução' })
                 return
               }
+              const sel = window.getSelection()?.toString().trim()
+              if (sel && sel.length > 0) return
+
               setFlipped((f) => !f)
             }}
           >
@@ -5793,13 +5799,17 @@ const tabBtn = (active: boolean): React.CSSProperties => ({
 const qualityBtn = (q: Quality): React.CSSProperties => ({
   flex: 1,
   minWidth: 100,
-  padding: '0.7rem 0.5rem',
+  padding: '0.75rem 0.5rem',
   borderRadius: 12,
   border: 'none',
   cursor: 'pointer',
   color: '#fff',
   background:
     q === 'again' ? '#dc2626' : q === 'hard' ? '#d97706' : q === 'good' ? '#16a34a' : '#2563eb',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+  transition: 'transform 0.06s ease, filter 0.06s ease',
+  touchAction: 'manipulation',
+  userSelect: 'none',
 })
 const toast: React.CSSProperties = {
   position: 'fixed',

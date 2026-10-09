@@ -694,6 +694,40 @@ const legacyCss = `
   border-color: rgba(245, 158, 11, 0.5) !important;
 }
 
+/* Zero-Lag Click Responsiveness & Tactile Touch */
+button, [role="button"], a, input, select, textarea, .mr-legacy-button, .mr-legacy-control, .mr-legacy-mode-btn, .mr-legacy-category, .mr-legacy-subdeck {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active:not(:disabled), [role="button"]:active {
+  transform: scale(0.97);
+  transition: transform 0.05s ease;
+}
+.mr-legacy-button:active:not(:disabled) {
+  transform: scale(0.96) !important;
+}
+.mr-legacy-control:active:not(:disabled) {
+  transform: scale(0.94) !important;
+}
+.mr-legacy-mode-btn:active:not(:disabled) {
+  transform: scale(0.94) !important;
+}
+.mr-legacy-category:active, .mr-legacy-subdeck:active {
+  transform: scale(0.985) !important;
+}
+.mr-legacy-rating-row button:active:not(:disabled) {
+  transform: scale(0.95) !important;
+  filter: brightness(0.92) !important;
+}
+mark {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+[data-theme="dark"] mark, .dark mark {
+  color: #020617 !important;
+  font-weight: 700 !important;
+}
+
 .mr-legacy-shell {
   min-height: 100vh;
   background: linear-gradient(180deg, #f0fdf4 0%, #f8fafc 320px);
