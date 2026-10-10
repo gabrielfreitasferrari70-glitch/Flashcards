@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import type { ParsedCsvCard } from '@/lib/csvImport'
 import { getLocalCache, setLocalCache } from '@/lib/cache/localCache'
+import { isDataUrl, uploadDataUrlIfNeeded, uploadImageToStorage } from '@/services/imageStorage'
 
 // Canal global de broadcast Supabase Realtime (latência <50ms entre admin e alunos)
 let realtimeChannel: any = null
@@ -174,8 +175,20 @@ export const createCard = async (
 
   // Se tiver colunas da migração 002, tenta incluir
   const extendedPayload: any = { ...basePayload }
+
+  // Imagem em base64 (data URL) sobe para o Storage e vira URL pública,
+  // evitando inflar o PostgreSQL. Fallback mantém o base64 se o upload falhar.
+  let resolvedImageUrl = (card as any).imageUrl
+  if (isDataUrl(resolvedImageUrl)) {
+    try {
+      resolvedImageUrl = await uploadDataUrlIfNeeded(resolvedImageUrl, `deck-${deckId}`)
+    } catch (err) {
+      console.warn('Falha ao enviar imagem para o Storage; mantendo base64:', err)
+    }
+  }
+
   if ((card as any).occlusion) extendedPayload.occlusion = (card as any).occlusion
-  if ((card as any).imageUrl) extendedPayload.image_url = (card as any).imageUrl
+  if (resolvedImageUrl) extendedPayload.image_url = resolvedImageUrl
   if ((card as any).tags) extendedPayload.tags = (card as any).tags
   if ((card as any).group) extendedPayload.group = (card as any).group
   if ((card as any).ref) extendedPayload.ref = (card as any).ref
@@ -227,7 +240,24 @@ export const createCardsBatch = async (
     return s || fallback
   }
 
-  const payloads = cards.map((c) => {
+  // Converte imagens em data URL (base64) para URL pública no Storage,
+  // evitando inflar o PostgreSQL. Fallback mantém o base64 se o upload falhar.
+  const imageUrlByCard = new Map<number, string | null>()
+  for (let i = 0; i < cards.length; i++) {
+    const raw = sanitizeStr((cards[i] as any).image_url || cards[i].imageUrl || '', '')
+    if (raw && isDataUrl(raw)) {
+      try {
+        imageUrlByCard.set(i, await uploadDataUrlIfNeeded(raw, `deck-${deckId}`))
+      } catch (err) {
+        console.warn('Falha ao enviar imagem para o Storage; mantendo base64:', err)
+        imageUrlByCard.set(i, raw)
+      }
+    } else {
+      imageUrlByCard.set(i, raw || null)
+    }
+  }
+
+  const payloads = cards.map((c, i) => {
     const cleanQ = sanitizeStr(c.q, 'Flashcard sem pergunta')
     const cleanA = sanitizeStr(c.a, 'Flashcard sem resposta')
     const cleanTags = Array.isArray(c.tags)
@@ -249,7 +279,7 @@ export const createCardsBatch = async (
       ref: sanitizeStr(c.ref, ''),
       reverse: !!(c as any).reverse,
       choices: (c as any).choices || null,
-      image_url: sanitizeStr((c as any).image_url || c.imageUrl || '', '') || null,
+      image_url: imageUrlByCard.get(i) ?? null,
       occlusion: c.occlusion && typeof c.occlusion === 'object' ? c.occlusion : null,
     }
   })
@@ -957,21 +987,13 @@ export const importCardsAuto = async (
   return { ok: true, firstDeckId: rootDeckId }
 }
 export const uploadCardImage = async (cardId: string, file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const dataUrl = reader.result as string
-        await supabase.from('mr_cards').update({ image_url: dataUrl }).eq('id', cardId)
-        notifyDataMutation('card_image_uploaded', { cardId })
-        resolve(dataUrl)
-      } catch (err) {
-        reject(err)
-      }
-    }
-    reader.onerror = (e) => reject(e)
-    reader.readAsDataURL(file)
-  })
+  // Envia a imagem para o bucket público `card-images` e persiste apenas a URL pública.
+  // (Antes gravava a imagem inteira em base64 na coluna `image_url`, inflando o Postgres.)
+  const url = await uploadImageToStorage(file, cardId)
+  const { error } = await supabase.from('mr_cards').update({ image_url: url }).eq('id', cardId)
+  if (error) throw error
+  notifyDataMutation('card_image_uploaded', { cardId })
+  return url
 }
 
 

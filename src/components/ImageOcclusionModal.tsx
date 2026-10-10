@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { OcclusionMask } from '@/services/imageOcclusion'
 import { createCard } from '@/services/medreview'
+import { isDataUrl, uploadDataUrlIfNeeded } from '@/services/imageStorage'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Props {
@@ -397,6 +398,18 @@ export const ImageOcclusionModal: React.FC<Props> = ({
     try {
       const modeLabel = mode === 'hide_all_guess_one' ? 'Ocultar Todos, Adivinhar Um' : 'Ocultar Um, Adivinhar Um'
 
+      // Converte a imagem base64 (data URL) para URL pública no Storage antes de gravar,
+      // evitando inflar o PostgreSQL com a imagem embutida no JSON de oclusão.
+      let finalImageUrl = imageUrl
+      if (isDataUrl(imageUrl)) {
+        setMsg('Enviando imagem para o storage…')
+        try {
+          finalImageUrl = await uploadDataUrlIfNeeded(imageUrl, `occlusion-${deckId}`)
+        } catch (err) {
+          console.warn('Falha ao enviar imagem de oclusão para o Storage; mantendo base64:', err)
+        }
+      }
+
       // Cria 1 cartão para CADA quadradinho (padrão exato do Anki)
       for (let i = 0; i < masks.length; i++) {
         const mask = masks[i]
@@ -411,7 +424,7 @@ export const ImageOcclusionModal: React.FC<Props> = ({
           clinical: false,
           imageUrl: '',
           occlusion: {
-            imageUrl,
+            imageUrl: finalImageUrl,
             imageTitle: title || 'Oclusão de Imagem',
             masks,
             activeMaskId: mask.id,

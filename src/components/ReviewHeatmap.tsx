@@ -6,6 +6,15 @@ export interface ReviewHeatmapProps {
   theme?: 'light' | 'dark'
 }
 
+// Chave de data local (YYYY-MM-DD) — evita deslocamento de fuso ao usar toISOString() (UTC),
+// que agrupava revisões feitas à noite no Brasil (UTC-3) no dia seguinte.
+function localDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
   reviews,
   daysCount = 91, // 13 semanas (aproximadamente 3 meses)
@@ -22,7 +31,7 @@ export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
     for (const r of reviews || []) {
       const rawDate = r.reviewed_at || r.created_at || r.created
       if (!rawDate) continue
-      const dateStr = new Date(rawDate).toISOString().slice(0, 10)
+      const dateStr = localDateKey(new Date(rawDate))
       map.set(dateStr, (map.get(dateStr) || 0) + 1)
       total++
     }
@@ -33,7 +42,7 @@ export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
     for (let i = 0; i < 365; i++) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
-      const ds = d.toISOString().slice(0, 10)
+      const ds = localDateKey(d)
       const count = map.get(ds) || 0
       if (count > 0) {
         streak++
@@ -66,7 +75,7 @@ export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
     for (let i = daysCount - 1; i >= 0; i--) {
       const d = new Date(today)
       d.setDate(d.getDate() - i)
-      const ds = d.toISOString().slice(0, 10)
+      const ds = localDateKey(d)
       const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
       const count = dayMap.get(ds) || 0
       list.push({

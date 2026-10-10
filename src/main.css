@@ -1139,3 +1139,160 @@ div:has(> .folder-card) {
   font-weight: 800 !important;
   width: 100% !important;
 }
+
+/* ============================================================
+   MedReview — refinamentos visuais globais (estética + fluidez)
+   ============================================================ */
+
+/* Tipografia mais nítida em telas de alta densidade */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+/* Transição suave ao alternar tema claro/escuro */
+body {
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* Seleção de texto com a cor da marca */
+::selection {
+  background: rgba(22, 163, 74, 0.22);
+  color: inherit;
+}
+
+/* Foco visível e acessível (apenas navegação por teclado) */
+:focus-visible {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbars discretas e consistentes */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22, 163, 74, 0.45) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(22, 163, 74, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 163, 74, 0.6);
+  background-clip: padding-box;
+}
+
+/* Respeita usuários que preferem menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* ============================================================
+   MedReview — refinamentos da tela de estudo
+   ============================================================ */
+
+/* Botões de avaliação (Errei / Difícil / Bom / Fácil) */
+.mr-legacy-rating-row {
+  gap: 0.6rem;
+}
+.mr-legacy-rating-row button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+}
+.mr-legacy-rating-row button:active {
+  transform: translateY(0) scale(0.97);
+  filter: brightness(0.94);
+}
+
+/* Barra de progresso da sessão de estudo */
+.mr-study-progress-bar {
+  transition: width 0.4s ease;
+}
+
+/* Cartão de estudo: sombra mais suave e transição de virada */
+.mr-legacy-study-card {
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.mr-legacy-study-card:hover {
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
+}
+
+/* Controles do cabeçalho de estudo (Voltar / Desfazer / modos) */
+.mr-legacy-control,
+.mr-study-modes button,
+.mr-study-tool-pill {
+  transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.mr-legacy-control:hover:not(:disabled),
+.mr-study-modes button:hover,
+.mr-study-tool-pill:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+.mr-legacy-control:active:not(:disabled),
+.mr-study-modes button:active,
+.mr-study-tool-pill:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* Input de escrita (modo escrever) com foco destacado */
+.mr-legacy-study-card textarea:focus,
+.mr-legacy-study-card input:focus {
+  border-color: #16a34a !important;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15) !important;
+}
+
+
+/* Dicas de atalhos de teclado (estilo Anki) */
+.mr-study-kbd-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.1rem;
+  justify-content: center;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  opacity: 0.85;
+}
+.mr-study-kbd-hints kbd {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-bottom-width: 2px;
+  background: rgba(255, 255, 255, 0.5);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #475569;
+  text-align: center;
+}
+.dark .mr-study-kbd-hints kbd,
+[data-theme='dark'] .mr-study-kbd-hints kbd {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+}
+

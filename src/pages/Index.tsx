@@ -35,6 +35,7 @@ import { extractCardTags } from '@/services/cardTags'
 import { saveOfflineReview, flushOfflineReviews, initOfflineSync, getOfflineReviews } from '@/services/offlineSync'
 import { getCardHighlights, saveCardHighlight, clearCardHighlights, applyHighlightsToHtml, CardHighlight } from '@/services/cardHighlights'
 import { downloadFullBackup } from '@/services/fullBackup'
+import { isMasterUser, migrateLegacyImagesIfNeeded } from '@/services/imageMigration'
 
 // Modais pesados carregados sob demanda (Code-splitting / Bundle 75% menor)
 const MedReviewLibrary = lazy(() => import('@/components/MedReviewLibrary'))
@@ -2731,6 +2732,9 @@ export default function Index() {
   // Ref para gestos de swipe no touch (Mobile e iPad)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
 
+  // Evita buscas concorrentes de loadData (realtime/disparos múltiplos)
+  const loadInFlightRef = useRef(false)
+
   // PWA Offline Sync e Instalação
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null)
   const [isStandalone, setIsStandalone] = useState(false)
@@ -2891,6 +2895,9 @@ export default function Index() {
   }
 
   const loadData = useCallback(async () => {
+    // Evita buscas concorrentes/duplicadas (realtime pode disparar em rajada)
+    if (loadInFlightRef.current) return null
+    loadInFlightRef.current = true
     try {
       const currentUserId = user?.id || pb.authStore.record?.id
 
@@ -3027,8 +3034,31 @@ export default function Index() {
     } catch (e: any) {
       console.warn('Erro ao carregar dados:', e)
       return null
+    } finally {
+      loadInFlightRef.current = false
     }
   }, [user?.id])
+
+  // 🖼️ Migração automática de imagens legadas (base64 → Storage).
+  // Roda sozinha, em background, apenas na conta mestre, sem nenhuma ação manual.
+  // Ao concluir, recarrega os dados para já exibir as URLs públicas no lugar do base64.
+  useEffect(() => {
+    if (auth !== 'in' || !isMasterUser(user?.id)) return
+    let cancelled = false
+    migrateLegacyImagesIfNeeded()
+      .then((migrated) => {
+        if (cancelled) return
+        if (migrated > 0) {
+          loadData()
+          setMsg(`🖼️ ${migrated} imagens movidas para o storage automaticamente.`)
+          setTimeout(() => setMsg(''), 4000)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [auth, user?.id, loadData])
 
   const [isSyncing, setIsSyncing] = useState(false)
   const handleForceSync = useCallback(async () => {
@@ -3405,7 +3435,7 @@ export default function Index() {
       debounceTimer = setTimeout(() => {
         // Recarrega apenas dados leves do usuário sem limpar o catálogo mestre
         loadData()
-      }, 500)
+      }, 150)
     }
 
     const channel = supabase
@@ -4221,7 +4251,7 @@ export default function Index() {
 
     if (sessionProtectFsrs) {
       setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
-      setMsg(`⚡ Treino de véspera: resposta salva (${quality}) com FSRS protegido.`)
+      setMsg(`⚡ Véspera: ${pickEncourage(quality)} (FSRS protegido)`)
       setTimeout(() => setMsg(''), 2200)
       setFlipped(false)
       setMcPicked(null)
@@ -4260,7 +4290,7 @@ export default function Index() {
       return next
     })
     setStudySession((session) => ({ ...session, [quality]: session[quality] + 1 }))
-    setMsg(`Carta agendada para daqui ${chosen.label}`)
+    setMsg(`${pickEncourage(quality)} Próxima revisão: ${chosen.label}.`)
     setTimeout(() => setMsg(''), 2200)
 
     setLastReview({
@@ -5381,6 +5411,18 @@ export default function Index() {
               ))}
             </div>
           )}
+          {/* Atalhos de teclado (descoberta estilo Anki) */}
+          <div className="mr-study-kbd-hints" aria-hidden="true">
+            <span>
+              <kbd>Espaço</kbd> virar
+            </span>
+            <span>
+              <kbd>1</kbd>–<kbd>4</kbd> avaliar
+            </span>
+            <span>
+              <kbd>Ctrl</kbd>+<kbd>Z</kbd> desfazer
+            </span>
+          </div>
           {msg && (
             <div style={toast}>
               {msg}
@@ -6405,18 +6447,53 @@ const tabBtn = (active: boolean): React.CSSProperties => ({
   fontWeight: 700,
   cursor: 'pointer',
 })
+// Feedback encorajador estilo Duolingo/Quizlet — microcopy variado por qualidade.
+const ENCOURAGE: Record<Quality, string[]> = {
+  again: [
+    'Sem problema — repetir é o segredo da memória. 🔁',
+    'Errar agora é acertar na prova. 🎯',
+    'Bora de novo, você chega lá. 💪',
+  ],
+  hard: [
+    'Foi difícil, mas você tentou! 💪',
+    'Difícil hoje, fácil amanhã. ⏳',
+    'Quase! Siga firme. 🔥',
+  ],
+  good: [
+    'Mandou bem! 👏',
+    'Boa evocação! ✅',
+    'Isso aí! 🎯',
+  ],
+  easy: [
+    'Excelente! ⚡',
+    'Dominou! 🏆',
+    'Fácil pra você. 🚀',
+  ],
+}
+const pickEncourage = (q: Quality): string =>
+  ENCOURAGE[q][Math.floor(Math.random() * ENCOURAGE[q].length)]
+
 const qualityBtn = (q: Quality): React.CSSProperties => ({
   flex: 1,
   minWidth: 0,
-  padding: '0.65rem 0.35rem',
-  borderRadius: 12,
-  border: 'none',
+  padding: '0.7rem 0.35rem',
+  borderRadius: 14,
+  border: '1px solid rgba(255,255,255,0.16)',
   cursor: 'pointer',
   color: '#fff',
   background:
-    q === 'again' ? '#dc2626' : q === 'hard' ? '#d97706' : q === 'good' ? '#16a34a' : '#2563eb',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-  transition: 'transform 0.06s ease, filter 0.06s ease',
+    q === 'again'
+      ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+      : q === 'hard'
+        ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+        : q === 'good'
+          ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+          : 'linear-gradient(135deg, #3b82f6, #2563eb)',
+  boxShadow:
+    q === 'good'
+      ? '0 6px 16px rgba(22,163,74,0.35)'
+      : '0 6px 16px rgba(0,0,0,0.14)',
+  transition: 'transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease',
   touchAction: 'manipulation',
   userSelect: 'none',
 })
