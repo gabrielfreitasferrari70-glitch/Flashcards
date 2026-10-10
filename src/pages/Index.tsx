@@ -1009,7 +1009,7 @@ function SettingsModal({
                   <div style={{ fontWeight: 800, color: '#2563eb', textAlign: 'center' }}>Fácil</div>
 
                   {previewProjection.map((p) => (
-                    <React.Fragment key={p.stepName}>
+                    <Fragment key={p.stepName}>
                       <div style={{ fontWeight: 700, color: '#475569' }}>{p.stepName}</div>
                       <div
                         style={{
@@ -1059,7 +1059,7 @@ function SettingsModal({
                       >
                         {p.res.easy.label}
                       </div>
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                 </div>
                 <div style={{ marginTop: 6, fontSize: '.68rem', color: '#64748b', lineHeight: 1.3 }}>
