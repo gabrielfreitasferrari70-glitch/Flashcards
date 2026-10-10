@@ -1,0 +1,30 @@
+# Regras do Projeto MedReview (FSRS-5 Medicina)
+
+## Arquitetura do Projeto
+- **Framework:** React + TypeScript + Vite + Tailwind/Custom CSS.
+- **Backend / Database:** Supabase (PostgreSQL) com Realtime Broadcast e Postgres Changes para sincronização em tempo real entre alunos e docentes.
+- **Algoritmo de Estudos:** FSRS-5 (Free Spaced Repetition Scheduler v5) com modos adicionais:
+  - Modo Manual de Intervalos Progressivos (estilo Anki/SM-2).
+  - Modo Véspera de Prova (Cram Mode / FSRS protegido).
+  - Modo Caso Clínico e Oclusão de Imagem.
+- **Cache Local:** IndexedDB e LocalStorage para suporte offline completo.
+
+## Regras Críticas de Desenvolvimento para Agentes de IA
+1. **Edições Cirúrgicas (NUNCA reescreva arquivos inteiros):**
+   - O arquivo `src/pages/Index.tsx` e `src/components/MedReviewLegacyLayout.tsx` são extensos (>3.000 a 6.000 linhas).
+   - NUNCA reescreva o arquivo do início ao fim para evitar truncamento de código.
+   - Sempre utilize ferramentas de substituição de blocos específicos (`diff` / substituição cirúrgica).
+
+2. **Ordem de Declaração de Variáveis e Hooks do React (Cuidado com TDZ):**
+   - Em JavaScript/TypeScript, certifique-se de que funções e constantes (como `loadData`) sejam declaradas ANTES de serem consumidas em `useCallback` ou `useEffect`.
+
+3. **Sincronização e Supabase:**
+   - A tabela `mr_cards` e `mr_decks` são compartilhadas entre todos os usuários. Não filtre por `user_id` ao carregar baralhos e cartões globais da biblioteca.
+   - A tabela `mr_reviews` (avaliações individuais) DEVE ser filtrada por `user_id` para manter o histórico de estudo de cada aluno privado.
+
+4. **Preservação de Funcionalidades:**
+   - Nunca apague funcionalidades existentes, rotas ou botões sem autorização explícita do usuário.
+   - Sempre mantenha os comentários relevantes e preserve as tipagens do TypeScript.
+
+5. **Verificação de Build:**
+   - Após qualquer alteração importante, verifique a sintaxe e certifique-se de que não há erros de importação ou variáveis não declaradas.
