@@ -608,8 +608,28 @@ export const undoMoveSection = async (deckIds?: string[], restoreKind?: string, 
   notifyDataMutation('section_undo', { deckIds })
 }
 
-export const repairSection = async (_kind?: string, _pattern?: string) => {
-  return { success: true }
+export const repairSection = async (kind?: string, pattern?: string) => {
+  const targetKind = kind === 'prova' ? 'prova' : 'tutoria'
+  const re = new RegExp(pattern || (targetKind === 'tutoria' ? '^Tutoria ' : '^Prova '))
+  const { data: decks, error } = await supabase
+    .from('mr_decks')
+    .select('id, title')
+    .eq('kind', targetKind)
+    .not('parent', 'is', null)
+  if (error) throw error
+
+  const ids = (decks || [])
+    .filter((d: any) => re.test(d.title || ''))
+    .map((d: any) => d.id)
+
+  if (!ids.length) return { success: true, restored: 0 }
+
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50)
+    await supabase.from('mr_decks').update({ parent: null }).in('id', chunk)
+  }
+  notifyDataMutation('section_repaired', { kind: targetKind })
+  return { success: true, restored: ids.length }
 }
 
 export const resetDeck = async (deckId?: string) => {

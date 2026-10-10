@@ -688,6 +688,12 @@ function SettingsModal({
   )
   const [scheduleError, setScheduleError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showPasswordForm, setShowPasswordForm] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMsg, setPasswordMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [passwordBusy, setPasswordBusy] = useState(false)
   const previewProjection = useMemo(() => {
     return [0, 1, 2, 3].map((r) => {
       const fakeState: CardState = {
@@ -714,6 +720,49 @@ function SettingsModal({
     if (ok) {
       onSaved()
       onClose()
+    }
+  }
+  const changePassword = async () => {
+    setPasswordMsg(null)
+    if (!currentPassword) {
+      setPasswordMsg({ ok: false, text: 'Informe sua senha atual.' })
+      return
+    }
+    if (newPassword.length < 8) {
+      setPasswordMsg({ ok: false, text: 'A nova senha deve ter pelo menos 8 caracteres.' })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMsg({ ok: false, text: 'A confirmação não confere com a nova senha.' })
+      return
+    }
+    setPasswordBusy(true)
+    try {
+      const email = pb.authStore.record?.email
+      if (!email) throw new Error('Sessão inválida. Entre novamente para trocar a senha.')
+      // Reautentica para garantir a troca segura da senha
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: currentPassword,
+      })
+      if (authErr) {
+        setPasswordMsg({ ok: false, text: 'Senha atual incorreta.' })
+        return
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) {
+        setPasswordMsg({ ok: false, text: error.message || 'Não foi possível trocar a senha.' })
+        return
+      }
+      setPasswordMsg({ ok: true, text: 'Senha alterada com sucesso!' })
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      window.setTimeout(() => setShowPasswordForm(false), 1200)
+    } catch (e: any) {
+      setPasswordMsg({ ok: false, text: e?.message || 'Não foi possível trocar a senha.' })
+    } finally {
+      setPasswordBusy(false)
     }
   }
   const save = () => {
@@ -1144,6 +1193,145 @@ function SettingsModal({
             </button>
           </div>
         )}
+        <div
+          style={{
+            marginTop: 18,
+            paddingTop: 14,
+            borderTop: '1px solid #e2e8f0',
+          }}
+        >
+          <strong style={{ display: 'block', color: '#15803d', fontSize: '.85rem', marginBottom: 4 }}>
+            🔑 Trocar senha
+          </strong>
+          <p style={{ margin: '0 0 10px', color: '#64748b', fontSize: '.76rem' }}>
+            Atualize a senha de acesso à sua conta MedReview.
+          </p>
+          {!showPasswordForm ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPasswordMsg(null)
+                setShowPasswordForm(true)
+              }}
+              style={{
+                border: '1px solid #86efac',
+                borderRadius: 9,
+                padding: '0.55rem 0.9rem',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '.8rem',
+                background: '#f0fdf4',
+                color: '#15803d',
+                width: '100%',
+              }}
+            >
+              🔑 Trocar senha
+            </button>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <input
+                type="password"
+                placeholder="Senha atual"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '0.55rem 0.7rem',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  font: 'inherit',
+                  fontSize: '.85rem',
+                }}
+              />
+              <input
+                type="password"
+                placeholder="Nova senha (mín. 8 caracteres)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '0.55rem 0.7rem',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  font: 'inherit',
+                  fontSize: '.85rem',
+                }}
+              />
+              <input
+                type="password"
+                placeholder="Confirmar nova senha"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '0.55rem 0.7rem',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  font: 'inherit',
+                  fontSize: '.85rem',
+                }}
+              />
+              {passwordMsg && (
+                <p
+                  role="alert"
+                  style={{
+                    margin: 0,
+                    color: passwordMsg.ok ? '#166534' : '#b91c1c',
+                    fontSize: '.76rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {passwordMsg.ok ? '✅ ' : '⚠️ '}
+                  {passwordMsg.text}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={changePassword}
+                  disabled={passwordBusy}
+                  style={{
+                    border: '1px solid #16a34a',
+                    borderRadius: 9,
+                    padding: '0.5rem 0.8rem',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '.8rem',
+                    background: '#16a34a',
+                    color: '#fff',
+                  }}
+                >
+                  {passwordBusy ? 'Salvando…' : 'Salvar nova senha'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordForm(false)
+                    setPasswordMsg(null)
+                    setCurrentPassword('')
+                    setNewPassword('')
+                    setConfirmPassword('')
+                  }}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 9,
+                    padding: '0.5rem 0.8rem',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '.8rem',
+                    background: '#fff',
+                    color: '#334155',
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         {onRepair && (
           <div
             style={{
@@ -2665,6 +2853,7 @@ export default function Index() {
   const [loginMode, setLoginMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
+  const [showPass, setShowPass] = useState(false)
   const [name, setName] = useState('')
   const [authErr, setAuthErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -4405,13 +4594,47 @@ export default function Index() {
   // ===== Tela: login =====
   if (auth === 'out') {
     return (
-      <div style={{ ...center, background: 'linear-gradient(135deg,#f0fdf4,#ffffff)' }}>
+      <div
+        style={{
+          ...center,
+          background: 'radial-gradient(1100px 520px at 50% -8%, #dcfce7 0%, #f0fdf4 42%, #ffffff 100%)',
+          position: 'relative',
+          overflow: 'hidden',
+          padding: 20,
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: -140,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 560,
+            height: 560,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(22,163,74,0.18), rgba(22,163,74,0) 70%)',
+            pointerEvents: 'none',
+          }}
+        />
         <div style={loginBox}>
-          <h1 style={{ color: '#14532d', fontSize: '1.8rem', margin: 0 }}>🩺 MedReview</h1>
-          <p style={{ color: '#15803d', margin: '0.3rem 0 1.2rem' }}>
+          <div style={loginBadge}>🩺</div>
+          <h1 style={{ color: '#14532d', fontSize: '1.9rem', margin: '0 0 0.2rem', letterSpacing: '-0.02em' }}>
+            MedReview
+          </h1>
+          <p style={{ color: '#15803d', margin: '0 0 1.4rem', fontWeight: 600 }}>
             Revisão interativa de medicina — FSRS-5
           </p>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              marginBottom: '1rem',
+              background: '#f1f5f9',
+              padding: 4,
+              borderRadius: 12,
+            }}
+          >
             <button style={tabBtn(loginMode === 'login')} onClick={() => setLoginMode('login')}>
               Entrar
             </button>
@@ -4433,21 +4656,72 @@ export default function Index() {
             placeholder="E-mail"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') doAuth()
+            }}
           />
-          <input
-            style={input}
-            type="password"
-            placeholder="Senha (mín. 8 caracteres)"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-          />
+          <div style={{ position: 'relative', marginBottom: '0.7rem' }}>
+            <input
+              style={{ ...input, marginBottom: 0, paddingRight: 46 }}
+              type={showPass ? 'text' : 'password'}
+              placeholder="Senha (mín. 8 caracteres)"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') doAuth()
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((s) => !s)}
+              tabIndex={-1}
+              title={showPass ? 'Ocultar senha' : 'Mostrar senha'}
+              style={{
+                position: 'absolute',
+                right: 6,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: '.95rem',
+                color: '#64748b',
+                padding: 4,
+              }}
+            >
+              {showPass ? '🙈' : '👁️'}
+            </button>
+          </div>
           {authErr && <div style={errBox}>{authErr}</div>}
           <button style={primaryBtn} disabled={busy} onClick={doAuth}>
             {busy ? 'Aguarde…' : loginMode === 'signup' ? 'Criar conta e começar' : 'Entrar'}
           </button>
-          <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '1rem' }}>
-            Suas cartas e progresso ficam salvos na nuvem — acesse de qualquer dispositivo.
-          </p>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              justifyContent: 'center',
+              marginTop: '1.1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            {['☁️ Sincronizado', '📱 Funciona offline', '🧠 FSRS-5'].map((f) => (
+              <span
+                key={f}
+                style={{
+                  fontSize: '.72rem',
+                  color: '#64748b',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 999,
+                  padding: '3px 9px',
+                  fontWeight: 600,
+                }}
+              >
+                {f}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -4611,6 +4885,16 @@ export default function Index() {
                 style={{ padding: '6px 8px' }}
               >
                 ⚠️
+              </button>
+
+              <button
+                className="mr-legacy-control"
+                onClick={() => setSettingsOpen(true)}
+                title="Configurações"
+                aria-label="Configurações"
+                style={{ padding: '6px 8px' }}
+              >
+                ⚙️
               </button>
 
               <button className="mr-legacy-control exit" onClick={returnToFolders} title="Sair da sessão">
@@ -4933,6 +5217,9 @@ export default function Index() {
               </div>
             </div>
 
+            <div className="mr-flip-scene">
+              <div className={`mr-flip-inner${flipped ? ' is-flipped' : ''}`}>
+                <div className="mr-flip-face mr-flip-front">
             {card.q === 'Carregando cartão...' ? (
               <div style={{ padding: '3.5rem 1rem', textAlign: 'center' }}>
                 <div
@@ -5183,6 +5470,18 @@ export default function Index() {
                 />
               </div>
             )}
+                </div>
+                <div className="mr-flip-face mr-flip-back">
+            {currentOcclusionData && (
+              <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
+                <ImageOcclusionViewer
+                  data={currentOcclusionData}
+                  revealed={true}
+                  cardPrompt={card.q}
+                  cardAnswer={card.a}
+                />
+              </ErrorBoundary>
+            )}
             {flipped && (
               <div className="mr-legacy-answer">
                 {writeFeedback && (
@@ -5387,6 +5686,9 @@ export default function Index() {
                 </div>
               </div>
             )}
+                </div>
+              </div>
+            </div>
           </article>
           {flipped && (
             <div className="mr-legacy-rating-row">
@@ -5467,6 +5769,28 @@ export default function Index() {
             />
           )}
         </main>
+        {settingsOpen && (
+          <SettingsModal
+            accountId={user?.id}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={() => setRetentionTick((t) => t + 1)}
+            onInstallPwa={handleInstallPwa}
+            onRepair={async (kind) => {
+              try {
+                const pattern = kind === 'tutoria' ? '^Tutoria ' : '^Prova '
+                const res: any = await repairSection(kind, pattern)
+                await loadData()
+                setMsg(`Reparo concluído — ${res?.restored ?? 0} pasta(s) de volta ao nível inicial.`)
+                window.setTimeout(() => setMsg(''), 4500)
+                return true
+              } catch (e: any) {
+                setMsg(e?.message || 'Não foi possível reparar.')
+                window.setTimeout(() => setMsg(''), 4000)
+                return false
+              }
+            }}
+          />
+        )}
       </div>
     )
   }
@@ -6399,34 +6723,52 @@ const center: React.CSSProperties = {
   fontFamily: 'Inter, system-ui, sans-serif',
 }
 const loginBox: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 16,
-  padding: '2rem',
-  boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
-  width: 340,
+  background: 'rgba(255,255,255,0.9)',
+  backdropFilter: 'blur(8px)',
+  borderRadius: 24,
+  padding: '2.2rem 2rem',
+  boxShadow: '0 24px 60px -12px rgba(20,83,45,0.22), 0 0 0 1px rgba(134,239,172,0.35)',
+  width: 360,
+  maxWidth: '100%',
   textAlign: 'center',
+  position: 'relative',
+  zIndex: 1,
+}
+const loginBadge: React.CSSProperties = {
+  width: 64,
+  height: 64,
+  margin: '0 auto 0.9rem',
+  borderRadius: 18,
+  display: 'grid',
+  placeItems: 'center',
+  background: 'linear-gradient(135deg,#16a34a,#15803d)',
+  boxShadow: '0 12px 26px rgba(22,163,74,0.35)',
+  fontSize: '1.8rem',
 }
 const input: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   padding: '0.7rem 0.9rem',
-  borderRadius: 10,
+  borderRadius: 12,
   border: '1.5px solid #cbd5e1',
   fontSize: '0.95rem',
   marginBottom: '0.7rem',
   outline: 'none',
+  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
 }
 const primaryBtn: React.CSSProperties = {
   width: '100%',
   padding: '0.8rem',
-  borderRadius: 10,
+  borderRadius: 12,
   border: 'none',
-  background: '#16a34a',
+  background: 'linear-gradient(135deg,#16a34a,#15803d)',
   color: '#fff',
   fontWeight: 800,
   fontSize: '0.95rem',
   cursor: 'pointer',
   marginTop: '0.4rem',
+  boxShadow: '0 8px 20px rgba(22,163,74,0.28)',
+  transition: 'transform 0.12s ease, box-shadow 0.12s ease',
 }
 const errBox: React.CSSProperties = {
   background: '#fef2f2',

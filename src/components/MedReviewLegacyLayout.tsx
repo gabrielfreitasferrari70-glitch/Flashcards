@@ -1665,6 +1665,37 @@ mark {
   font-size: calc(1rem * var(--mr-font-scale, 1));
   line-height: 1.7;
 }
+/* Animação 3D de virar o cartão */
+.mr-flip-scene {
+  perspective: 1800px;
+}
+.mr-flip-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+}
+.mr-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+.mr-flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.mr-flip-back {
+  transform: rotateY(180deg);
+}
+/* A face oculta fica sobreposta (fora do fluxo) para não alterar a altura do cartão */
+.mr-flip-inner:not(.is-flipped) .mr-flip-back {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mr-flip-inner.is-flipped .mr-flip-front {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  pointer-events: none;
+}
 .mr-legacy-mode-row {
   display: flex;
   gap: 7px;
