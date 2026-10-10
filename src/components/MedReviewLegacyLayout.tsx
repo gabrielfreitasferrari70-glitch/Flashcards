@@ -2471,7 +2471,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               <button
                 type="button"
                 className="mr-legacy-button icon-only"
-                onClick={onSettings}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSettings()
+                }}
                 title="Configurações"
                 aria-label="Configurações"
               >

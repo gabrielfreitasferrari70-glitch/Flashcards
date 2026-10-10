@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
+import React, { Fragment, useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
@@ -531,10 +531,11 @@ export function calculateInducedManualIntervals(
   baseIntervals: ManualIntervals,
   cs: CardState,
 ): Record<Quality, { label: string; value: number; g: number; state: string; newS: number; newD: number }> {
-  const parsedAgain = parseManualInterval(baseIntervals.again) || { days: 10 / 1440, label: '10min' }
-  const parsedHard = parseManualInterval(baseIntervals.hard) || { days: 1, label: '1d' }
-  const parsedGood = parseManualInterval(baseIntervals.good) || { days: 2, label: '2d' }
-  const parsedEasy = parseManualInterval(baseIntervals.easy) || { days: 3, label: '3d' }
+  const intervalsSafe = baseIntervals || DEFAULT_MANUAL_INTERVALS
+  const parsedAgain = parseManualInterval(intervalsSafe?.again) || { days: 10 / 1440, label: '10min' }
+  const parsedHard = parseManualInterval(intervalsSafe?.hard) || { days: 1, label: '1d' }
+  const parsedGood = parseManualInterval(intervalsSafe?.good) || { days: 2, label: '2d' }
+  const parsedEasy = parseManualInterval(intervalsSafe?.easy) || { days: 3, label: '3d' }
 
   const reps = Math.max(0, cs.reps || 0)
   const isFirstView = (reps === 0 && cs.state === 'new') || !cs.lastReviewMs
@@ -665,17 +666,28 @@ function getRetention(): number {
 // ===== Painel de configurações (⚙️) =====
 function SettingsModal({
   accountId,
+  userEmail,
   onClose,
   onSaved,
+  onSaveStudyOrder,
   onRepair,
   onInstallPwa,
 }: {
   accountId?: string
+  userEmail?: string
   onClose: () => void
   onSaved: () => void
+  onSaveStudyOrder?: (order: StudyOrderMode) => void
   onRepair?: (kind: 'tutoria' | 'prova' | 'custom') => Promise<boolean>
   onInstallPwa?: () => void
 }) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
   const [val, setVal] = useState(() => getRetention() * 100)
   const [schedulerMode, setSchedulerMode] = useState<SchedulerMode>(
     () => getSchedulerSettings(accountId).mode,
@@ -738,7 +750,7 @@ function SettingsModal({
     }
     setPasswordBusy(true)
     try {
-      const email = pb.authStore.record?.email
+      const email = userEmail || pb.authStore.record?.email || (await supabase.auth.getUser()).data?.user?.email
       if (!email) throw new Error('Sessão inválida. Entre novamente para trocar a senha.')
       // Reautentica para garantir a troca segura da senha
       const { error: authErr } = await supabase.auth.signInWithPassword({
@@ -788,6 +800,7 @@ function SettingsModal({
     const v = Math.min(97, Math.max(80, val))
     localStorage.setItem(RETENTION_KEY, String(v / 100))
     localStorage.setItem('mr_study_order_mode', modalStudyOrder)
+    onSaveStudyOrder?.(modalStudyOrder)
 
     const payload = { mode: schedulerMode, intervals: manualIntervals }
     const serialized = JSON.stringify(payload)
@@ -845,9 +858,33 @@ function SettingsModal({
           boxShadow: '0 20px 50px rgba(15,23,42,.25)',
         }}
       >
-        <h3 style={{ margin: '0 0 4px', color: '#14532d', fontSize: '1.1rem', fontWeight: 900 }}>
-          ⚙️ Configurações
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <h3 style={{ margin: 0, color: '#14532d', fontSize: '1.1rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⚙️</span> Configurações
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar configurações"
+            title="Fechar (Esc)"
+            style={{
+              border: 'none',
+              background: '#f1f5f9',
+              fontSize: '1rem',
+              color: '#64748b',
+              cursor: 'pointer',
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              lineHeight: 1,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            ✕
+          </button>
+        </div>
         <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.83rem' }}>
           Ajuste o motor FSRS-5 ao seu ritmo de estudo.
         </p>
@@ -4550,7 +4587,7 @@ export default function Index() {
 
   // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, Ctrl+Z para desfazer)
   useEffect(() => {
-    if (route.view !== 'study' || studyMode === 'write') return
+    if (route.view !== 'study' || studyMode === 'write' || settingsOpen || cardStatsOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
@@ -4586,7 +4623,7 @@ export default function Index() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview])
+  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview, settingsOpen, cardStatsOpen])
 
   // ===== Tela: loading =====
   if (auth === 'loading') return <div style={center}>Carregando…</div>
@@ -4888,11 +4925,12 @@ export default function Index() {
               </button>
 
               <button
+                type="button"
                 className="mr-legacy-control"
                 onClick={() => setSettingsOpen(true)}
                 title="Configurações"
                 aria-label="Configurações"
-                style={{ padding: '6px 8px' }}
+                style={{ padding: '6px 8px', flexShrink: 0 }}
               >
                 ⚙️
               </button>
@@ -5472,18 +5510,53 @@ export default function Index() {
             )}
                 </div>
                 <div className="mr-flip-face mr-flip-back">
-            {currentOcclusionData && (
-              <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
-                <ImageOcclusionViewer
-                  data={currentOcclusionData}
-                  revealed={true}
-                  cardPrompt={card.q}
-                  cardAnswer={card.a}
-                />
-              </ErrorBoundary>
-            )}
-            {flipped && (
-              <div className="mr-legacy-answer">
+                  {/* Pergunta permanece visível no verso para que o estudante não fique perdido */}
+                  <div className="mr-flip-back-question" style={{ marginBottom: 16 }}>
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: '.72rem',
+                        fontWeight: 800,
+                        letterSpacing: '.08em',
+                        textTransform: 'uppercase',
+                        color: 'var(--mr-sub, #64748b)',
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span>❓</span> PERGUNTA
+                    </div>
+                    <div
+                      className="mr-legacy-question mr-flipped-question-text"
+                      style={{ marginTop: 0 }}
+                      dangerouslySetInnerHTML={{
+                        __html: applyHighlightsToHtml(
+                          currentOcclusionData
+                            ? (renderClozeHtml(card.q, true) || '🎯 Identifique a estrutura oculta em destaque na imagem:')
+                            : card.__reverse
+                              ? (renderClozeHtml(card.a, true) || '📸 Identifique a estrutura ilustrada:')
+                              : studyMode === 'reverse'
+                                ? (renderClozeHtml(card.a, false) || '📸 Identifique a estrutura ilustrada:')
+                                : (renderClozeHtml(card.q, true) || 'Card sem pergunta'),
+                          cardHighlights
+                        ),
+                      }}
+                    />
+                  </div>
+
+                  {currentOcclusionData && (
+                    <ErrorBoundary fallbackTitle="Erro ao exibir oclusão deste cartão">
+                      <ImageOcclusionViewer
+                        data={currentOcclusionData}
+                        revealed={true}
+                        cardPrompt={card.q}
+                        cardAnswer={card.a}
+                      />
+                    </ErrorBoundary>
+                  )}
+                  {flipped && (
+                    <div className="mr-legacy-answer">
                 {writeFeedback && (
                   <div
                     style={{
@@ -5772,8 +5845,14 @@ export default function Index() {
         {settingsOpen && (
           <SettingsModal
             accountId={user?.id}
+            userEmail={user?.email}
             onClose={() => setSettingsOpen(false)}
-            onSaved={() => setRetentionTick((t) => t + 1)}
+            onSaved={() => {
+              setRetentionTick((t) => t + 1)
+              const savedOrder = (localStorage.getItem('mr_study_order_mode') as StudyOrderMode) || 'sequential'
+              setStudyOrderMode(savedOrder)
+            }}
+            onSaveStudyOrder={setStudyOrderMode}
             onInstallPwa={handleInstallPwa}
             onRepair={async (kind) => {
               try {
@@ -6084,8 +6163,14 @@ export default function Index() {
       {settingsOpen && (
         <SettingsModal
           accountId={user?.id}
+          userEmail={user?.email}
           onClose={() => setSettingsOpen(false)}
-          onSaved={() => setRetentionTick((t) => t + 1)}
+          onSaved={() => {
+            setRetentionTick((t) => t + 1)
+            const savedOrder = (localStorage.getItem('mr_study_order_mode') as StudyOrderMode) || 'sequential'
+            setStudyOrderMode(savedOrder)
+          }}
+          onSaveStudyOrder={setStudyOrderMode}
           onInstallPwa={handleInstallPwa}
           onRepair={async (kind) => {
             try {
