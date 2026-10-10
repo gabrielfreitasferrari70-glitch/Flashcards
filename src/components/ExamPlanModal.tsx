@@ -6,11 +6,20 @@ interface Props {
   deckTitle: string
   totalCards: number
   pendingCards?: number
+  doneToday?: number
   onClose: () => void
   onSaved: () => void
 }
 
-export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, pendingCards, onClose, onSaved }) => {
+export const ExamPlanModal: React.FC<Props> = ({
+  deckId,
+  deckTitle,
+  totalCards,
+  pendingCards,
+  doneToday = 0,
+  onClose,
+  onSaved,
+}) => {
   const [examDate, setExamDate] = useState('')
   const [currentPlan, setCurrentPlan] = useState<ExamPlan | null>(null)
   const [busy, setBusy] = useState(false)
@@ -24,7 +33,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
     })
   }, [deckId])
 
-  const stats = examDate ? calculateExamCountdown(examDate, totalCards, pendingCards) : null
+  const stats = examDate ? calculateExamCountdown(examDate, totalCards, doneToday) : null
 
   const handleSave = async () => {
     if (!examDate) return
@@ -133,21 +142,84 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
                 ⚠️ A data informada já passou. Selecione uma data futura.
               </span>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <span style={{ fontSize: '.72rem', color: '#15803d', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Tempo restante
-                  </span>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#14532d' }}>
-                    {stats.isToday ? 'É hoje! 🎯' : `${stats.daysLeft} ${stats.daysLeft === 1 ? 'dia' : 'dias'}`}
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                  <div>
+                    <span style={{ fontSize: '.72rem', color: '#15803d', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Tempo restante
+                    </span>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#14532d' }}>
+                      {stats.isToday ? 'É hoje! 🎯' : `${stats.daysLeft} ${stats.daysLeft === 1 ? 'dia' : 'dias'}`}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '.72rem', color: '#15803d', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Meta diária sugerida
+                    </span>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#16a34a' }}>
+                      {stats.dailyGoal} {stats.dailyGoal === 1 ? 'carta/dia' : 'cartas/dia'}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <span style={{ fontSize: '.72rem', color: '#15803d', fontWeight: 800, textTransform: 'uppercase' }}>
-                    Meta diária sugerida
-                  </span>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#16a34a' }}>
-                    {stats.dailyGoal} {stats.dailyGoal === 1 ? 'carta/dia' : 'cartas/dia'}
+
+                {/* Bloco de Progresso Diário */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    border: '1px solid #dcfce7',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: '.76rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      📈 Progresso de Hoje
+                    </span>
+                    <span style={{ fontSize: '.84rem', fontWeight: 800, color: stats.isGoalReached ? '#16a34a' : '#0f172a' }}>
+                      {stats.doneToday} de {stats.dailyGoal} feitas {stats.isGoalReached ? '✓' : `(${stats.progressPercent}%)`}
+                    </span>
+                  </div>
+
+                  {/* Barra de Progresso */}
+                  <div
+                    style={{
+                      height: 8,
+                      width: '100%',
+                      background: '#e2e8f0',
+                      borderRadius: 999,
+                      overflow: 'hidden',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${stats.progressPercent}%`,
+                        background: stats.isGoalReached
+                          ? 'linear-gradient(90deg, #16a34a, #22c55e)'
+                          : 'linear-gradient(90deg, #3b82f6, #10b981)',
+                        borderRadius: 999,
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem', color: '#475569' }}>
+                    <span>
+                      {stats.isGoalReached ? (
+                        <strong style={{ color: '#15803d' }}>🎉 Parabéns! Meta do dia concluída com sucesso!</strong>
+                      ) : (
+                        <span>
+                          Faltam <strong style={{ color: '#0f172a' }}>{stats.remainingToday}</strong> {stats.remainingToday === 1 ? 'carta' : 'cartas'} hoje
+                        </span>
+                      )}
+                    </span>
+                    {stats.doneToday > 0 && !stats.isGoalReached && (
+                      <span style={{ color: '#16a34a', fontWeight: 700 }}>
+                        {stats.doneToday} já {stats.doneToday === 1 ? 'feita' : 'feitas'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -3188,45 +3188,77 @@ export default function Index() {
         setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
       }
 
-      // 2. Busca no Supabase pastas e todos os cartões compartilhados entre os usuários
+      // 2. Busca no Supabase pastas e todos os cartões compartilhados entre os usuários em paralelo ultra-rápido
       const customDecksPromise = supabase
         .from('mr_decks')
         .select('*')
         .order('order')
 
       const customCardsPromise = (async () => {
-        const list: any[] = []
-        let from = 0
-        const PAGE = 1000
-        while (true) {
-          const { data, error } = await supabase
+        const [p1, p2] = await Promise.all([
+          supabase
             .from('mr_cards')
             .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
-            .range(from, from + PAGE - 1)
-          if (error || !data || data.length === 0) break
-          list.push(...data)
-          if (data.length < PAGE) break
-          from += PAGE
+            .range(0, 999),
+          supabase
+            .from('mr_cards')
+            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .range(1000, 1999),
+        ])
+        const list: any[] = []
+        if (p1.data) list.push(...p1.data)
+        if (p2.data) list.push(...p2.data)
+        if (p2.data && p2.data.length === 1000) {
+          let from = 2000
+          const PAGE = 1000
+          while (true) {
+            const { data, error } = await supabase
+              .from('mr_cards')
+              .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+              .range(from, from + PAGE - 1)
+            if (error || !data || data.length === 0) break
+            list.push(...data)
+            if (data.length < PAGE) break
+            from += PAGE
+          }
         }
         return list
       })()
 
       const userReviewsPromise = (async () => {
         if (!currentUserId) return []
-        const list: any[] = []
-        let from = 0
-        const PAGE = 1000
-        while (true) {
-          const { data, error } = await supabase
+        const [p1, p2] = await Promise.all([
+          supabase
             .from('mr_reviews')
             .select('id, card_id, rating, stability, difficulty, scheduled_days, elapsed_days, state, due, reviewed_at')
             .eq('user_id', currentUserId)
             .order('reviewed_at')
-            .range(from, from + PAGE - 1)
-          if (error || !data || data.length === 0) break
-          list.push(...data)
-          if (data.length < PAGE) break
-          from += PAGE
+            .range(0, 999),
+          supabase
+            .from('mr_reviews')
+            .select('id, card_id, rating, stability, difficulty, scheduled_days, elapsed_days, state, due, reviewed_at')
+            .eq('user_id', currentUserId)
+            .order('reviewed_at')
+            .range(1000, 1999),
+        ])
+        const list: any[] = []
+        if (p1.data) list.push(...p1.data)
+        if (p2.data) list.push(...p2.data)
+        if (p2.data && p2.data.length === 1000) {
+          let from = 2000
+          const PAGE = 1000
+          while (true) {
+            const { data, error } = await supabase
+              .from('mr_reviews')
+              .select('id, card_id, rating, stability, difficulty, scheduled_days, elapsed_days, state, due, reviewed_at')
+              .eq('user_id', currentUserId)
+              .order('reviewed_at')
+              .range(from, from + PAGE - 1)
+            if (error || !data || data.length === 0) break
+            list.push(...data)
+            if (data.length < PAGE) break
+            from += PAGE
+          }
         }
         return list
       })()
@@ -3295,6 +3327,9 @@ export default function Index() {
       const deletedCardIds = getDeletedCardIds()
       const filteredCards = allCardsList.filter((c) => !deletedCardIds.has(c.id))
       setCards(filteredCards)
+      setTimeout(() => {
+        setLocalCache('mr_cached_cards', filteredCards).catch(() => {})
+      }, 80)
 
       // 5. Processa Revisões (apenas do usuário conectado!)
       const validReviews = userReviewsData || []
@@ -3755,8 +3790,10 @@ export default function Index() {
           } catch {}
         }
 
-        // 2. Sincronização em tempo real com Supabase
-        await loadData()
+        // 2. Sincronização em tempo real com Supabase (em segundo plano, sem travar o carregamento imediato)
+        if (active) {
+          void loadData().catch((err) => console.warn('Background sync error:', err))
+        }
       } catch (e: any) {
         if (!active) return
         pb.authStore.clear()
@@ -6488,12 +6525,26 @@ export default function Index() {
             const cs = cardStateFromReviews(reviewsForCard(c))
             return cs.state === 'new' || (cs.dueMs || 0) <= now
           }).length
+          const todayStartMs = new Date().setHours(0, 0, 0, 0)
+          const targetCardIds = new Set(targetCards.map((c) => c.id))
+          const doneTodaySet = new Set<string>()
+          for (const r of reviews) {
+            const cId = r.card_id || (r as any).card_ref || (r as any).card
+            if (targetCardIds.has(cId)) {
+              const ms = parsePbDate(r.reviewed_at)
+              if (ms && ms >= todayStartMs) {
+                doneTodaySet.add(cId)
+              }
+            }
+          }
+          const doneToday = doneTodaySet.size
           return (
             <ExamPlanModal
               deckId={examPlanTarget.id}
               deckTitle={examPlanTarget.title}
               totalCards={totalCount}
               pendingCards={pendingCount}
+              doneToday={doneToday}
               onClose={() => setExamPlanTarget(null)}
               onSaved={() => {
                 setMsg('Plano do Modo Prova atualizado com sucesso!')

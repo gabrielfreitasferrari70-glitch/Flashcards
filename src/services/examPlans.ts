@@ -97,11 +97,22 @@ export function getAllExamPlans(): Record<string, ExamPlan> {
   return getLocalPlans()
 }
 
+export interface ExamCountdownResult {
+  daysLeft: number
+  passed: boolean
+  dailyGoal: number
+  isToday: boolean
+  doneToday: number
+  remainingToday: number
+  progressPercent: number
+  isGoalReached: boolean
+}
+
 export function calculateExamCountdown(
   examDateStr: string,
   totalCards: number,
-  pendingCards?: number,
-) {
+  doneToday: number = 0,
+): ExamCountdownResult {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
   const exam = new Date(examDateStr + 'T00:00:00')
@@ -109,12 +120,34 @@ export function calculateExamCountdown(
   const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
 
   if (daysLeft < 0) {
-    return { daysLeft: 0, passed: true, dailyGoal: 0, isToday: false }
+    return {
+      daysLeft: 0,
+      passed: true,
+      dailyGoal: 0,
+      isToday: false,
+      doneToday: 0,
+      remainingToday: 0,
+      progressPercent: 0,
+      isGoalReached: false,
+    }
   }
 
   const daysToUse = Math.max(1, daysLeft)
   const cardsCount = Math.max(0, totalCards)
   const dailyGoal = Math.ceil(cardsCount / daysToUse)
+  const safeDone = Math.max(0, doneToday)
+  const remainingToday = Math.max(0, dailyGoal - safeDone)
+  const progressPercent = dailyGoal > 0 ? Math.min(100, Math.round((safeDone / dailyGoal) * 100)) : 100
+  const isGoalReached = dailyGoal > 0 && safeDone >= dailyGoal
 
-  return { daysLeft, passed: false, dailyGoal, isToday: daysLeft === 0 }
+  return {
+    daysLeft,
+    passed: false,
+    dailyGoal,
+    isToday: daysLeft === 0,
+    doneToday: safeDone,
+    remainingToday,
+    progressPercent,
+    isGoalReached,
+  }
 }

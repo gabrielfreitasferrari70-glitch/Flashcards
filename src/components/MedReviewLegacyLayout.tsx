@@ -2214,6 +2214,55 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     return getCount
   }, [cards, decks])
 
+  // Contador de cartas revisadas HOJE por subárvore (memoizado O(N))
+  const cardsDoneTodayInSubtree = useMemo(() => {
+    const todayStartMs = new Date().setHours(0, 0, 0, 0)
+    const cardsReviewedToday = new Set<string>()
+    if (reviews && Array.isArray(reviews)) {
+      for (const r of reviews) {
+        const cId = r.card_id || r.card_ref || r.card
+        if (!cId) continue
+        const rawDate = r.reviewed_at
+        if (rawDate) {
+          const ms = new Date(rawDate).getTime()
+          if (ms >= todayStartMs) {
+            cardsReviewedToday.add(cId)
+          }
+        }
+      }
+    }
+
+    const directDone = new Map<string, number>()
+    for (const c of cards) {
+      const dId = c.deck || (c as any).deck_id
+      if (!c.deleted && dId && cardsReviewedToday.has(c.id)) {
+        directDone.set(dId, (directDone.get(dId) || 0) + 1)
+      }
+    }
+
+    const childrenMap = new Map<string, string[]>()
+    for (const d of decks) {
+      if (!d.deleted && d.parent) {
+        const arr = childrenMap.get(d.parent)
+        if (arr) arr.push(d.id)
+        else childrenMap.set(d.parent, [d.id])
+      }
+    }
+
+    const memo = new Map<string, number>()
+    const getDone = (id: string): number => {
+      if (memo.has(id)) return memo.get(id)!
+      let total = directDone.get(id) || 0
+      const kids = childrenMap.get(id) || []
+      for (const kid of kids) {
+        total += getDone(kid)
+      }
+      memo.set(id, total)
+      return total
+    }
+    return getDone
+  }, [cards, decks, reviews])
+
   const [searchCardLimit, setSearchCardLimit] = useState(30)
   const [searchScopeTab, setSearchScopeTab] = useState<'all' | 'decks' | 'cards'>('all')
 
@@ -2584,26 +2633,30 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 )}
                 {(() => {
                   const plan = openDeckId ? examPlans[openDeckId] : null
-                  const stats = plan ? calculateExamCountdown(plan.exam_date, cardsInSubtree(openDeckId)) : null
+                  const totalInDeck = openDeckId ? cardsInSubtree(openDeckId) : 0
+                  const doneToday = openDeckId ? cardsDoneTodayInSubtree(openDeckId) : 0
+                  const stats = plan ? calculateExamCountdown(plan.exam_date, totalInDeck, doneToday) : null
                   const isActive = plan && !stats?.passed
                   return (
                     <button
                       className="mr-legacy-button"
                       onClick={() => onOpenExamPlan?.(openDeckId, title)}
                       style={{
-                        background: isActive ? '#dcfce7' : '#f0fdf4',
-                        borderColor: isActive ? '#4ade80' : '#86efac',
+                        background: isActive ? (stats?.isGoalReached ? '#dcfce7' : '#ecfdf5') : '#f0fdf4',
+                        borderColor: isActive ? (stats?.isGoalReached ? '#22c55e' : '#86efac') : '#86efac',
                         color: isActive ? '#14532d' : '#15803d',
                         fontWeight: isActive ? 800 : 600,
                       }}
                       title={
-                        plan
-                          ? `Prova: ${plan.exam_date} · Meta: ${stats?.dailyGoal ?? 0} cartas/dia`
+                        plan && stats
+                          ? `Prova: ${plan.exam_date} · Meta diária: ${stats.dailyGoal} cartas · Feitas hoje: ${stats.doneToday} · Faltam hoje: ${stats.remainingToday}`
                           : 'Definir data da prova para esta pasta'
                       }
                     >
-                      🎯 {isActive
-                        ? `Modo Prova Ativo: ${stats?.daysLeft ?? 0}d restantes (${stats?.dailyGoal ?? 0}/dia)`
+                      🎯 {isActive && stats
+                        ? stats.isGoalReached
+                          ? `Modo Prova: Meta Concluída Hoje! (${stats.doneToday}/${stats.dailyGoal} ✓)`
+                          : `Modo Prova: ${stats.daysLeft}d restantes · Hoje: ${stats.doneToday}/${stats.dailyGoal} (faltam ${stats.remainingToday})`
                         : 'Modo Prova (Data-Alvo)'}
                     </button>
                   )
@@ -2752,7 +2805,8 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         <span className="mr-card-count">📚 {total} cartas</span>
                         {(() => {
                           const plan = examPlans[deck.id]
-                          const stats = plan ? calculateExamCountdown(plan.exam_date, total) : null
+                          const doneToday = cardsDoneTodayInSubtree(deck.id)
+                          const stats = plan ? calculateExamCountdown(plan.exam_date, total, doneToday) : null
                           if (!plan || stats?.passed) return null
                           return (
                             <span
@@ -2762,15 +2816,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                 gap: 4,
                                 padding: '2px 8px',
                                 borderRadius: 999,
-                                background: '#dcfce7',
+                                background: stats.isGoalReached ? '#dcfce7' : '#f0fdf4',
                                 color: '#15803d',
-                                border: '1px solid #86efac',
+                                border: `1px solid ${stats.isGoalReached ? '#4ade80' : '#86efac'}`,
                                 fontSize: '0.72rem',
                                 fontWeight: 800,
                               }}
-                              title={`Prova agendada para ${plan.exam_date}: meta de ${stats.dailyGoal} cartas/dia`}
+                              title={`Prova agendada para ${plan.exam_date} · Meta: ${stats.dailyGoal} cartas/dia · Feitas hoje: ${stats.doneToday} · Faltam hoje: ${stats.remainingToday}`}
                             >
-                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} ({stats.dailyGoal}/dia)
+                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} · {stats.doneToday}/{stats.dailyGoal} hoje {stats.isGoalReached ? '✓' : `(faltam ${stats.remainingToday})`}
                             </span>
                           )
                         })()}
@@ -3591,7 +3645,8 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         <span className="mr-card-count">📚 {total} cartas</span>
                         {(() => {
                           const plan = examPlans[deck.id]
-                          const stats = plan ? calculateExamCountdown(plan.exam_date, total) : null
+                          const doneToday = cardsDoneTodayInSubtree(deck.id)
+                          const stats = plan ? calculateExamCountdown(plan.exam_date, total, doneToday) : null
                           if (!plan || stats?.passed) return null
                           return (
                             <span
@@ -3601,15 +3656,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                 gap: 4,
                                 padding: '2px 8px',
                                 borderRadius: 999,
-                                background: '#dcfce7',
+                                background: stats.isGoalReached ? '#dcfce7' : '#f0fdf4',
                                 color: '#15803d',
-                                border: '1px solid #86efac',
+                                border: `1px solid ${stats.isGoalReached ? '#4ade80' : '#86efac'}`,
                                 fontSize: '0.72rem',
                                 fontWeight: 800,
                               }}
-                              title={`Prova agendada para ${plan.exam_date}: meta de ${stats.dailyGoal} cartas/dia`}
+                              title={`Prova agendada para ${plan.exam_date} · Meta: ${stats.dailyGoal} cartas/dia · Feitas hoje: ${stats.doneToday} · Faltam hoje: ${stats.remainingToday}`}
                             >
-                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} ({stats.dailyGoal}/dia)
+                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} · {stats.doneToday}/{stats.dailyGoal} hoje {stats.isGoalReached ? '✓' : `(faltam ${stats.remainingToday})`}
                             </span>
                           )
                         })()}
