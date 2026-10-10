@@ -1,4 +1,4 @@
-// MedReview — persistência real no Skip Cloud (PocketBase)
+// MedReview — persistência na Nuvem (PocketBase)
 // Coleção medreview_state: um registro por usuário com o snapshot completo
 // do estado do app (cartas, pastas, progresso FSRS, histórico de avaliações,
 // tempo de estudo e configurações), serializado em JSON.

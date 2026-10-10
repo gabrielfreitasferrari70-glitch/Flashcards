@@ -64,6 +64,9 @@ const CramSessionModal = lazy(() =>
 const AnkiImportModal = lazy(() =>
   import('@/components/AnkiImportModal').then((m) => ({ default: m.AnkiImportModal })),
 )
+const SpecialCardsModal = lazy(() =>
+  import('@/components/SpecialCardsModal').then((m) => ({ default: m.SpecialCardsModal })),
+)
 import { speechService } from '@/services/speech'
 
 // ==================== Motor FSRS-5 (portado do MedReview original) ====================
@@ -2953,6 +2956,29 @@ export default function Index() {
   const [noteSaving, setNoteSaving] = useState(false)
   const [cramModalOpen, setCramModalOpen] = useState(false)
   const [cramInitialDeckId, setCramInitialDeckId] = useState<string | undefined>(undefined)
+  const [specialCardsModal, setSpecialCardsModal] = useState<{
+    type: 'attention' | 'critical'
+  } | null>(null)
+  const [attentionCardIds, setAttentionCardIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('mr_attention_card_ids')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) return new Set(arr)
+      }
+    } catch {}
+    return new Set()
+  })
+  const [dismissedLeeches, setDismissedLeeches] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('mr_dismissed_leeches')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) return new Set(arr)
+      }
+    } catch {}
+    return new Set()
+  })
   const [deckCompletionModal, setDeckCompletionModal] = useState<{
     deckId: string
     title: string
@@ -3375,12 +3401,12 @@ export default function Index() {
     }
     const leeches = new Set<string>()
     for (const [id, count] of errorCountMap.entries()) {
-      if (count >= 2) {
+      if (count >= 2 && !dismissedLeeches.has(id)) {
         leeches.add(id)
       }
     }
     return leeches
-  }, [reviews])
+  }, [reviews, dismissedLeeches])
 
   const leechCount = useMemo(() => {
     let count = 0
@@ -3391,6 +3417,71 @@ export default function Index() {
     }
     return count
   }, [cards, leechCardIds])
+
+  const attentionCount = useMemo(() => {
+    let count = 0
+    for (const c of cards) {
+      if (!c.suspended && !c.deleted && attentionCardIds.has(c.id)) {
+        count++
+      }
+    }
+    return count
+  }, [cards, attentionCardIds])
+
+  const attentionCards = useMemo(() => {
+    return cards.filter((c) => !c.suspended && !c.deleted && attentionCardIds.has(c.id))
+  }, [cards, attentionCardIds])
+
+  const criticalCards = useMemo(() => {
+    return cards.filter((c) => !c.suspended && !c.deleted && leechCardIds.has(c.id))
+  }, [cards, leechCardIds])
+
+  const toggleAttention = useCallback((cardId: string) => {
+    const cleanId = cardId.replace(/::rev$/, '')
+    setAttentionCardIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(cleanId)) {
+        next.delete(cleanId)
+        setMsg('Carta removida de Atenção.')
+      } else {
+        next.add(cleanId)
+        setMsg('⚠️ Marcada para Atenção! Acesse na página inicial.')
+      }
+      try {
+        localStorage.setItem('mr_attention_card_ids', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+    window.setTimeout(() => setMsg(''), 3500)
+  }, [])
+
+  const removeAttentionCard = useCallback((cardId: string) => {
+    const cleanId = cardId.replace(/::rev$/, '')
+    setAttentionCardIds((prev) => {
+      const next = new Set(prev)
+      next.delete(cleanId)
+      try {
+        localStorage.setItem('mr_attention_card_ids', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+    setMsg('Carta removida da lista de Atenção.')
+    window.setTimeout(() => setMsg(''), 3000)
+  }, [])
+
+  const removeCriticalCard = useCallback((cardId: string) => {
+    const cleanId = cardId.replace(/::rev$/, '')
+    setDismissedLeeches((prev) => {
+      const next = new Set(prev)
+      next.add(cleanId)
+      try {
+        localStorage.setItem('mr_dismissed_leeches', JSON.stringify(Array.from(next)))
+      } catch {}
+      return next
+    })
+    setMsg('Carta removida da lista de Críticas.')
+    window.setTimeout(() => setMsg(''), 3000)
+  }, [])
 
   useEffect(() => {
     if (route.view === 'study' && queue[qIdx]) {
@@ -4655,6 +4746,14 @@ export default function Index() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
 
+      if (e.key === 'a' || e.key === 'A') {
+        if (queue[qIdx]) {
+          e.preventDefault()
+          toggleAttention(queue[qIdx].id.replace(/::rev$/, ''))
+          return
+        }
+      }
+
       if (e.key === 'z' || e.key === 'Z') {
         if (lastReview) {
           e.preventDefault()
@@ -4686,7 +4785,7 @@ export default function Index() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview, settingsOpen, cardStatsOpen])
+  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview, settingsOpen, cardStatsOpen, queue, qIdx, toggleAttention])
 
   // ===== Tela: loading =====
   if (auth === 'loading') return <div style={center}>Carregando…</div>
@@ -5203,6 +5302,25 @@ export default function Index() {
                           ? '🩺 Caso Clínico'
                           : '🩺 Revisão'}
                 </span>
+                {attentionCardIds.has(card.id.replace(/::rev$/, '')) && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                      background: '#fef3c7',
+                      color: '#b45309',
+                      fontSize: '.72rem',
+                      fontWeight: 800,
+                      border: '1px solid #fcd34d',
+                    }}
+                    title="Marcado para Atenção: conteúdo prioritário para estudo aprofundado."
+                  >
+                    ⚠️ Atenção
+                  </span>
+                )}
                 {leechCardIds.has(card.id.replace(/::rev$/, '')) && (
                   <span
                     style={{
@@ -5260,6 +5378,45 @@ export default function Index() {
               </div>
 
               <div className="mr-card-tools-group">
+                {/* Botão de Atenção (Alerta de Conteúdo Não Dominado) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleAttention(card.id.replace(/::rev$/, ''))
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 10px',
+                    borderRadius: 8,
+                    border: attentionCardIds.has(card.id.replace(/::rev$/, ''))
+                      ? '1.5px solid #f59e0b'
+                      : '1px solid #cbd5e1',
+                    background: attentionCardIds.has(card.id.replace(/::rev$/, ''))
+                      ? '#fef3c7'
+                      : 'transparent',
+                    color: attentionCardIds.has(card.id.replace(/::rev$/, ''))
+                      ? '#b45309'
+                      : 'var(--mr-text-secondary, #475569)',
+                    fontWeight: attentionCardIds.has(card.id.replace(/::rev$/, '')) ? 800 : 700,
+                    fontSize: '.74rem',
+                    cursor: 'pointer',
+                    boxShadow: attentionCardIds.has(card.id.replace(/::rev$/, ''))
+                      ? '0 2px 6px rgba(245, 158, 11, 0.25)'
+                      : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={
+                    attentionCardIds.has(card.id.replace(/::rev$/, ''))
+                      ? 'Carta com alerta de Atenção ativado. Clique para desmarcar. (Atalho: A)'
+                      : 'Marcar com alerta de Atenção para reforçar depois (quando não sabe o assunto). (Atalho: A)'
+                  }
+                >
+                  <span style={{ fontSize: '.84rem' }}>⚠️</span>
+                  <span>{attentionCardIds.has(card.id.replace(/::rev$/, '')) ? 'Em Atenção •' : 'Atenção'}</span>
+                </button>
                 {/* Ferramentas de Marca-Texto */}
                 <div className="mr-highlighter-cluster">
                   <span style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--mr-muted, #64748b)' }}>Grifar:</span>
@@ -5929,6 +6086,9 @@ export default function Index() {
             <span>
               <kbd>1</kbd>–<kbd>4</kbd> avaliar
             </span>
+            <span>
+              <kbd>A</kbd> atenção
+            </span>
             {lastReview ? (
               <button
                 type="button"
@@ -6199,8 +6359,11 @@ export default function Index() {
           setCramModalOpen(true)
         }}
         onOpenAnkiImport={() => setAnkiImportOpen(true)}
-        onStudyLeeches={startLeechesMode}
+        onStudyLeeches={() => setSpecialCardsModal({ type: 'critical' })}
+        onOpenCriticalModal={() => setSpecialCardsModal({ type: 'critical' })}
         leechCount={leechCount}
+        onOpenAttentionModal={() => setSpecialCardsModal({ type: 'attention' })}
+        attentionCount={attentionCount}
         theme={theme}
         onToggleTheme={toggleTheme}
         isOnline={isOnline}
@@ -6215,6 +6378,47 @@ export default function Index() {
         }}
       />
       <Suspense fallback={null}>
+        {specialCardsModal && (
+          <SpecialCardsModal
+            type={specialCardsModal.type}
+            cards={specialCardsModal.type === 'attention' ? attentionCards : criticalCards}
+            decks={decks}
+            reviews={reviews}
+            onClose={() => setSpecialCardsModal(null)}
+            onStudyAll={(cardsToStudy, sessionTitle) => {
+              setSpecialCardsModal(null)
+              startStudy(cardsToStudy as any, undefined, sessionTitle)
+            }}
+            onStudySingle={(singleCard) => {
+              setSpecialCardsModal(null)
+              startStudy([singleCard] as any, undefined, `Estudo: ${singleCard.group || 'Carta Específica'}`)
+            }}
+            onRemoveCard={(cardId) => {
+              if (specialCardsModal.type === 'attention') {
+                removeAttentionCard(cardId)
+              } else {
+                removeCriticalCard(cardId)
+              }
+            }}
+            onClearAll={() => {
+              if (specialCardsModal.type === 'attention') {
+                setAttentionCardIds(new Set())
+                try {
+                  localStorage.removeItem('mr_attention_card_ids')
+                } catch {}
+                setMsg('Todas as cartas foram removidas de Atenção.')
+                setTimeout(() => setMsg(''), 3000)
+              } else {
+                setDismissedLeeches(new Set(Array.from(leechCardIds)))
+                try {
+                  localStorage.setItem('mr_dismissed_leeches', JSON.stringify(Array.from(leechCardIds)))
+                } catch {}
+                setMsg('Todas as cartas foram removidas de Críticas.')
+                setTimeout(() => setMsg(''), 3000)
+              }
+            }}
+          />
+        )}
         {cramModalOpen && (
           <CramSessionModal
             decks={decks}
@@ -6311,9 +6515,11 @@ export default function Index() {
         )}
         {masterReportsOpen && (
           <MasterReportsModal
+            cards={cards}
             onClose={() => setMasterReportsOpen(false)}
             onOpenCard={(cId) => {
-              const found = cards.find((c) => c.id === cId)
+              const cleanId = cId.replace(/::rev$/, '')
+              const found = cards.find((c) => c.id.replace(/::rev$/, '') === cleanId)
               if (found) startStudy([found], found.deck, 'Revisar Cartão')
             }}
           />
@@ -6325,7 +6531,8 @@ export default function Index() {
             decks={decks}
             onClose={() => setMasterAnalyticsOpen(false)}
             onOpenCard={(cId) => {
-              const found = cards.find((c) => c.id === cId)
+              const cleanId = cId.replace(/::rev$/, '')
+              const found = cards.find((c) => c.id.replace(/::rev$/, '') === cleanId)
               if (found) startStudy([found], found.deck, 'Revisar Cartão')
             }}
           />

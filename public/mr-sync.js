@@ -1,5 +1,5 @@
 /**
- * MedReview — Sincronização com Skip Cloud (PocketBase)
+ * MedReview — Sincronização em Nuvem (PocketBase)
  * - Login transparente: usa conta demo criada no primeiro acesso (por dispositivo,
  *   e-mail derivado do localStorage; persistida para reuso).
  * - Pull: ao carregar, baixa o estado do usuário do banco e aplica no app.
@@ -252,7 +252,7 @@
       .then(function (r) {
         if (r && (r.id || r.code === 200)) {
           localStorage.setItem(LAST_SYNC_KEY, String(Date.now()))
-          log('estado salvo no Skip Cloud')
+          log('estado salvo na Nuvem MedReview')
         } else {
           log('resposta inesperada ao salvar', r)
         }

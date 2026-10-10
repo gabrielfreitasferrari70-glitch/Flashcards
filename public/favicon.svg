@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="50%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#064e3b" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#favBg)"/>
+
+  <!-- Inner border highlight -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="none" stroke="#6ee7b7" stroke-width="8" stroke-opacity="0.4"/>
+
+  <!-- Medical Cross with Rounded Corners -->
+  <g filter="url(#shadow)">
+    <rect x="216" y="116" width="80" height="280" rx="30" fill="#ffffff"/>
+    <rect x="116" y="216" width="280" height="80" rx="30" fill="#ffffff"/>
+  </g>
+
+  <!-- ECG Heartbeat Line running through the center in emerald -->
+  <path d="M 116 256 H 180 L 205 220 L 235 300 L 275 195 L 305 285 L 325 256 H 396" 
+        fill="none" 
+        stroke="#047857" 
+        stroke-width="16" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+</svg>

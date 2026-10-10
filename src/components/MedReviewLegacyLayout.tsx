@@ -2048,6 +2048,9 @@ type HomeProps = {
   onToggleTheme?: () => void
   onStudyLeeches?: () => void
   leechCount?: number
+  onOpenAttentionModal?: () => void
+  attentionCount?: number
+  onOpenCriticalModal?: () => void
   isOnline?: boolean
   pendingOfflineReviews?: number
   canInstallPwa?: boolean
@@ -2104,6 +2107,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onToggleTheme,
     onStudyLeeches,
     leechCount = 0,
+    onOpenAttentionModal,
+    attentionCount = 0,
+    onOpenCriticalModal,
     isOnline = true,
     pendingOfflineReviews = 0,
     canInstallPwa = false,
@@ -2113,7 +2119,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onSync,
     isSyncing: externalSyncing,
   } = props
-  const isMaster = userEmail === 'gabrielfreitasferrari70@gmail.com'
+  const isMaster = (userEmail || '').trim().toLowerCase() === 'gabrielfreitasferrari70@gmail.com'
 
   const [localSyncing, setLocalSyncing] = useState(false)
   const [syncSuccess, setSyncSuccess] = useState(false)
@@ -2967,18 +2973,34 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     </span>
                   </button>
                 )}
-                {onStudyLeeches && (
+                {onOpenAttentionModal && (
                   <button
                     type="button"
                     className="mr-legacy-button"
-                    onClick={onStudyLeeches}
+                    onClick={onOpenAttentionModal}
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      borderColor: 'rgba(245, 158, 11, 0.4)',
+                      color: '#d97706',
+                      fontWeight: 800,
+                    }}
+                    title="Ver, gerenciar e estudar cartas com alerta de Atenção"
+                  >
+                    ⚠️ Cartas em Atenção {attentionCount > 0 ? `(${attentionCount})` : ''}
+                  </button>
+                )}
+                {(onOpenCriticalModal || onStudyLeeches) && (
+                  <button
+                    type="button"
+                    className="mr-legacy-button"
+                    onClick={onOpenCriticalModal || onStudyLeeches}
                     style={{
                       background: 'rgba(239, 68, 68, 0.12)',
                       borderColor: 'rgba(239, 68, 68, 0.35)',
                       color: '#ef4444',
                       fontWeight: 800,
                     }}
-                    title="Revisar cartas em que você mais errou"
+                    title="Ver, gerenciar e revisar cartas críticas (com mais erros acumulados)"
                   >
                     🩸 Cartas Críticas {leechCount > 0 ? `(${leechCount})` : ''}
                   </button>
