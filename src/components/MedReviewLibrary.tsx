@@ -634,8 +634,14 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
       )
     )
       return
+    const targetDeckIds = new Set<string>([deck.id, ...subtreeIdsOf(deck.id)])
+    const targetCards = localCards.filter(
+      (c) => targetDeckIds.has(c.deck) || targetDeckIds.has((c as any).deck_id),
+    )
+    const cardIds = targetCards.map((c) => c.id)
+
     await run(async () => {
-      await resetDeck(deck.id)
+      await resetDeck(deck.id, cardIds)
     }, 'Progresso resetado — cartas voltaram a ser novas.')
   }
   const openCardModal = (deckId: string, card?: Card) => {

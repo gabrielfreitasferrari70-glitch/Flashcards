@@ -16,6 +16,7 @@ import {
   renameDeck,
   repairSection,
   resetDeck,
+  resetCard,
   restoreBackupData,
   undoMoveSection,
   getDeletedCardIds,
@@ -2882,6 +2883,34 @@ export default function Index() {
     setTimeout(() => setMsg(''), 2500)
   }, [lastReview])
 
+  const resetCurrentCard = useCallback(
+    async (targetCard?: Card) => {
+      const c = targetCard || queue[qIdx]
+      if (!c) return
+      if (
+        !window.confirm(
+          'Resetar o progresso deste cartão? Ele voltará ao estado inicial (novo, com intervalos iniciais).',
+        )
+      )
+        return
+      try {
+        const realId = c.id.replace(/::rev$/, '')
+        await resetCard(realId)
+        setReviews((rs) =>
+          rs.filter((r) => {
+            const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+            return cid !== realId
+          }),
+        )
+        setMsg('Cartão resetado — voltou ao estado novo!')
+        setTimeout(() => setMsg(''), 2500)
+      } catch (e: any) {
+        setMsg('Erro ao resetar cartão: ' + (e?.message || e))
+      }
+    },
+    [queue, qIdx],
+  )
+
   const [undoInfo, setUndoInfo] = useState<{
     deckIds: string[]
     restoreKind: 'tutoria' | 'prova' | 'custom'
@@ -4355,22 +4384,56 @@ export default function Index() {
       })
       .catch((e: any) => setMsg('Erro ao excluir: ' + (e?.message || e)))
   }
-  const confirmDeckReset = (deckId: string) => {
+  const confirmDeckReset = async (deckId: string) => {
     const deck = decks.find((d) => d.id === deckId)
     if (!deck) return
+
+    // Vascula todas as cartas pertencentes a esta pasta e às suas subpastas
+    const deckIds = new Set<string>([deckId])
+    let added = true
+    while (added) {
+      added = false
+      for (const d of decks) {
+        if (!d.deleted && d.parent && deckIds.has(d.parent) && !deckIds.has(d.id)) {
+          deckIds.add(d.id)
+          added = true
+        }
+      }
+    }
+    const targetCards = cards.filter(
+      (c) => !c.deleted && (deckIds.has(c.deck) || deckIds.has((c as any).deck_id)),
+    )
+    const count = targetCards.length
+
     if (
       !window.confirm(
-        `Resetar o progresso de “${deck.title}”? As cartas voltam a ser novas (não são apagadas).`,
+        `Resetar o progresso de “${deck.title}”?${count ? ` As ${count} carta(s) desta pasta (e das subpastas) voltam ao estado inicial (novas, sem intervalos).` : ''} As cartas não são apagadas.`,
       )
     )
       return
-    resetDeck(deckId)
-      .then(() => {
-        loadData()
-        setMsg('Progresso resetado — cartas voltaram a ser novas.')
-        setTimeout(() => setMsg(''), 2500)
-      })
-      .catch((e: any) => setMsg('Erro ao resetar: ' + (e?.message || e)))
+
+    try {
+      setBusy(true)
+      const cardIds = targetCards.map((c) => c.id)
+      await resetDeck(deckId, cardIds)
+
+      // Atualiza estado de revisões em memória imediatamente
+      const cardIdSet = new Set(cardIds.map((id) => id.replace(/::rev$/, '')))
+      setReviews((prev) =>
+        prev.filter((r) => {
+          const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+          return !cardIdSet.has(cid)
+        }),
+      )
+
+      await loadData()
+      setMsg('Progresso resetado — cartas voltaram a ser novas.')
+      setTimeout(() => setMsg(''), 2500)
+    } catch (e: any) {
+      setMsg('Erro ao resetar: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
   }
   const submitDeckQuick = async () => {
     if (!deckModal) return
@@ -4927,6 +4990,16 @@ export default function Index() {
               <button
                 type="button"
                 className="mr-legacy-control"
+                onClick={() => resetCurrentCard(card)}
+                title="Resetar este cartão para o estado novo (intervalos iniciais)"
+                style={{ padding: '6px 8px', fontWeight: 700 }}
+              >
+                ↺ Resetar
+              </button>
+
+              <button
+                type="button"
+                className="mr-legacy-control"
                 onClick={() => setSettingsOpen(true)}
                 title="Configurações"
                 aria-label="Configurações"
@@ -5010,6 +5083,17 @@ export default function Index() {
                 title="Estatísticas deste cartão"
               >
                 📊 Stats
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  resetCurrentCard(card)
+                }}
+                className="mr-study-tool-pill"
+                title="Resetar este cartão para o estado novo"
+              >
+                ↺ Resetar
               </button>
             </div>
           </div>

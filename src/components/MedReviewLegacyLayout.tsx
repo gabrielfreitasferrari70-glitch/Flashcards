@@ -2084,6 +2084,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onDeckAddSubfolder,
     onDeckRename,
     onDeckDelete,
+    onDeckReset,
     onDeckMove,
     onDeckClick,
     userDecks,
@@ -2582,6 +2583,14 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 </button>
                 <button
                   className="mr-legacy-button"
+                  style={{ color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                  onClick={() => onDeckReset?.(openDeckId)}
+                  title="Resetar o progresso das cartas desta pasta para o estado inicial"
+                >
+                  ↺ Resetar progresso
+                </button>
+                <button
+                  className="mr-legacy-button"
                   style={{ color: '#b91c1c', borderColor: '#fecaca', background: '#fff' }}
                   onClick={() => onDeckDelete?.(openDeckId)}
                 >
@@ -2661,6 +2670,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                   }}
                                 >
                                   <span>➡️</span> Mover pasta
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuDeckId(null)
+                                    onDeckReset?.(deck.id)
+                                  }}
+                                >
+                                  <span>↺</span> Resetar progresso
                                 </button>
                                 <div className="mr-legacy-menu-divider" />
                                 <button
@@ -3443,6 +3461,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                   }}
                                 >
                                   <span>➡️</span> Mover pasta
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuDeckId(null)
+                                    onDeckReset?.(deck.id)
+                                  }}
+                                >
+                                  <span>↺</span> Resetar progresso
                                 </button>
                                 <div className="mr-legacy-menu-divider" />
                                 <button

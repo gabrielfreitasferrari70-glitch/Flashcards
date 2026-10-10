@@ -632,17 +632,155 @@ export const repairSection = async (kind?: string, pattern?: string) => {
   return { success: true, restored: ids.length }
 }
 
-export const resetDeck = async (deckId?: string) => {
+export const resetCard = async (cardId: string) => {
+  if (!cardId) return
+  const { data: user } = await supabase.auth.getUser()
+  if (!user?.user) return
+
+  const cleanId = cardId.replace(/::rev$/, '')
+  await supabase.from('mr_reviews').delete().eq('user_id', user.user.id).eq('card_id', cleanId)
+
+  // 1. Limpa da fila offline do navegador
+  try {
+    const rawOffline = localStorage.getItem('mr_offline_reviews_queue')
+    if (rawOffline) {
+      const q = JSON.parse(rawOffline)
+      const filtered = q.filter((r: any) => {
+        const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+        return cid !== cleanId
+      })
+      localStorage.setItem('mr_offline_reviews_queue', JSON.stringify(filtered))
+    }
+  } catch (e) {
+    console.warn('Erro ao limpar offline reviews para carta:', e)
+  }
+
+  // 2. Limpa do cache IndexedDB
+  try {
+    const cached = await getLocalCache<any[]>('mr_cached_reviews')
+    if (cached && Array.isArray(cached)) {
+      const filtered = cached.filter((r: any) => {
+        const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+        return cid !== cleanId
+      })
+      await setLocalCache('mr_cached_reviews', filtered)
+    }
+  } catch (e) {
+    console.warn('Erro ao atualizar cache local para carta:', e)
+  }
+
+  notifyDataMutation('card_reset', { cardId: cleanId })
+}
+
+export const resetDeck = async (deckId?: string, targetCardIds?: string[]) => {
   if (!deckId) return
   const { data: user } = await supabase.auth.getUser()
   if (!user?.user) return
 
-  const { data: cards } = await supabase.from('mr_cards').select('id').eq('deck_id', deckId)
-  if (cards && cards.length > 0) {
-    const cardIds = cards.map((c) => c.id)
-    await supabase.from('mr_reviews').delete().eq('user_id', user.user.id).in('card_id', cardIds)
+  const allCardIdsSet = new Set<string>()
+  if (targetCardIds && Array.isArray(targetCardIds)) {
+    for (const id of targetCardIds) {
+      if (id) allCardIdsSet.add(id.replace(/::rev$/, ''))
+    }
   }
-  notifyDataMutation('deck_reset', { deckId })
+
+  try {
+    // 1. Vascula hierarquia de decks no Supabase para pegar subpastas recursivamente
+    const { data: dbDecks } = await supabase.from('mr_decks').select('id, parent')
+    const descendantDeckIds = new Set<string>([deckId])
+    if (dbDecks && Array.isArray(dbDecks)) {
+      let added = true
+      while (added) {
+        added = false
+        for (const d of dbDecks) {
+          if (d.parent && descendantDeckIds.has(d.parent) && !descendantDeckIds.has(d.id)) {
+            descendantDeckIds.add(d.id)
+            added = true
+          }
+        }
+      }
+    }
+
+    // 2. Busca cartões customizados em mr_cards para todas as subpastas
+    const deckIdsList = Array.from(descendantDeckIds)
+    for (let i = 0; i < deckIdsList.length; i += 50) {
+      const chunk = deckIdsList.slice(i, i + 50)
+      const { data: cards } = await supabase.from('mr_cards').select('id').in('deck_id', chunk)
+      if (cards && Array.isArray(cards)) {
+        for (const c of cards) {
+          if (c.id) allCardIdsSet.add(c.id.replace(/::rev$/, ''))
+        }
+      }
+    }
+
+    // 3. Busca cartões do catálogo estático (/catalog.json) pertencentes a essas pastas
+    if (typeof window !== 'undefined') {
+      try {
+        const catRes = await fetch('/catalog.json')
+        if (catRes.ok) {
+          const cat = await catRes.json()
+          if (cat && Array.isArray(cat.cards)) {
+            for (const c of cat.cards) {
+              if (c.id && (descendantDeckIds.has(c.deck) || descendantDeckIds.has(c.deck_id))) {
+                allCardIdsSet.add(c.id.replace(/::rev$/, ''))
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Catalog check in resetDeck:', err)
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao listar cartas do deck em resetDeck:', err)
+  }
+
+  const allCardIds = Array.from(allCardIdsSet)
+  if (allCardIds.length > 0) {
+    // 4. Deleta revisões no Supabase em lotes de 50 (evita erro de URI too long)
+    for (let i = 0; i < allCardIds.length; i += 50) {
+      const chunk = allCardIds.slice(i, i + 50)
+      const { error } = await supabase
+        .from('mr_reviews')
+        .delete()
+        .eq('user_id', user.user.id)
+        .in('card_id', chunk)
+      if (error) {
+        console.error('Erro ao deletar revisões no Supabase:', error)
+      }
+    }
+
+    // 5. Limpa avaliações acumuladas offline no localStorage
+    try {
+      const rawOffline = localStorage.getItem('mr_offline_reviews_queue')
+      if (rawOffline) {
+        const q = JSON.parse(rawOffline)
+        const filtered = q.filter((r: any) => {
+          const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+          return !allCardIdsSet.has(cid)
+        })
+        localStorage.setItem('mr_offline_reviews_queue', JSON.stringify(filtered))
+      }
+    } catch (e) {
+      console.warn('Erro ao limpar fila offline:', e)
+    }
+
+    // 6. Limpa avaliações em cache local IndexedDB
+    try {
+      const cached = await getLocalCache<any[]>('mr_cached_reviews')
+      if (cached && Array.isArray(cached)) {
+        const filtered = cached.filter((r: any) => {
+          const cid = (r.card_id || r.card_ref || r.card || '').replace(/::rev$/, '')
+          return !allCardIdsSet.has(cid)
+        })
+        await setLocalCache('mr_cached_reviews', filtered)
+      }
+    } catch (e) {
+      console.warn('Erro ao atualizar cache local:', e)
+    }
+  }
+
+  notifyDataMutation('deck_reset', { deckId, cardIds: allCardIds })
 }
 export const moveCard = async (cardId: string, deckId: string) => {
   const { error } = await supabase.from('mr_cards').update({ deck_id: deckId }).eq('id', cardId)
