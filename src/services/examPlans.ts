@@ -93,7 +93,15 @@ export async function removeExamPlan(deckId: string): Promise<void> {
   }
 }
 
-export function calculateExamCountdown(examDateStr: string, totalCards: number) {
+export function getAllExamPlans(): Record<string, ExamPlan> {
+  return getLocalPlans()
+}
+
+export function calculateExamCountdown(
+  examDateStr: string,
+  totalCards: number,
+  pendingCards?: number,
+) {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
   const exam = new Date(examDateStr + 'T00:00:00')
@@ -101,11 +109,12 @@ export function calculateExamCountdown(examDateStr: string, totalCards: number) 
   const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
 
   if (daysLeft < 0) {
-    return { daysLeft: 0, passed: true, dailyGoal: 0 }
+    return { daysLeft: 0, passed: true, dailyGoal: 0, isToday: false }
   }
 
   const daysToUse = Math.max(1, daysLeft)
-  const dailyGoal = Math.ceil(totalCards / daysToUse)
+  const cardsCount = Math.max(0, totalCards)
+  const dailyGoal = Math.ceil(cardsCount / daysToUse)
 
-  return { daysLeft, passed: false, dailyGoal }
+  return { daysLeft, passed: false, dailyGoal, isToday: daysLeft === 0 }
 }

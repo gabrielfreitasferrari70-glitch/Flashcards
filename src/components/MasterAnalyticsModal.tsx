@@ -46,7 +46,7 @@ export const MasterAnalyticsModal: React.FC<Props> = ({
 
     // Group stats by deck
     const deckStats = decks.map((d) => {
-      const deckCards = cards.filter((c) => c.deck === d.id)
+      const deckCards = cards.filter((c) => c.deck === d.id || (c as any).deck_id === d.id)
       let dReviews = 0
       let dLapses = 0
       for (const dc of deckCards) {

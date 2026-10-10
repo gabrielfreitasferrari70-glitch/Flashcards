@@ -6276,18 +6276,28 @@ export default function Index() {
             />
           </ErrorBoundary>
         )}
-        {examPlanTarget && (
-          <ExamPlanModal
-            deckId={examPlanTarget.id}
-            deckTitle={examPlanTarget.title}
-            totalCards={cards.filter((c) => c.deck === examPlanTarget.id).length}
-            onClose={() => setExamPlanTarget(null)}
-            onSaved={() => {
-              setMsg('Plano do Modo Prova atualizado!')
-              setTimeout(() => setMsg(''), 3000)
-            }}
-          />
-        )}
+        {examPlanTarget && (() => {
+          const targetCards = getSubtreeCardList(examPlanTarget.id)
+          const totalCount = targetCards.length
+          const now = Date.now()
+          const pendingCount = targetCards.filter((c) => {
+            const cs = cardStateFromReviews(reviewsForCard(c))
+            return cs.state === 'new' || (cs.dueMs || 0) <= now
+          }).length
+          return (
+            <ExamPlanModal
+              deckId={examPlanTarget.id}
+              deckTitle={examPlanTarget.title}
+              totalCards={totalCount}
+              pendingCards={pendingCount}
+              onClose={() => setExamPlanTarget(null)}
+              onSaved={() => {
+                setMsg('Plano do Modo Prova atualizado com sucesso!')
+                setTimeout(() => setMsg(''), 3000)
+              }}
+            />
+          )
+        })()}
         {cardReportTarget && (
           <CardReportModal
             cardId={cardReportTarget.id.replace(/::rev$/, '')}

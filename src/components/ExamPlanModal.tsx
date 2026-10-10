@@ -5,11 +5,12 @@ interface Props {
   deckId: string
   deckTitle: string
   totalCards: number
+  pendingCards?: number
   onClose: () => void
   onSaved: () => void
 }
 
-export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, onClose, onSaved }) => {
+export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, pendingCards, onClose, onSaved }) => {
   const [examDate, setExamDate] = useState('')
   const [currentPlan, setCurrentPlan] = useState<ExamPlan | null>(null)
   const [busy, setBusy] = useState(false)
@@ -23,7 +24,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
     })
   }, [deckId])
 
-  const stats = examDate ? calculateExamCountdown(examDate, totalCards) : null
+  const stats = examDate ? calculateExamCountdown(examDate, totalCards, pendingCards) : null
 
   const handleSave = async () => {
     if (!examDate) return
@@ -78,8 +79,25 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
         </div>
 
         <p style={{ margin: '0 0 16px', fontSize: '.84rem', color: '#64748b' }}>
-          Defina o dia da sua prova para a pasta <strong>“{deckTitle}”</strong> ({totalCards} cartas). O MedReview recalculará o ritmo ideal para você fechar 100% da matéria a tempo.
+          Defina o dia da sua prova para a pasta <strong>“{deckTitle}”</strong> ({totalCards} {totalCards === 1 ? 'carta' : 'cartas'}{typeof pendingCards === 'number' && pendingCards !== totalCards ? ` · ${pendingCards} pendentes` : ''}). O MedReview recalculará o ritmo ideal para você fechar 100% da matéria a tempo.
         </p>
+
+        {totalCards === 0 && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: '#fef3c7',
+              border: '1.5px solid #fde68a',
+              color: '#92400e',
+              fontSize: '.84rem',
+              fontWeight: 600,
+              marginBottom: 16,
+            }}
+          >
+            ⚠️ Esta pasta ainda não contém cartas cadastradas (nem em subpastas). Adicione flashcards a esta pasta para ativar o cálculo da meta.
+          </div>
+        )}
 
         <div style={{ marginBottom: 18 }}>
           <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 700, color: '#334155', marginBottom: 6 }}>
@@ -100,7 +118,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
           />
         </div>
 
-        {stats && (
+        {stats && totalCards > 0 && (
           <div
             style={{
               padding: '16px',
@@ -112,7 +130,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
           >
             {stats.passed ? (
               <span style={{ color: '#991b1b', fontWeight: 700, fontSize: '.9rem' }}>
-                ⚠️ A data informada já passou.
+                ⚠️ A data informada já passou. Selecione uma data futura.
               </span>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -121,7 +139,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
                     Tempo restante
                   </span>
                   <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#14532d' }}>
-                    {stats.daysLeft} {stats.daysLeft === 1 ? 'dia' : 'dias'}
+                    {stats.isToday ? 'É hoje! 🎯' : `${stats.daysLeft} ${stats.daysLeft === 1 ? 'dia' : 'dias'}`}
                   </div>
                 </div>
                 <div>
@@ -129,7 +147,7 @@ export const ExamPlanModal: React.FC<Props> = ({ deckId, deckTitle, totalCards, 
                     Meta diária sugerida
                   </span>
                   <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#16a34a' }}>
-                    {stats.dailyGoal} cartas/dia
+                    {stats.dailyGoal} {stats.dailyGoal === 1 ? 'carta/dia' : 'cartas/dia'}
                   </div>
                 </div>
               </div>

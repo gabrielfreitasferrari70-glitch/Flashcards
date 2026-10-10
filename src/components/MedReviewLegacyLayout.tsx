@@ -10,6 +10,7 @@ import {
   type DeckSortMode,
 } from '@/lib/deckSort'
 import { highlightMatch, normalizeSearchText } from '@/lib/searchUtils'
+import { getAllExamPlans, calculateExamCountdown } from '@/services/examPlans'
 
 export type LegacyDeck = {
   id: string
@@ -2141,6 +2142,13 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [masterMenuOpen, setMasterMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [examPlans, setExamPlans] = useState(() => getAllExamPlans())
+
+  useEffect(() => {
+    const refreshPlans = () => setExamPlans(getAllExamPlans())
+    window.addEventListener('storage', refreshPlans)
+    return () => window.removeEventListener('storage', refreshPlans)
+  }, [])
 
   useEffect(() => {
     const handleDocClick = () => {
@@ -2568,13 +2576,32 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     ⚡ Estudar ({cardsInSubtree(openDeckId)} cartas)
                   </button>
                 )}
-                <button
-                  className="mr-legacy-button"
-                  onClick={() => onOpenExamPlan?.(openDeckId, title)}
-                  style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#15803d' }}
-                >
-                  🎯 Modo Prova (Data-Alvo)
-                </button>
+                {(() => {
+                  const plan = openDeckId ? examPlans[openDeckId] : null
+                  const stats = plan ? calculateExamCountdown(plan.exam_date, cardsInSubtree(openDeckId)) : null
+                  const isActive = plan && !stats?.passed
+                  return (
+                    <button
+                      className="mr-legacy-button"
+                      onClick={() => onOpenExamPlan?.(openDeckId, title)}
+                      style={{
+                        background: isActive ? '#dcfce7' : '#f0fdf4',
+                        borderColor: isActive ? '#4ade80' : '#86efac',
+                        color: isActive ? '#14532d' : '#15803d',
+                        fontWeight: isActive ? 800 : 600,
+                      }}
+                      title={
+                        plan
+                          ? `Prova: ${plan.exam_date} · Meta: ${stats?.dailyGoal ?? 0} cartas/dia`
+                          : 'Definir data da prova para esta pasta'
+                      }
+                    >
+                      🎯 {isActive
+                        ? `Modo Prova Ativo: ${stats?.daysLeft ?? 0}d restantes (${stats?.dailyGoal ?? 0}/dia)`
+                        : 'Modo Prova (Data-Alvo)'}
+                    </button>
+                  )
+                })()}
                 <button className="mr-legacy-button" onClick={() => onDeckRename?.(openDeckId)}>
                   ✏️ Renomear pasta
                 </button>
@@ -2680,6 +2707,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                 >
                                   <span>↺</span> Resetar progresso
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuDeckId(null)
+                                    onOpenExamPlan?.(deck.id, deck.title)
+                                  }}
+                                >
+                                  <span>🎯</span> Modo Prova (Data-Alvo)
+                                </button>
                                 <div className="mr-legacy-menu-divider" />
                                 <button
                                   type="button"
@@ -2708,6 +2744,30 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
 
                       <div className="mr-card-foot">
                         <span className="mr-card-count">📚 {total} cartas</span>
+                        {(() => {
+                          const plan = examPlans[deck.id]
+                          const stats = plan ? calculateExamCountdown(plan.exam_date, total) : null
+                          if (!plan || stats?.passed) return null
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 999,
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                border: '1px solid #86efac',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                              }}
+                              title={`Prova agendada para ${plan.exam_date}: meta de ${stats.dailyGoal} cartas/dia`}
+                            >
+                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} ({stats.dailyGoal}/dia)
+                            </span>
+                          )
+                        })()}
                         <div className="mr-card-foot-actions">
                           <button
                             type="button"
@@ -3471,6 +3531,15 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                 >
                                   <span>↺</span> Resetar progresso
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuDeckId(null)
+                                    onOpenExamPlan?.(deck.id, deck.title)
+                                  }}
+                                >
+                                  <span>🎯</span> Modo Prova (Data-Alvo)
+                                </button>
                                 <div className="mr-legacy-menu-divider" />
                                 <button
                                   type="button"
@@ -3498,6 +3567,30 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
 
                       <div className="mr-card-foot">
                         <span className="mr-card-count">📚 {total} cartas</span>
+                        {(() => {
+                          const plan = examPlans[deck.id]
+                          const stats = plan ? calculateExamCountdown(plan.exam_date, total) : null
+                          if (!plan || stats?.passed) return null
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 999,
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                border: '1px solid #86efac',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                              }}
+                              title={`Prova agendada para ${plan.exam_date}: meta de ${stats.dailyGoal} cartas/dia`}
+                            >
+                              🎯 {stats.isToday ? 'Hoje!' : `${stats.daysLeft}d`} ({stats.dailyGoal}/dia)
+                            </span>
+                          )
+                        })()}
                         <div className="mr-card-foot-actions">
                           <button
                             type="button"
