@@ -4592,7 +4592,7 @@ export default function Index() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
 
-      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
+      if (e.key === 'z' || e.key === 'Z') {
         if (lastReview) {
           e.preventDefault()
           undoLastReview()
@@ -4977,7 +4977,31 @@ export default function Index() {
                     : '📅 Futura'}{' '}
                 · {card.group || 'Revisão médica'}
               </span>
+              {lastReview && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    undoLastReview()
+                  }}
+                  className="mr-study-tool-pill undo"
+                  style={{
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    border: '1.5px solid #fde68a',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+                >
+                  ↺ Desfazer
+                </button>
+              )}
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   setCardStatsOpen(true)
@@ -5527,9 +5551,9 @@ export default function Index() {
                     >
                       <span>❓</span> PERGUNTA
                     </div>
-                    <div
-                      className="mr-legacy-question mr-flipped-question-text"
-                      style={{ marginTop: 0 }}
+                    <h1
+                      className="mr-legacy-question"
+                      style={{ marginTop: 0, marginBottom: 16 }}
                       dangerouslySetInnerHTML={{
                         __html: applyHighlightsToHtml(
                           currentOcclusionData
@@ -5786,17 +5810,70 @@ export default function Index() {
               ))}
             </div>
           )}
+          {lastReview && (
+            <div style={{ textAlign: 'center', margin: '8px 0 2px' }}>
+              <button
+                type="button"
+                onClick={undoLastReview}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 14px',
+                  borderRadius: 999,
+                  background: '#fef3c7',
+                  border: '1.5px solid #fde68a',
+                  color: '#92400e',
+                  fontWeight: 800,
+                  fontSize: '.78rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(180,83,9,0.12)',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+              >
+                <span>↺ Desfazer última carta avaliada</span>
+                <span style={{ fontSize: '.7rem', opacity: 0.8 }}>(Ctrl+Z)</span>
+              </button>
+            </div>
+          )}
           {/* Atalhos de teclado (descoberta estilo Anki) */}
-          <div className="mr-study-kbd-hints" aria-hidden="true">
+          <div className="mr-study-kbd-hints">
             <span>
               <kbd>Espaço</kbd> virar
             </span>
             <span>
               <kbd>1</kbd>–<kbd>4</kbd> avaliar
             </span>
-            <span>
-              <kbd>Ctrl</kbd>+<kbd>Z</kbd> desfazer
-            </span>
+            {lastReview ? (
+              <button
+                type="button"
+                onClick={undoLastReview}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 10px',
+                  borderRadius: 8,
+                  background: '#fef3c7',
+                  border: '1.5px solid #fde68a',
+                  color: '#92400e',
+                  fontWeight: 800,
+                  fontSize: '.74rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(180,83,9,0.15)',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+              >
+                <span>↺ Desfazer</span>
+                <span style={{ fontSize: '.68rem', opacity: 0.8 }}>(<kbd>Ctrl</kbd>+<kbd>Z</kbd>)</span>
+              </button>
+            ) : (
+              <span>
+                <kbd>Ctrl</kbd>+<kbd>Z</kbd> desfazer
+              </span>
+            )}
           </div>
           {msg && (
             <div style={toast}>

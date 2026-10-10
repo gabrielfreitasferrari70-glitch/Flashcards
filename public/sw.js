@@ -1,5 +1,5 @@
 // MedReview PWA Offline Service Worker (Cache-First para mídias/catálogo + Stale-While-Revalidate para UI)
-const CACHE_NAME = 'medreview-pwa-v2'
+const CACHE_NAME = 'medreview-pwa-v3'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
