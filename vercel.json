@@ -1,6 +1,15 @@
 {
   "headers": [
     {
+      "source": "/atualizar.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
       "source": "/catalog.json",
       "headers": [
         {

@@ -17,7 +17,7 @@ function appVersion() {
       hash.update(file).update(fs.readFileSync(file))
     }
   }
-  for (const file of ['src', 'public/sw.js', 'index.html', 'vite.config.ts', 'package-lock.json']) add(file)
+  for (const file of ['src', 'public/sw.js', 'public/atualizar.html', 'index.html', 'vite.config.ts', 'package-lock.json']) add(file)
   return hash.digest('hex').slice(0, 20)
 }
 const version = appVersion()

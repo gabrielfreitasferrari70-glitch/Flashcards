@@ -143,7 +143,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. Mesma origem
-  if (url.pathname.startsWith('/api/') || url.pathname === '/version.json' || url.pathname === '/sw.js') return
+  if (url.pathname.startsWith('/api/') || url.pathname === '/version.json' || url.pathname === '/sw.js' || url.pathname === '/atualizar.html') return
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(request))

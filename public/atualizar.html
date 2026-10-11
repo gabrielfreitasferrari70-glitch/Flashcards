@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Atualizar MedReview</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f8fafc; color: #0f172a; font-family: system-ui, sans-serif; }
+      main { width: min(100%, 440px); padding: 32px; background: white; border: 1px solid #e2e8f0; border-radius: 18px; }
+      h1 { font-size: 26px; margin: 0 0 16px; }
+      p { color: #475569; line-height: 1.6; }
+      button { width: 100%; min-height: 48px; margin-top: 16px; border: 0; border-radius: 10px; background: #15803d; color: white; font: inherit; font-weight: 600; cursor: pointer; }
+      button:disabled { opacity: .6; cursor: wait; }
+      button:focus-visible, a:focus-visible { outline: 3px solid #86efac; outline-offset: 3px; }
+      #status { min-height: 24px; font-size: 14px; }
+      a { color: #15803d; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Atualizar MedReview</h1>
+      <p>Receba o visual mais recente neste navegador ou aplicativo instalado.</p>
+      <p>Seu login, histórico e revisões pendentes serão preservados. Conclua qualquer edição ou estudo aberto antes de continuar.</p>
+      <button id="update" type="button">Atualizar e abrir o MedReview</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <a href="/">Voltar ao aplicativo</a>
+    </main>
+    <script>
+      const button = document.getElementById('update');
+      const status = document.getElementById('status');
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        status.textContent = 'Buscando a versão mais recente…';
+        try {
+          // A unique URL also bypasses the oldest stale-while-revalidate worker.
+          const response = await fetch('/version.json?check=' + Date.now(), { cache: 'no-store' });
+          if (!response.ok) throw new Error('A versão publicada não está disponível.');
+          const data = await response.json();
+          if (typeof data.version !== 'string' || !/^[a-f0-9]{20}$/.test(data.version)) throw new Error('Não foi possível verificar a versão publicada.');
+          if ('serviceWorker' in navigator) {
+            status.textContent = 'Preparando a atualização e o acesso offline…';
+            const workerUrl = '/sw.js?release=' + data.version;
+            const expectedUrl = new URL(workerUrl, location.origin).href;
+            const registration = await navigator.serviceWorker.register(workerUrl, { scope: '/', updateViaCache: 'none' });
+            await registration.update();
+            await new Promise((resolve, reject) => {
+              const deadline = Date.now() + 60000;
+              const timer = setInterval(() => {
+                if (registration.active && registration.active.state === 'activated' && navigator.serviceWorker.controller && navigator.serviceWorker.controller.scriptURL === expectedUrl) {
+                  clearInterval(timer);
+                  resolve();
+                } else if (Date.now() >= deadline) {
+                  clearInterval(timer);
+                  reject(new Error('A atualização demorou mais que o esperado. Verifique sua conexão e tente novamente.'));
+                }
+              }, 100);
+            });
+          }
+          location.replace('/?mr_release=' + encodeURIComponent(data.version));
+        } catch (error) {
+          status.textContent = error.message || 'Não foi possível atualizar. Verifique sua conexão e tente novamente.';
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
