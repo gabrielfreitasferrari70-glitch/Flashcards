@@ -2873,16 +2873,17 @@ export default function Index() {
     card: Card
     qIdx: number
     reviewId?: string
-    quality: Quality
+    quality?: Quality
     wasAddedToEnd: boolean
+    isPass?: boolean
   } | null>(null)
 
   const undoLastReview = useCallback(async () => {
     if (!lastReview) return
-    const { card, qIdx: prevQIdx, reviewId, wasAddedToEnd } = lastReview
+    const { card, qIdx: prevQIdx, reviewId, wasAddedToEnd, isPass } = lastReview
     setLastReview(null)
     setQIdx(prevQIdx)
-    setFlipped(true)
+    setFlipped(!isPass)
     if (wasAddedToEnd) {
       setQueue((q) => q.slice(0, -1))
     }
@@ -2890,7 +2891,7 @@ export default function Index() {
       setReviews((rs) => rs.filter((r) => r.id !== reviewId))
       void supabase.from('mr_reviews').delete().eq('id', reviewId)
     }
-    setMsg('↺ Última avaliação desfeita!')
+    setMsg(isPass ? '↺ Passar desfeito: cartão recuperado!' : '↺ Última avaliação desfeita!')
     setTimeout(() => setMsg(''), 2500)
   }, [lastReview])
 
@@ -4857,12 +4858,54 @@ export default function Index() {
     })()
   }
 
-  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, Ctrl+Z para desfazer)
+  // Pula/passa o cartão atual para o final da fila sem avaliar agora
+  const passCard = useCallback(() => {
+    speechService.stop()
+    const card = queue[qIdx]
+    if (!card) return
+
+    const hasMore = qIdx < queue.length - 1
+    if (hasMore) {
+      setQueue((q) => [...q, card])
+      setLastReview({
+        card,
+        qIdx,
+        wasAddedToEnd: true,
+        isPass: true,
+      })
+      setMsg('⏭️ Cartão passado para o final da fila (não avaliado agora).')
+    } else {
+      setLastReview({
+        card,
+        qIdx,
+        wasAddedToEnd: false,
+        isPass: true,
+      })
+      setMsg('⏭️ Cartão ignorado por agora. Sessão concluída sem avaliá-lo!')
+    }
+    setTimeout(() => setMsg(''), 2500)
+
+    setFlipped(false)
+    setMcPicked(null)
+    setTypedAnswer('')
+    setWriteFeedback(null)
+    setQIdx((i) => i + 1)
+  }, [queue, qIdx])
+
+  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, P para passar, Ctrl+Z para desfazer)
   useEffect(() => {
     if (route.view !== 'study' || studyMode === 'write' || settingsOpen || cardStatsOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+
+      if (e.key === 'p' || e.key === 'P') {
+        if (queue[qIdx]) {
+          e.preventDefault()
+          passCard()
+          return
+        }
+      }
 
       if (e.key === 'a' || e.key === 'A') {
         if (queue[qIdx]) {
@@ -4903,7 +4946,7 @@ export default function Index() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [route.view, flipped, studyMode, rate, lastReview, undoLastReview, settingsOpen, cardStatsOpen, queue, qIdx, toggleAttention])
+  }, [route.view, flipped, studyMode, rate, passCard, lastReview, undoLastReview, settingsOpen, cardStatsOpen, queue, qIdx, toggleAttention])
 
   // ===== Tela: loading =====
   if (auth === 'loading') return <div style={center}>Carregando…</div>
@@ -5496,6 +5539,33 @@ export default function Index() {
               </div>
 
               <div className="mr-card-tools-group">
+                {/* Botão de Passar (Pular por enquanto / Deixar para depois) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    passCard()
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 10px',
+                    borderRadius: 8,
+                    border: '1px solid #cbd5e1',
+                    background: 'transparent',
+                    color: 'var(--mr-text-secondary, #475569)',
+                    fontWeight: 700,
+                    fontSize: '.74rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Passar este cartão (não responder agora e deixar para o final da fila). (Atalho: P)"
+                >
+                  <span style={{ fontSize: '.84rem' }}>⏭️</span>
+                  <span>Passar</span>
+                </button>
+
                 {/* Botão de Atenção (Alerta de Conteúdo Não Dominado) */}
                 <button
                   type="button"
@@ -5724,6 +5794,32 @@ export default function Index() {
                       </button>
                     )
                   })}
+                  <div style={{ marginTop: 4, textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        passCard()
+                      }}
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--mr-text-secondary, #64748b)',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 8,
+                        padding: '5px 14px',
+                        fontSize: '.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      title="Passar este cartão (não responder agora e deixar para o final) (Atalho: P)"
+                    >
+                      <span>⏭️ Passar questão</span>
+                      <span style={{ fontSize: '.7rem', opacity: 0.7 }}>(P)</span>
+                    </button>
+                  </div>
                 </div>
               )}
             {!flipped && studyMode === 'write' && (
@@ -5782,6 +5878,23 @@ export default function Index() {
                 >
                   Não sei
                 </button>
+                <button
+                  type="button"
+                  onClick={passCard}
+                  className="mr-legacy-button"
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 10,
+                    padding: '0.7rem 1rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    color: 'var(--mr-text-secondary, #64748b)',
+                  }}
+                  title="Passar este cartão sem responder agora e deixar para o final"
+                >
+                  ⏭️ Passar
+                </button>
               </div>
             )}
             {!flipped &&
@@ -5793,36 +5906,65 @@ export default function Index() {
                 Array.isArray(card.choices) &&
                 card.choices.length > 0
               ) && (
-                <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setFlipped(true)
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #16a34a, #22c55e)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 12,
-                      padding: '12px 28px',
-                      fontSize: '1rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
-                      transition: 'all 0.15s ease',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <span>👁️</span>
-                    <span>Mostrar Resposta / Virar Cartão</span>
-                    <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
-                  </button>
+                <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setFlipped(true)
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #16a34a, #22c55e)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 12,
+                        padding: '12px 28px',
+                        fontSize: '1rem',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
+                        transition: 'all 0.15s ease',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <span>👁️</span>
+                      <span>Mostrar Resposta / Virar Cartão</span>
+                      <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        passCard()
+                      }}
+                      style={{
+                        background: 'var(--mr-bg-card, #f8fafc)',
+                        color: 'var(--mr-text-secondary, #475569)',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: 12,
+                        padding: '12px 20px',
+                        fontSize: '.95rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                        transition: 'all 0.15s ease',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      title="Passar este cartão (não responder agora e deixar para o final) (Atalho: P)"
+                    >
+                      <span>⏭️</span>
+                      <span>Passar Cartão</span>
+                      <span style={{ fontSize: '.72rem', opacity: 0.75, fontWeight: 600 }}>(P)</span>
+                    </button>
+                  </div>
                   <p className="mr-legacy-hint" style={{ margin: 0 }}>
                     {isCloze(card.q)
-                      ? 'Pense na lacuna e toque para conferir'
+                      ? 'Pense na lacuna e toque para conferir, ou passe para depois'
                       : 'Ou clique em qualquer parte do cartão para virar'}
                   </p>
                 </div>
@@ -6147,27 +6289,53 @@ export default function Index() {
             </div>
           </article>
           {flipped && (
-            <div className="mr-legacy-rating-row">
-              {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
-                <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
-                  <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
-                      [{idx + 1}]
-                    </span>
-                    <span>
-                      {q === 'again'
-                        ? 'Errei'
-                        : q === 'hard'
-                          ? 'Difícil'
-                          : q === 'good'
-                            ? 'Bom'
-                            : 'Fácil'}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '.74rem', opacity: 0.95, marginTop: 2 }}>{pv[q].label}</div>
+            <>
+              <div className="mr-legacy-rating-row">
+                {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
+                  <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
+                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                        [{idx + 1}]
+                      </span>
+                      <span>
+                        {q === 'again'
+                          ? 'Errei'
+                          : q === 'hard'
+                            ? 'Difícil'
+                            : q === 'good'
+                              ? 'Bom'
+                              : 'Fácil'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '.74rem', opacity: 0.95, marginTop: 2 }}>{pv[q].label}</div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ textAlign: 'center', margin: '8px 0 2px' }}>
+                <button
+                  type="button"
+                  onClick={passCard}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '5px 14px',
+                    borderRadius: 999,
+                    background: 'transparent',
+                    border: '1.5px solid #cbd5e1',
+                    color: 'var(--mr-text-secondary, #64748b)',
+                    fontWeight: 700,
+                    fontSize: '.78rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Passar cartão: não pontuar agora e mover para o final da fila (Atalho: P)"
+                >
+                  <span>⏭️ Passar este cartão (não responder agora)</span>
+                  <span style={{ fontSize: '.7rem', opacity: 0.8 }}>(P)</span>
                 </button>
-              ))}
-            </div>
+              </div>
+            </>
           )}
           {lastReview && (
             <div style={{ textAlign: 'center', margin: '8px 0 2px' }}>
@@ -6191,7 +6359,7 @@ export default function Index() {
                 }}
                 title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
               >
-                <span>↺ Desfazer última carta avaliada</span>
+                <span>{lastReview.isPass ? '↺ Desfazer cartão passado' : '↺ Desfazer última carta avaliada'}</span>
                 <span style={{ fontSize: '.7rem', opacity: 0.8 }}>(Ctrl+Z)</span>
               </button>
             </div>
@@ -6203,6 +6371,9 @@ export default function Index() {
             </span>
             <span>
               <kbd>1</kbd>–<kbd>4</kbd> avaliar
+            </span>
+            <span>
+              <kbd>P</kbd> passar
             </span>
             <span>
               <kbd>A</kbd> atenção
