@@ -1,5 +1,11 @@
-// MedReview PWA Offline Service Worker (Cache-First para mídias/catálogo + Stale-While-Revalidate para UI)
-const CACHE_NAME = 'medreview-pwa-v6'
+// MedReview PWA Service Worker
+// - App shell (navegação): rede primeiro, cache só como reserva offline
+// - /assets/* (arquivos com hash): cache primeiro
+// - Mídias de cartas, jsDelivr e GitHub: cache primeiro
+// - Catálogo, ícones, manifest e fontes: stale-while-revalidate
+// - Supabase (REST, Auth, Realtime, Storage privado) e qualquer outra origem: NUNCA passa pelo cache
+const CACHE_NAME = 'medreview-pwa-v7' // v7 apaga o cache antigo (inclui respostas do Supabase guardadas por engano)
+
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -10,75 +16,137 @@ const STATIC_ASSETS = [
   '/favicon-32x32.png',
   '/favicon-16x16.png',
   '/apple-touch-icon.png',
-  '/og-image.png'
+  '/og-image.png',
 ]
 
-// Instalação: pré-armazena os arquivos essenciais para o funcionamento offline
+const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
+
+// Instalação: pré-armazena o essencial; um arquivo que falhe não derruba os demais
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('[SW] Pré-cache parcial:', err)
-      })
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset)))
+    )
   )
   self.skipWaiting()
 })
 
-// Ativação: limpa versões legadas do cache
+// Ativação: remove versões antigas do cache
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
       )
-    }).then(() => self.clients.claim())
+      .then(() => self.clients.claim())
   )
 })
 
-// Interceptação de requisições: garante funcionamento 100% offline
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url)
+function offlineResponse() {
+  return new Response('', { status: 408, statusText: 'Offline' })
+}
 
-  // 1. Não intercepta requisições de auth ou Supabase Realtime (WebSockets)
-  if (url.pathname.includes('/realtime/') || url.pathname.includes('/auth/v1/')) {
-    return
+// Só guarda respostas 200 e nunca guarda HTML no lugar de JS/CSS
+// (acontece quando um arquivo antigo some e o servidor devolve o index.html)
+function isCacheable(request, response) {
+  if (!response || response.status !== 200) return false
+  const type = response.headers.get('content-type') || ''
+  if ((request.destination === 'script' || request.destination === 'style') && type.includes('text/html')) {
+    return false
   }
+  return true
+}
 
-  // 2. Mídias de cartas (/cards-media/) e CDN jsDelivr: Cache First com fallback de rede
-  if (url.pathname.includes('/cards-media/') || url.hostname.includes('jsdelivr.net') || url.hostname.includes('githubusercontent.com')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached
-        return fetch(event.request).then((networkRes) => {
-          if (networkRes && networkRes.status === 200) {
-            const clone = networkRes.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
-          }
-          return networkRes
-        }).catch(() => {
-          // Se estiver offline e não tiver no cache, retorna resposta vazia amigável
-          return new Response('', { status: 408, statusText: 'Offline' })
-        })
-      })
-    )
-    return
+function putInCache(key, response) {
+  const clone = response.clone()
+  return caches.open(CACHE_NAME).then((cache) => cache.put(key, clone))
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request)
+  if (cached) return cached
+  try {
+    const response = await fetch(request)
+    if (isCacheable(request, response)) putInCache(request, response)
+    return response
+  } catch (err) {
+    return offlineResponse()
   }
+}
 
-  // 3. Catálogo de cartas (/catalog.json) e App Shell: Stale-While-Revalidate
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkRes) => {
-          if (networkRes && networkRes.status === 200 && event.request.method === 'GET') {
-            const clone = networkRes.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
-          }
-          return networkRes
-        })
-        .catch(() => cached)
-
-      return cached || fetchPromise
+async function staleWhileRevalidate(event) {
+  const request = event.request
+  const cached = await caches.match(request)
+  const network = fetch(request)
+    .then((response) => {
+      if (isCacheable(request, response)) putInCache(request, response)
+      return response
     })
-  )
+    .catch(() => null)
+
+  if (cached) {
+    event.waitUntil(network) // mantém o SW vivo até atualizar o cache em segundo plano
+    return cached
+  }
+  return (await network) || offlineResponse()
+}
+
+// Navegação: sempre tenta a versão nova do app; offline usa a última guardada
+async function networkFirstNavigation(request) {
+  try {
+    const response = await fetch(request)
+    if (response && response.status === 200) putInCache('/index.html', response)
+    return response
+  } catch (err) {
+    return (
+      (await caches.match('/index.html')) ||
+      (await caches.match('/')) ||
+      offlineResponse()
+    )
+  }
+}
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request
+
+  // Só trata GET; escritas e requisições parciais (vídeo/áudio) vão direto para a rede
+  if (request.method !== 'GET' || request.headers.has('range')) return
+
+  const url = new URL(request.url)
+
+  // 1. Mídias das cartas e CDNs: cache primeiro
+  if (
+    url.pathname.includes('/cards-media/') ||
+    url.hostname.includes('jsdelivr.net') ||
+    url.hostname.includes('githubusercontent.com')
+  ) {
+    event.respondWith(cacheFirst(request))
+    return
+  }
+
+  // 2. Outras origens: só as fontes do Google entram no cache.
+  //    Supabase (REST/Auth/Realtime) e o resto passam direto, sem cache.
+  if (url.origin !== self.location.origin) {
+    if (FONT_HOSTS.includes(url.hostname)) {
+      event.respondWith(staleWhileRevalidate(event))
+    }
+    return
+  }
+
+  // 3. Mesma origem
+  if (url.pathname.startsWith('/api/')) return
+
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirstNavigation(request))
+    return
+  }
+
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(request))
+    return
+  }
+
+  // catalog.json, manifest, ícones etc.
+  event.respondWith(staleWhileRevalidate(event))
 })
