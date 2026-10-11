@@ -2975,7 +2975,9 @@ export default function Index() {
         const arr = JSON.parse(raw)
         if (Array.isArray(arr)) return new Set(arr)
       }
-    } catch {}
+    } catch (error) {
+      console.warn("Não foi possível recuperar a lista local de cartões de atenção.", error)
+    }
     return new Set()
   })
   const [dismissedLeeches, setDismissedLeeches] = useState<Set<string>>(() => {
@@ -2985,7 +2987,9 @@ export default function Index() {
         const arr = JSON.parse(raw)
         if (Array.isArray(arr)) return new Set(arr)
       }
-    } catch {}
+    } catch (error) {
+      console.warn("Não foi possível recuperar a lista local de cartões críticos dispensados.", error)
+    }
     return new Set()
   })
   const [deckCompletionModal, setDeckCompletionModal] = useState<{
@@ -3522,7 +3526,9 @@ export default function Index() {
       }
       try {
         localStorage.setItem('mr_attention_card_ids', JSON.stringify(Array.from(next)))
-      } catch {}
+      } catch (error) {
+        console.warn("Não foi possível salvar a lista local de cartões de atenção.", error)
+      }
       return next
     })
     window.setTimeout(() => setMsg(''), 3500)
@@ -3535,7 +3541,9 @@ export default function Index() {
       next.delete(cleanId)
       try {
         localStorage.setItem('mr_attention_card_ids', JSON.stringify(Array.from(next)))
-      } catch {}
+      } catch (error) {
+        console.warn("Não foi possível salvar a remoção do cartão da lista de atenção.", error)
+      }
       return next
     })
     setMsg('Carta removida da lista de Atenção.')
@@ -3549,7 +3557,9 @@ export default function Index() {
       next.add(cleanId)
       try {
         localStorage.setItem('mr_dismissed_leeches', JSON.stringify(Array.from(next)))
-      } catch {}
+      } catch (error) {
+        console.warn("Não foi possível salvar a lista local de cartões críticos dispensados.", error)
+      }
       return next
     })
     setMsg('Carta removida da lista de Críticas.')
@@ -3729,7 +3739,9 @@ export default function Index() {
               window.indexedDB.deleteDatabase('medreview_cache_db')
               window.indexedDB.deleteDatabase('medreview_local_cache')
             }
-          } catch {}
+          } catch (error) {
+            console.warn("Não foi possível solicitar a remoção dos bancos de cache antigos.", error)
+          }
           localStorage.removeItem('mr_cached_decks')
           localStorage.removeItem('mr_cached_cards')
           localStorage.removeItem('mr_cached_meta_cards')
@@ -3836,7 +3848,9 @@ export default function Index() {
               }
               if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
             }
-          } catch {}
+          } catch (error) {
+            console.warn("Não foi possível restaurar os dados do cache local; tentando sincronização remota.", error)
+          }
         }
 
         // Fallback instantâneo via catalog.json do Vercel/GitHub (zero delay, renderização imediata de 1352 cartas)
@@ -3851,7 +3865,9 @@ export default function Index() {
                 setCards((prev) => (prev.length === 0 ? cat.cards : prev))
               }
             }
-          } catch {}
+          } catch (error) {
+            console.warn("Não foi possível carregar o catálogo de fallback; tentando sincronização remota.", error)
+          }
         }
 
         // 2. Sincronização em tempo real com Supabase (em segundo plano, sem travar o carregamento imediato)
@@ -4165,7 +4181,9 @@ export default function Index() {
               )
               setCards((prevCards) => prevCards.map((c) => pMap.get(c.id) || c))
             }
-          } catch {}
+          } catch (error) {
+            console.warn("Não foi possível carregar os detalhes do primeiro lote de cartões.", error)
+          }
         }
 
         // 2. Busca o restante em lotes leves de 8 cartões para prevenir timeouts com imagens pesadas
@@ -4215,7 +4233,9 @@ export default function Index() {
                 prevCards.map((c) => map.get(c.id) || c),
               )
             }
-          } catch {}
+          } catch (error) {
+            console.warn("Não foi possível carregar os detalhes de um lote de cartões.", error)
+          }
           await new Promise((r) => setTimeout(r, 40))
         }
       })()
@@ -4309,7 +4329,9 @@ export default function Index() {
             fullCardsCache.set(r.id, cardObj)
           }
         }
-      } catch {}
+      } catch (error) {
+        console.warn("Não foi possível carregar os detalhes dos cartões do quiz.", error)
+      }
     }
 
     const qs: QuizQ[] = shuffled.map((c) => {
@@ -6598,14 +6620,18 @@ export default function Index() {
                 setAttentionCardIds(new Set())
                 try {
                   localStorage.removeItem('mr_attention_card_ids')
-                } catch {}
+                } catch (error) {
+                  console.warn("Não foi possível limpar a lista local de cartões de atenção.", error)
+                }
                 setMsg('Todas as cartas foram removidas de Atenção.')
                 setTimeout(() => setMsg(''), 3000)
               } else {
                 setDismissedLeeches(new Set(Array.from(leechCardIds)))
                 try {
                   localStorage.setItem('mr_dismissed_leeches', JSON.stringify(Array.from(leechCardIds)))
-                } catch {}
+                } catch (error) {
+                  console.warn("Não foi possível salvar a dispensa dos cartões críticos.", error)
+                }
                 setMsg('Todas as cartas foram removidas de Críticas.')
                 setTimeout(() => setMsg(''), 3000)
               }

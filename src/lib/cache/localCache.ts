@@ -47,7 +47,9 @@ export async function setLocalCache<T = any>(key: string, value: T): Promise<voi
       tx.oncomplete = () => resolve()
       tx.onerror = () => resolve()
     })
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível gravar o cache local; os dados remotos continuam disponíveis.", error)
+  }
 }
 
 export async function clearLocalCache(key?: string): Promise<void> {
@@ -64,5 +66,7 @@ export async function clearLocalCache(key?: string): Promise<void> {
       tx.oncomplete = () => resolve()
       tx.onerror = () => resolve()
     })
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível limpar o cache local.", error)
+  }
 }

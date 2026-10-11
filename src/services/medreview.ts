@@ -404,7 +404,9 @@ export const updateCard = async (
         await setLocalCache('mr_cached_cards', cached)
       }
     }
-  } catch {}
+  } catch (error) {
+    console.warn("Cartão salvo no servidor, mas o cache local não pôde ser atualizado.", error)
+  }
 
   notifyDataMutation('card_updated', { id: card.id })
   return data
@@ -432,7 +434,9 @@ export const recordDeletedCardId = (id: string | string[]) => {
       if (item) set.add(item)
     }
     localStorage.setItem(DELETED_CARDS_KEY, JSON.stringify(Array.from(set)))
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível registrar a exclusão do cartão no armazenamento local.", error)
+  }
 }
 
 export const getDeletedDeckIds = (): Set<string> => {
@@ -454,7 +458,9 @@ export const recordDeletedDeckId = (id: string | string[]) => {
       if (item) set.add(item)
     }
     localStorage.setItem(DELETED_DECKS_KEY, JSON.stringify(Array.from(set)))
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível registrar a exclusão da pasta no armazenamento local.", error)
+  }
 }
 
 export const setCardSuspended = async (cardId: string, suspended: boolean) => {
@@ -471,7 +477,9 @@ export const deleteCard = async (cardId: string) => {
     if (cached && Array.isArray(cached)) {
       await setLocalCache('mr_cached_cards', cached.filter((c) => c.id !== cardId))
     }
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível remover o cartão do cache local.", error)
+  }
   await supabase.from('mr_reviews').delete().eq('card_id', cardId)
   await supabase.from('mr_card_reports').delete().eq('card_id', cardId)
   await supabase.from('mr_card_notes').delete().eq('card_id', cardId)
@@ -490,7 +498,9 @@ export const deleteCardsBatch = async (cardIds: string[]) => {
       const set = new Set(cardIds)
       await setLocalCache('mr_cached_cards', cached.filter((c) => !set.has(c.id)))
     }
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível remover os cartões do cache local.", error)
+  }
   for (let i = 0; i < cardIds.length; i += 100) {
     const chunk = cardIds.slice(i, i + 100)
     await supabase.from('mr_reviews').delete().in('card_id', chunk)

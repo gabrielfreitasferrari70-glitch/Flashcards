@@ -35,7 +35,9 @@ export function clearCardHighlights(cardId: string): void {
   if (!cardId) return
   try {
     localStorage.removeItem(HIGHLIGHT_KEY_PREFIX + cardId)
-  } catch {}
+  } catch (error) {
+    console.warn("Não foi possível limpar os destaques locais do cartão.", error)
+  }
 }
 
 export function applyHighlightsToHtml(html: string, highlights: CardHighlight[]): string {

@@ -58,7 +58,9 @@ export async function migrateLegacyImagesIfNeeded(
   if (legacy.length === 0) {
     try {
       localStorage.setItem(FLAG_KEY, 'done')
-    } catch {}
+    } catch (error) {
+      console.warn("Não foi possível salvar o indicador local de migração de imagens.", error)
+    }
     return 0
   }
 
@@ -100,7 +102,9 @@ export async function migrateLegacyImagesIfNeeded(
   if (failed === 0) {
     try {
       localStorage.setItem(FLAG_KEY, 'done')
-    } catch {}
+    } catch (error) {
+      console.warn("Imagens migradas, mas o indicador local de conclusão não pôde ser salvo.", error)
+    }
   }
   return done
 }

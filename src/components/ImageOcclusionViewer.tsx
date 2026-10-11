@@ -129,6 +129,10 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     setManuallyRevealed({})
   }, [activeMask?.id, data?.activeMaskId, data?.imageUrl, cardPrompt])
 
+  const benchIdentifiedCount = useMemo(() => {
+    return normalizedMasks.filter((m) => !!manuallyRevealed[m.id]).length
+  }, [normalizedMasks, manuallyRevealed])
+
   if (!data || !Array.isArray(data.masks) || data.masks.length === 0) {
     return null
   }
@@ -151,10 +155,6 @@ export const ImageOcclusionViewer = React.memo<Props>(({
     e.stopPropagation()
     setManuallyRevealed({})
   }
-
-  const benchIdentifiedCount = useMemo(() => {
-    return normalizedMasks.filter((m) => !!manuallyRevealed[m.id]).length
-  }, [normalizedMasks, manuallyRevealed])
 
   // Cálculo de zoom e ponto focal com suporte a pan suave
   let transformStyle = 'none'
