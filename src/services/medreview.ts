@@ -3,6 +3,9 @@ import type { ParsedCsvCard } from '@/lib/csvImport'
 import { getLocalCache, setLocalCache } from '@/lib/cache/localCache'
 import { isDataUrl, uploadDataUrlIfNeeded, uploadImageToStorage } from '@/services/imageStorage'
 
+export const MASTER_USER_ID = '2c337bd5-b283-4ce8-9c0a-c817e4cdd697'
+export const MASTER_EMAIL = 'gabrielfreitasferrari70@gmail.com'
+
 // Canal global de broadcast Supabase Realtime (latência <50ms entre admin e alunos)
 let realtimeChannel: any = null
 function getSyncChannel() {
@@ -822,7 +825,7 @@ export const restoreBackupData = async (force = false) => {
 
   // Apenas a conta Administrador / Docente gerencia o catálogo mestre.
   // Usuários comuns compartilham os 1.352 cartões centralizados do Docente e não devem duplicá-los.
-  if (userId !== '2c337bd5-b283-4ce8-9c0a-c817e4cdd697') {
+  if (userId !== MASTER_USER_ID) {
     return { ok: true, skipped: true }
   }
 

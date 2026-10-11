@@ -1208,7 +1208,7 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
               }
             }}
           >
-            ↻ Sincronizar Biblioteca
+            ↻ Recarregar Biblioteca
           </button>
         )}
         <span className="mr-lib-count">

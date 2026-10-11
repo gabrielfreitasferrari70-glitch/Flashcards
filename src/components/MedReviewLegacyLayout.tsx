@@ -2060,6 +2060,8 @@ type HomeProps = {
   onStudyCards?: (cards: LegacyCard[], title: string) => void
   onSync?: () => Promise<void> | void
   isSyncing?: boolean
+  isMaster?: boolean
+  userId?: string
 }
 
 export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props: HomeProps) {
@@ -2118,8 +2120,14 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onStudyCards,
     onSync,
     isSyncing: externalSyncing,
+    isMaster: propIsMaster,
+    userId,
   } = props
-  const isMaster = (userEmail || '').trim().toLowerCase() === 'gabrielfreitasferrari70@gmail.com'
+  const isMaster =
+    propIsMaster !== undefined
+      ? propIsMaster
+      : (userEmail || '').trim().toLowerCase() === 'gabrielfreitasferrari70@gmail.com' ||
+        userId === '2c337bd5-b283-4ce8-9c0a-c817e4cdd697'
 
   const [localSyncing, setLocalSyncing] = useState(false)
   const [syncSuccess, setSyncSuccess] = useState(false)
@@ -2359,7 +2367,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               </div>
             )}
 
-            {onSync && (
+            {isMaster && onSync && (
               <button
                 type="button"
                 className={`mr-legacy-button sync ${syncSuccess ? 'is-success' : ''} ${isSyncingActive ? 'is-syncing' : ''}`}
@@ -3011,7 +3019,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 <button className="mr-legacy-button" onClick={onSessionBuilder}>
                   🎛️ Montar Sessão
                 </button>
-                {onSync && (
+                {isMaster && onSync && (
                   <button
                     type="button"
                     className={`mr-legacy-button sync ${syncSuccess ? 'is-success' : ''} ${isSyncingActive ? 'is-syncing' : ''}`}

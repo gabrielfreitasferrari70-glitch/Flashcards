@@ -21,6 +21,8 @@ import {
   undoMoveSection,
   getDeletedCardIds,
   notifyDataMutation,
+  MASTER_USER_ID,
+  MASTER_EMAIL,
 } from '@/services/medreview'
 import {
   MedReviewLegacyHome,
@@ -324,6 +326,7 @@ interface Deck {
 }
 interface Card {
   id: string
+  user_id?: string
   deck: string
   q: string
   a: string
@@ -2805,6 +2808,11 @@ function FsrDashboardModal({
 export default function Index() {
   const [auth, setAuth] = useState<'loading' | 'out' | 'in'>('loading')
   const [user, setUser] = useState<any>(null)
+  const isMaster = useMemo(() => {
+    const email = (user?.email || pb.authStore.record?.email || '').trim().toLowerCase()
+    const uid = user?.id || pb.authStore.record?.id
+    return email === MASTER_EMAIL || uid === MASTER_USER_ID
+  }, [user?.email, user?.id])
   const [decks, setDecks] = useState<Deck[]>([])
   const [cards, setCards] = useState<Card[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
@@ -3188,21 +3196,32 @@ export default function Index() {
         setDecks((prev) => (prev.length === 0 ? cat.decks : prev))
       }
 
-      // 2. Busca no Supabase pastas e todos os cartões compartilhados entre os usuários em paralelo ultra-rápido
+      // 2. Busca no Supabase pastas e cartões autorizados (cartões do docente/admin para todos, mais cartões pessoais do próprio aluno)
+      const deckFilter = currentUserId && currentUserId !== MASTER_USER_ID
+        ? `user_id.eq.${MASTER_USER_ID},user_id.eq.${currentUserId},user_id.is.null`
+        : `user_id.eq.${MASTER_USER_ID},user_id.is.null`
+
       const customDecksPromise = supabase
         .from('mr_decks')
         .select('*')
+        .or(deckFilter)
         .order('order')
+
+      const cardFilter = currentUserId && currentUserId !== MASTER_USER_ID
+        ? `user_id.eq.${MASTER_USER_ID},user_id.eq.${currentUserId},user_id.is.null`
+        : `user_id.eq.${MASTER_USER_ID},user_id.is.null`
 
       const customCardsPromise = (async () => {
         const [p1, p2] = await Promise.all([
           supabase
             .from('mr_cards')
-            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .or(cardFilter)
             .range(0, 999),
           supabase
             .from('mr_cards')
-            .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .or(cardFilter)
             .range(1000, 1999),
         ])
         const list: any[] = []
@@ -3214,7 +3233,8 @@ export default function Index() {
           while (true) {
             const { data, error } = await supabase
               .from('mr_cards')
-              .select('id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+              .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+              .or(cardFilter)
               .range(from, from + PAGE - 1)
             if (error || !data || data.length === 0) break
             list.push(...data)
@@ -3275,7 +3295,13 @@ export default function Index() {
       const seenDeckIds = new Set<string>()
       const rootFolder = rawDecks.find((d: any) => !d.parent && d.title?.trim().toLowerCase() === 'minhas pastas')
       const validDecks = rawDecks
-        .filter((row: any) => !row.deleted && !seenDeckIds.has(row.id) && seenDeckIds.add(row.id))
+        .filter((row: any) => {
+          if (row.deleted) return false
+          const isMasterDeck = !row.user_id || row.user_id === MASTER_USER_ID
+          const isOwnDeck = !!currentUserId && row.user_id === currentUserId
+          if (!isMasterDeck && !isOwnDeck) return false
+          return !seenDeckIds.has(row.id) && seenDeckIds.add(row.id)
+        })
         .map((row: any) => {
           let parent = row.parent
           const norm = (row.title || '').trim().toLowerCase()
@@ -3296,14 +3322,19 @@ export default function Index() {
       }
 
       // 4. Processa Cartões
-      // Adiciona todos os cartões do Supabase (compartilhados entre usuários) ao cache de memória
+      // Adiciona cartões do catálogo mestre e cartões pessoais do aluno ao cache de memória
       const customCards = customCardsData || []
       const currentSupabaseCardIds = new Set<string>()
       for (const cc of customCards) {
         if (cc.id && cc.q) {
+          const isMasterCard = !cc.user_id || cc.user_id === MASTER_USER_ID
+          const isOwnCard = !!currentUserId && cc.user_id === currentUserId
+          if (!isMasterCard && !isOwnCard) continue
+
           currentSupabaseCardIds.add(cc.id)
           const cardObj: Card = {
             ...cc,
+            user_id: cc.user_id,
             deck: cc.deck_id,
             created: cc.created_at,
             image: cc.image_url,
@@ -3313,7 +3344,7 @@ export default function Index() {
         }
       }
 
-      // Remove do cache cartões customizados que foram excluídos do Supabase por outros usuários
+      // Remove do cache cartões customizados que foram excluídos do Supabase ou pertencem a outros usuários
       if (catalogCardIds.size > 0) {
         for (const cachedId of Array.from(fullCardsCache.keys())) {
           if (!catalogCardIds.has(cachedId) && !currentSupabaseCardIds.has(cachedId)) {
@@ -3322,10 +3353,16 @@ export default function Index() {
         }
       }
 
-      // Constrói lista completa a partir do cache (que tem os 1.352 cartões + customizados)
+      // Constrói lista completa a partir do cache (que tem os 1.352 cartões do catálogo + pessoais)
       const allCardsList = Array.from(fullCardsCache.values())
       const deletedCardIds = getDeletedCardIds()
-      const filteredCards = allCardsList.filter((c) => !deletedCardIds.has(c.id))
+      const filteredCards = allCardsList.filter((c) => {
+        if (deletedCardIds.has(c.id)) return false
+        if (catalogCardIds.has(c.id)) return true
+        const isMasterCard = !(c as any).user_id || (c as any).user_id === MASTER_USER_ID
+        const isOwnCard = !!currentUserId && (c as any).user_id === currentUserId
+        return isMasterCard || isOwnCard
+      })
       setCards(filteredCards)
       setTimeout(() => {
         setLocalCache('mr_cached_cards', filteredCards).catch(() => {})
@@ -3542,13 +3579,19 @@ export default function Index() {
         } else {
           supabase
             .from('mr_cards')
-            .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+            .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
             .eq('id', realId)
             .single()
             .then(({ data }) => {
               if (data) {
+                const currentUserId = user?.id || pb.authStore.record?.id
+                const isMasterCard = !data.user_id || data.user_id === MASTER_USER_ID
+                const isOwnCard = !!currentUserId && data.user_id === currentUserId
+                if (!isMasterCard && !isOwnCard) return
+
                 const full: Card = {
                   ...data,
+                  user_id: data.user_id,
                   deck: data.deck_id,
                   created: data.created_at,
                   image: data.image_url || (data as any).image,
@@ -3744,10 +3787,15 @@ export default function Index() {
               getLocalCache<Card[]>('mr_cached_cards'),
               getLocalCache<any[]>('mr_cached_reviews'),
             ])
+            const currentBootUserId = session.user?.id || pb.authStore.record?.id
             if (cachedCards && cachedCards.length > 0) {
               for (const c of cachedCards) {
                 if (c.q && c.q !== 'Carregando cartão...') {
-                  fullCardsCache.set(c.id, c)
+                  const isMasterCard = !c.user_id || c.user_id === MASTER_USER_ID
+                  const isOwnCard = !!currentBootUserId && c.user_id === currentBootUserId
+                  if (isMasterCard || isOwnCard) {
+                    fullCardsCache.set(c.id, c)
+                  }
                 }
               }
             }
@@ -3755,6 +3803,9 @@ export default function Index() {
               if (cachedDecks && cachedDecks.length > 0) {
                 const seenTitles = new Set<string>()
                 const dedupedDecks = cachedDecks.filter((d) => {
+                  const isMasterDeck = !(d as any).user_id || (d as any).user_id === MASTER_USER_ID
+                  const isOwnDeck = !!currentBootUserId && (d as any).user_id === currentBootUserId
+                  if (!isMasterDeck && !isOwnDeck) return false
                   if (d.parent) return true
                   const norm = d.title.trim().toLowerCase()
                   if (norm === 'uc-1' || norm === 'uc1' || norm === 'uc-2' || norm === 'uc2') return false
@@ -3765,10 +3816,22 @@ export default function Index() {
                 setDecks(dedupedDecks)
               }
               if (cachedMeta && cachedMeta.length > 0) {
-                const merged = cachedMeta.map((m) => fullCardsCache.get(m.id) || m)
+                const merged = cachedMeta
+                  .filter((m) => {
+                    const isMasterCard = !m.user_id || m.user_id === MASTER_USER_ID
+                    const isOwnCard = !!currentBootUserId && m.user_id === currentBootUserId
+                    return isMasterCard || isOwnCard
+                  })
+                  .map((m) => fullCardsCache.get(m.id) || m)
                 setCards(merged)
               } else if (cachedCards && cachedCards.length > 0) {
-                setCards(cachedCards)
+                setCards(
+                  cachedCards.filter((c) => {
+                    const isMasterCard = !c.user_id || c.user_id === MASTER_USER_ID
+                    const isOwnCard = !!currentBootUserId && c.user_id === currentBootUserId
+                    return isMasterCard || isOwnCard
+                  }),
+                )
               }
               if (cachedRevs && cachedRevs.length > 0) setReviews(cachedRevs)
             }
@@ -3891,6 +3954,7 @@ export default function Index() {
   }
   const logout = () => {
     pb.authStore.clear()
+    fullCardsCache.clear()
     setUser(null)
     setAuth('out')
     setDecks([])
@@ -4063,17 +4127,23 @@ export default function Index() {
 
         // 1. Busca imediatamente os primeiros 3 cartões prioritários para renderização instantânea
         const priorityIds = missingIds.slice(0, 3)
+        const currentFetchUserId = user?.id || pb.authStore.record?.id
         if (priorityIds.length > 0) {
           try {
             const { data: pRows } = await supabase
               .from('mr_cards')
-              .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
               .in('id', priorityIds)
             if (pRows && pRows.length > 0) {
               const pMap = new Map<string, Card>()
               for (const r of pRows) {
+                const isMasterCard = !r.user_id || r.user_id === MASTER_USER_ID
+                const isOwnCard = !!currentFetchUserId && r.user_id === currentFetchUserId
+                if (!isMasterCard && !isOwnCard) continue
+
                 const cardObj: Card = {
                   ...r,
+                  user_id: r.user_id,
                   deck: r.deck_id,
                   created: r.created_at,
                   image: r.image_url || (r as any).image,
@@ -4105,14 +4175,19 @@ export default function Index() {
           try {
             const { data: chunkRows, error } = await supabase
               .from('mr_cards')
-              .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
               .in('id', chunk)
 
             if (!error && chunkRows && chunkRows.length > 0) {
               const map = new Map<string, Card>()
               for (const r of chunkRows) {
+                const isMasterCard = !r.user_id || r.user_id === MASTER_USER_ID
+                const isOwnCard = !!currentFetchUserId && r.user_id === currentFetchUserId
+                if (!isMasterCard && !isOwnCard) continue
+
                 const cardObj: Card = {
                   ...r,
+                  user_id: r.user_id,
                   deck: r.deck_id,
                   created: r.created_at,
                   image: r.image_url || (r as any).image,
@@ -4209,16 +4284,22 @@ export default function Index() {
       await ensureCatalogLoaded()
     }
     const realMissingQuizIds = missingQuizIds.filter((id) => !fullCardsCache.has(id))
+    const currentQuizUserId = user?.id || pb.authStore.record?.id
     if (realMissingQuizIds.length > 0) {
       try {
         const { data: qRows } = await supabase
           .from('mr_cards')
-          .select('id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+          .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
           .in('id', realMissingQuizIds)
         if (qRows) {
           for (const r of qRows) {
+            const isMasterCard = !r.user_id || r.user_id === MASTER_USER_ID
+            const isOwnCard = !!currentQuizUserId && r.user_id === currentQuizUserId
+            if (!isMasterCard && !isOwnCard) continue
+
             const cardObj: Card = {
               ...r,
+              user_id: r.user_id,
               deck: r.deck_id,
               created: r.created_at,
               image: r.image_url || (r as any).image,
@@ -6408,7 +6489,9 @@ export default function Index() {
         canInstallPwa={!isStandalone}
         onInstallPwa={handleInstallPwa}
         onExportBackup={handleExportBackup}
-        onSync={handleForceSync}
+        isMaster={isMaster}
+        userId={user?.id}
+        onSync={isMaster ? handleForceSync : undefined}
         isSyncing={isSyncing}
         onStudyCards={(cardsToStudy, sessionTitle) => {
           startStudy(cardsToStudy as any, undefined, sessionTitle, { protectFsrs: false })
