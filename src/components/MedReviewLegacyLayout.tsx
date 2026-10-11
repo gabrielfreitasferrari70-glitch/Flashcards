@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Activity, Archive, BookOpen, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronDown, ClipboardList, Download, Flag, Folder, GraduationCap, Image, Layers, Moon, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Smartphone, Sparkles, Stethoscope, Sun, Target, Timer, TriangleAlert, Zap } from 'lucide-react'
 import { StudyHeatmap } from './StudyHeatmap'
+import { StudyAvailability } from './StudyAvailability'
+import type { StudyFilter, StudyScope } from '@/lib/studyAvailability'
 import { launchConfetti } from '@/lib/confetti'
 import {
   compareDecks,
@@ -2004,6 +2006,7 @@ type CategoryItem = {
   sectionKind?: string
 }
 type HomeProps = {
+  getAvailableStudyCards?: (filter: StudyFilter, scope?: StudyScope) => LegacyCard[]
   userEmail?: string
   totalCards: number
   reviewTodayCount: number
@@ -2058,7 +2061,7 @@ type HomeProps = {
   onInstallPwa?: () => void
   onExportBackup?: () => void
   reviews?: any[]
-  onStudyCards?: (cards: LegacyCard[], title: string) => void
+  onStudyCards?: (cards: LegacyCard[], title: string, scope?: StudyScope) => void
   onSync?: () => Promise<void> | void
   isSyncing?: boolean
   isMaster?: boolean
@@ -2818,6 +2821,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         </p>
                       </div>
 
+                      {props.getAvailableStudyCards && onStudyCards && (
+                        <StudyAvailability title={deck.title} scope={{ deckId: deck.id }} getCards={props.getAvailableStudyCards} onStudy={onStudyCards} />
+                      )}
+
                       <div className="mr-card-foot">
                         <span className="mr-card-count">📚 {total} cartas</span>
                         {(() => {
@@ -3339,6 +3346,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                                     <h3>{highlightMatch(deck.title, searchQuery)}</h3>
                                     <p>{deck.description ? highlightMatch(deck.description, searchQuery) : 'Pasta do acervo médico MedReview.'}</p>
                                   </div>
+                                  {props.getAvailableStudyCards && onStudyCards && (
+                                    <StudyAvailability title={deck.title} scope={{ deckId: deck.id }} getCards={props.getAvailableStudyCards} onStudy={onStudyCards} />
+                                  )}
                                   <div className="mr-card-foot">
                                     <span className="mr-card-count">📚 {total} cartas</span>
                                     <div className="mr-card-foot-actions">
@@ -3535,6 +3545,9 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       <h3>{item.title}</h3>
                       <p>{item.description}</p>
                     </div>
+                    {props.getAvailableStudyCards && onStudyCards && (
+                      <StudyAvailability title={item.title} scope={item.sectionKind ? { kind: item.sectionKind } : undefined} getCards={props.getAvailableStudyCards} onStudy={onStudyCards} />
+                    )}
                     <div className="mr-card-foot">
                       <span className="mr-card-count">📚 {item.count} cartas</span>
                       <div className="mr-card-foot-actions">
@@ -3665,6 +3678,10 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                             'Pasta de revisão médica com repetição espaçada FSRS-5.'}
                         </p>
                       </div>
+
+                      {props.getAvailableStudyCards && onStudyCards && (
+                        <StudyAvailability title={deck.title} scope={{ deckId: deck.id }} getCards={props.getAvailableStudyCards} onStudy={onStudyCards} />
+                      )}
 
                       <div className="mr-card-foot">
                         <span className="mr-card-count">📚 {total} cartas</span>

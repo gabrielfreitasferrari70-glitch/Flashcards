@@ -2,6 +2,7 @@ import React, { Fragment, useEffect, useState, useMemo, useCallback, useRef, laz
 import { ArrowLeft, ArrowRightLeft, ChartNoAxesCombined, Eye, Flag, Moon, RotateCcw, Settings, Shuffle, SkipForward, Square, StickyNote, Sun, Timer, Undo2, Volume2, X, PenLine } from 'lucide-react'
 import { LoginScreen } from '@/components/LoginScreen'
 import { StudyToolsMenu } from '@/components/StudyToolsMenu'
+import { selectStudyScope, type StudyFilter, type StudyScope } from '@/lib/studyAvailability'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
@@ -3647,6 +3648,32 @@ export default function Index() {
   const allCards = validCards
   const totalCards = validCards.length
 
+  const [availabilityNow, setAvailabilityNow] = useState(Date.now)
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState !== 'hidden') setAvailabilityNow(Date.now()) }
+    const timer = window.setInterval(refresh, 30000)
+    window.addEventListener('focus', refresh)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [])
+
+  const availableStudyCards = useMemo(() => {
+    const fresh: Card[] = []
+    const review: Card[] = []
+    const now = availabilityNow
+    for (const card of validCards) {
+      if (card.suspended) continue
+      const state = cardStateFromReviews(reviewsForCard(card))
+      if (state.state === 'new') fresh.push(card)
+      else if ((state.dueMs || 0) <= now) review.push(card)
+    }
+    return { new: fresh, review, all: [...review, ...fresh] }
+  }, [validCards, reviewsForCard, availabilityNow])
+
+  const getAvailableStudyCards = useCallback(
+    (filter: StudyFilter, scope?: StudyScope) => selectStudyScope(availableStudyCards[filter], decks, scope),
+    [availableStudyCards, decks],
+  )
+
   const { dueCount, masteredCount, streakDays } = useMemo(() => {
     let due = 0
     let mastered = 0
@@ -6409,6 +6436,7 @@ export default function Index() {
     <>
       <MedReviewLegacyHome
         userEmail={user?.email}
+        getAvailableStudyCards={getAvailableStudyCards}
         totalCards={totalCards}
         reviewTodayCount={reviewTodayCount}
         masteredPercent={masteredPercent}
@@ -6471,8 +6499,8 @@ export default function Index() {
         userId={user?.id}
         onSync={isMaster ? handleForceSync : undefined}
         isSyncing={isSyncing}
-        onStudyCards={(cardsToStudy, sessionTitle) => {
-          startStudy(cardsToStudy as any, undefined, sessionTitle, { protectFsrs: false })
+        onStudyCards={(cardsToStudy, sessionTitle, scope) => {
+          startStudy(cardsToStudy as any, scope?.deckId, sessionTitle, { protectFsrs: false })
         }}
       />
       <Suspense fallback={null}>
