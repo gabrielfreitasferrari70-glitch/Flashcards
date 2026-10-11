@@ -5794,32 +5794,6 @@ export default function Index() {
                       </button>
                     )
                   })}
-                  <div style={{ marginTop: 4, textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        passCard()
-                      }}
-                      style={{
-                        background: 'transparent',
-                        color: 'var(--mr-text-secondary, #64748b)',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: 8,
-                        padding: '5px 14px',
-                        fontSize: '.8rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                      title="Passar este cartão (não responder agora e deixar para o final) (Atalho: P)"
-                    >
-                      <span>⏭️ Passar questão</span>
-                      <span style={{ fontSize: '.7rem', opacity: 0.7 }}>(P)</span>
-                    </button>
-                  </div>
                 </div>
               )}
             {!flipped && studyMode === 'write' && (
@@ -5878,23 +5852,6 @@ export default function Index() {
                 >
                   Não sei
                 </button>
-                <button
-                  type="button"
-                  onClick={passCard}
-                  className="mr-legacy-button"
-                  style={{
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 10,
-                    padding: '0.7rem 1rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    background: 'transparent',
-                    color: 'var(--mr-text-secondary, #64748b)',
-                  }}
-                  title="Passar este cartão sem responder agora e deixar para o final"
-                >
-                  ⏭️ Passar
-                </button>
               </div>
             )}
             {!flipped &&
@@ -5906,65 +5863,36 @@ export default function Index() {
                 Array.isArray(card.choices) &&
                 card.choices.length > 0
               ) && (
-                <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setFlipped(true)
-                      }}
-                      style={{
-                        background: 'linear-gradient(135deg, #16a34a, #22c55e)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 12,
-                        padding: '12px 28px',
-                        fontSize: '1rem',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
-                        transition: 'all 0.15s ease',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 8,
-                      }}
-                    >
-                      <span>👁️</span>
-                      <span>Mostrar Resposta / Virar Cartão</span>
-                      <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        passCard()
-                      }}
-                      style={{
-                        background: 'var(--mr-bg-card, #f8fafc)',
-                        color: 'var(--mr-text-secondary, #475569)',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: 12,
-                        padding: '12px 20px',
-                        fontSize: '.95rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                        transition: 'all 0.15s ease',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                      title="Passar este cartão (não responder agora e deixar para o final) (Atalho: P)"
-                    >
-                      <span>⏭️</span>
-                      <span>Passar Cartão</span>
-                      <span style={{ fontSize: '.72rem', opacity: 0.75, fontWeight: 600 }}>(P)</span>
-                    </button>
-                  </div>
+                <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setFlipped(true)
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #16a34a, #22c55e)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 12,
+                      padding: '12px 28px',
+                      fontSize: '1rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
+                      transition: 'all 0.15s ease',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span>👁️</span>
+                    <span>Mostrar Resposta / Virar Cartão</span>
+                    <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
+                  </button>
                   <p className="mr-legacy-hint" style={{ margin: 0 }}>
                     {isCloze(card.q)
-                      ? 'Pense na lacuna e toque para conferir, ou passe para depois'
+                      ? 'Pense na lacuna e toque para conferir'
                       : 'Ou clique em qualquer parte do cartão para virar'}
                   </p>
                 </div>
@@ -6289,53 +6217,27 @@ export default function Index() {
             </div>
           </article>
           {flipped && (
-            <>
-              <div className="mr-legacy-rating-row">
-                {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
-                  <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
-                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
-                        [{idx + 1}]
-                      </span>
-                      <span>
-                        {q === 'again'
-                          ? 'Errei'
-                          : q === 'hard'
-                            ? 'Difícil'
-                            : q === 'good'
-                              ? 'Bom'
-                              : 'Fácil'}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '.74rem', opacity: 0.95, marginTop: 2 }}>{pv[q].label}</div>
-                  </button>
-                ))}
-              </div>
-              <div style={{ textAlign: 'center', margin: '8px 0 2px' }}>
-                <button
-                  type="button"
-                  onClick={passCard}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '5px 14px',
-                    borderRadius: 999,
-                    background: 'transparent',
-                    border: '1.5px solid #cbd5e1',
-                    color: 'var(--mr-text-secondary, #64748b)',
-                    fontWeight: 700,
-                    fontSize: '.78rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Passar cartão: não pontuar agora e mover para o final da fila (Atalho: P)"
-                >
-                  <span>⏭️ Passar este cartão (não responder agora)</span>
-                  <span style={{ fontSize: '.7rem', opacity: 0.8 }}>(P)</span>
+            <div className="mr-legacy-rating-row">
+              {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
+                <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
+                  <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                      [{idx + 1}]
+                    </span>
+                    <span>
+                      {q === 'again'
+                        ? 'Errei'
+                        : q === 'hard'
+                          ? 'Difícil'
+                          : q === 'good'
+                            ? 'Bom'
+                            : 'Fácil'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '.74rem', opacity: 0.95, marginTop: 2 }}>{pv[q].label}</div>
                 </button>
-              </div>
-            </>
+              ))}
+            </div>
           )}
           {lastReview && (
             <div style={{ textAlign: 'center', margin: '8px 0 2px' }}>
