@@ -4,7 +4,9 @@
 // - Mídias de cartas, jsDelivr e GitHub: cache primeiro
 // - Catálogo, ícones, manifest e fontes: stale-while-revalidate
 // - Supabase (REST, Auth, Realtime, Storage privado) e qualquer outra origem: NUNCA passa pelo cache
-const CACHE_NAME = 'medreview-pwa-v7' // v7 apaga o cache antigo (inclui respostas do Supabase guardadas por engano)
+const APP_VERSION = '__MEDREVIEW_RELEASE__'
+const CACHE_NAME = `medreview-pwa-${APP_VERSION}`
+const BUILD_ASSETS = /* __MEDREVIEW_ASSETS__ */ []
 
 const STATIC_ASSETS = [
   '/',
@@ -25,7 +27,11 @@ const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      Promise.allSettled(STATIC_ASSETS.map((asset) => cache.add(asset)))
+      Promise.all([
+        // Never activate a release whose offline shell is incomplete.
+        cache.addAll(['/index.html', ...BUILD_ASSETS]),
+        Promise.allSettled(STATIC_ASSETS.filter((asset) => asset !== '/index.html').map((asset) => cache.add(asset))),
+      ])
     )
   )
   self.skipWaiting()
@@ -37,9 +43,11 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+        Promise.all(keys.filter((k) => k.startsWith('medreview-pwa-') && k !== CACHE_NAME).map((k) => caches.delete(k)))
       )
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => clients.forEach((client) => client.postMessage({ type: 'APP_VERSION', version: APP_VERSION })))
   )
 })
 
@@ -95,7 +103,7 @@ async function staleWhileRevalidate(event) {
 // Navegação: sempre tenta a versão nova do app; offline usa a última guardada
 async function networkFirstNavigation(request) {
   try {
-    const response = await fetch(request)
+    const response = await fetch(new Request(request, { cache: 'no-cache' }))
     if (response && response.status === 200) putInCache('/index.html', response)
     return response
   } catch (err) {
@@ -135,7 +143,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. Mesma origem
-  if (url.pathname.startsWith('/api/')) return
+  if (url.pathname.startsWith('/api/') || url.pathname === '/version.json' || url.pathname === '/sw.js') return
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(request))

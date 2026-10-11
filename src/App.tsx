@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import Index from './pages/Index'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
+import AppUpdateNotice from './components/AppUpdateNotice'
 
 // ONLY IMPORT AND RENDER WORKING PAGES, NEVER ADD PLACEHOLDER COMPONENTS OR PAGES IN THIS FILE
 // AVOID REMOVING ANY CONTEXT PROVIDERS FROM THIS FILE (e.g. TooltipProvider, Toaster, Sonner)
@@ -13,6 +14,7 @@ import Layout from './components/Layout'
 const App = () => (
   <BrowserRouter>
     <TooltipProvider>
+      <AppUpdateNotice />
       <Toaster />
       <Sonner />
       <Routes>
