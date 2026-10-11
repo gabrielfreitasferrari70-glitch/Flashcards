@@ -1,4 +1,7 @@
 import React, { Fragment, useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
+import { ArrowLeft, ArrowRightLeft, ChartNoAxesCombined, Eye, Flag, Moon, RotateCcw, Settings, Shuffle, SkipForward, Square, StickyNote, Sun, Timer, Undo2, Volume2, X, PenLine } from 'lucide-react'
+import { LoginScreen } from '@/components/LoginScreen'
+import { StudyToolsMenu } from '@/components/StudyToolsMenu'
 import { compareDecks } from '@/lib/deckSort'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
@@ -2931,7 +2934,6 @@ export default function Index() {
   const [loginMode, setLoginMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
-  const [showPass, setShowPass] = useState(false)
   const [name, setName] = useState('')
   const [authErr, setAuthErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -4920,6 +4922,7 @@ export default function Index() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+      if ((e.target as HTMLElement)?.closest('button, select, summary, .mr-study-tools-popover')) return
 
       if (e.key === 'p' || e.key === 'P') {
         if (queue[qIdx]) {
@@ -4976,136 +4979,19 @@ export default function Index() {
   // ===== Tela: login =====
   if (auth === 'out') {
     return (
-      <div
-        style={{
-          ...center,
-          background: 'radial-gradient(1100px 520px at 50% -8%, #dcfce7 0%, #f0fdf4 42%, #ffffff 100%)',
-          position: 'relative',
-          overflow: 'hidden',
-          padding: 20,
-          boxSizing: 'border-box',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: -140,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 560,
-            height: 560,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(22,163,74,0.18), rgba(22,163,74,0) 70%)',
-            pointerEvents: 'none',
-          }}
-        />
-        <div style={loginBox}>
-          <div style={loginBadge}>🩺</div>
-          <h1 style={{ color: '#14532d', fontSize: '1.9rem', margin: '0 0 0.2rem', letterSpacing: '-0.02em' }}>
-            MedReview
-          </h1>
-          <p style={{ color: '#15803d', margin: '0 0 1.4rem', fontWeight: 600 }}>
-            Revisão interativa de medicina — FSRS-5
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              gap: '0.5rem',
-              marginBottom: '1rem',
-              background: '#f1f5f9',
-              padding: 4,
-              borderRadius: 12,
-            }}
-          >
-            <button style={tabBtn(loginMode === 'login')} onClick={() => setLoginMode('login')}>
-              Entrar
-            </button>
-            <button style={tabBtn(loginMode === 'signup')} onClick={() => setLoginMode('signup')}>
-              Criar conta
-            </button>
-          </div>
-          {loginMode === 'signup' && (
-            <input
-              style={input}
-              placeholder="Seu nome"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          )}
-          <input
-            style={input}
-            type="email"
-            placeholder="E-mail"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') doAuth()
-            }}
-          />
-          <div style={{ position: 'relative', marginBottom: '0.7rem' }}>
-            <input
-              style={{ ...input, marginBottom: 0, paddingRight: 46 }}
-              type={showPass ? 'text' : 'password'}
-              placeholder="Senha (mín. 8 caracteres)"
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') doAuth()
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPass((s) => !s)}
-              tabIndex={-1}
-              title={showPass ? 'Ocultar senha' : 'Mostrar senha'}
-              style={{
-                position: 'absolute',
-                right: 6,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: '.95rem',
-                color: '#64748b',
-                padding: 4,
-              }}
-            >
-              {showPass ? '🙈' : '👁️'}
-            </button>
-          </div>
-          {authErr && <div style={errBox}>{authErr}</div>}
-          <button style={primaryBtn} disabled={busy} onClick={doAuth}>
-            {busy ? 'Aguarde…' : loginMode === 'signup' ? 'Criar conta e começar' : 'Entrar'}
-          </button>
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              justifyContent: 'center',
-              marginTop: '1.1rem',
-              flexWrap: 'wrap',
-            }}
-          >
-            {['☁️ Sincronizado', '📱 Funciona offline', '🧠 FSRS-5'].map((f) => (
-              <span
-                key={f}
-                style={{
-                  fontSize: '.72rem',
-                  color: '#64748b',
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 999,
-                  padding: '3px 9px',
-                  fontWeight: 600,
-                }}
-              >
-                {f}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+      <LoginScreen
+        mode={loginMode}
+        onModeChange={setLoginMode}
+        name={name}
+        onNameChange={setName}
+        email={email}
+        onEmailChange={setEmail}
+        password={pass}
+        onPasswordChange={setPass}
+        error={authErr}
+        busy={busy}
+        onSubmit={doAuth}
+      />
     )
   }
 
@@ -5160,7 +5046,7 @@ export default function Index() {
           <div className="mr-legacy-study-top">
             <nav className="mr-legacy-breadcrumb">
               <button onClick={returnToFolders} className="mr-legacy-back-link" title="Voltar para as pastas">
-                ← <span style={{ opacity: 0.85 }}>{categoryTitle}</span>
+                <ArrowLeft size={16} aria-hidden="true" /> <span style={{ opacity: 0.85 }}>{categoryTitle}</span>
                 <span style={{ margin: '0 4px', opacity: 0.5 }}>/</span>
                 <strong>{sessionTitle}</strong>
               </button>
@@ -5189,109 +5075,118 @@ export default function Index() {
                   title="Desfazer última avaliação (Ctrl+Z)"
                   style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 800 }}
                 >
-                  ↺ Desfazer
+                  <Undo2 size={15} aria-hidden="true" /> Desfazer
                 </button>
               )}
-              {/* Botão de Alternância de Ordem Anki */}
-              <button
-                className="mr-legacy-control order-btn"
-                onClick={toggleStudyOrder}
-                title={
-                  studyOrderMode === 'random'
-                    ? 'Ordem atual: Aleatória (clique para alternar para Sequencial)'
-                    : 'Ordem atual: Sequencial por adição (clique para alternar para Aleatória)'
-                }
-              >
-                {studyOrderMode === 'random' ? '🔀 Aleatório' : '🔢 Sequencial'}
-              </button>
+              <StudyToolsMenu>
+                {/* Botão de Alternância de Ordem Anki */}
+                <button
+                  className="mr-legacy-control order-btn"
+                  onClick={toggleStudyOrder}
+                  title={
+                    studyOrderMode === 'random'
+                      ? 'Ordem atual: Aleatória (clique para alternar para Sequencial)'
+                      : 'Ordem atual: Sequencial por adição (clique para alternar para Aleatória)'
+                  }
+                >
+                  {studyOrderMode === 'random' ? <Shuffle size={15} aria-hidden="true" /> : <ArrowRightLeft size={15} aria-hidden="true" />}
+                  {studyOrderMode === 'random' ? 'Aleatória' : 'Sequencial'}
+                </button>
 
-              <button
-                type="button"
-                className="mr-legacy-control"
-                onClick={() => {
-                  const nextVal = speedTimerSetting === 0 ? 10 : speedTimerSetting === 10 ? 15 : speedTimerSetting === 15 ? 30 : 0
-                  setSpeedTimerSetting(nextVal)
-                  localStorage.setItem('mr_speed_timer', String(nextVal))
-                  if (nextVal > 0) setTimerSecondsLeft(nextVal)
-                }}
-                title="Timer de Foco: 10s, 15s ou 30s"
-                style={{
-                  background: speedTimerSetting > 0 ? '#ede9fe' : undefined,
-                  color: speedTimerSetting > 0 ? '#6d28d9' : undefined,
-                  border: speedTimerSetting > 0 ? '1px solid #c4b5fd' : undefined,
-                  fontWeight: 700,
-                }}
-              >
-                ⏱️ {speedTimerSetting > 0 ? `${speedTimerSetting}s` : ''}
-              </button>
-
-              <div className="mr-legacy-font-stepper">
                 <button
                   type="button"
+                  className="mr-legacy-control"
                   onClick={() => {
-                    const next = Math.max(0.85, Number((fontScale - 0.15).toFixed(2)))
-                    setFontScale(next)
-                    localStorage.setItem('mr_font_scale', String(next))
+                    const nextVal = speedTimerSetting === 0 ? 10 : speedTimerSetting === 10 ? 15 : speedTimerSetting === 15 ? 30 : 0
+                    setSpeedTimerSetting(nextVal)
+                    localStorage.setItem('mr_speed_timer', String(nextVal))
+                    if (nextVal > 0) setTimerSecondsLeft(nextVal)
                   }}
-                  title="Diminuir texto (A-)"
+                  title="Timer de Foco: 10s, 15s ou 30s"
+                  style={{
+                    background: speedTimerSetting > 0 ? '#ede9fe' : undefined,
+                    color: speedTimerSetting > 0 ? '#6d28d9' : undefined,
+                    border: speedTimerSetting > 0 ? '1px solid #c4b5fd' : undefined,
+                    fontWeight: 700,
+                  }}
                 >
-                  A-
+                  <Timer size={15} aria-hidden="true" /> {speedTimerSetting > 0 ? `${speedTimerSetting}s` : 'Sem limite'}
                 </button>
+
+                <div className="mr-legacy-font-stepper">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = Math.max(0.85, Number((fontScale - 0.15).toFixed(2)))
+                      setFontScale(next)
+                      localStorage.setItem('mr_font_scale', String(next))
+                    }}
+                    title="Diminuir texto (A-)"
+                    aria-label="Diminuir tamanho do texto"
+                  >
+                    A-
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = Math.min(1.45, Number((fontScale + 0.15).toFixed(2)))
+                      setFontScale(next)
+                      localStorage.setItem('mr_font_scale', String(next))
+                    }}
+                    title="Aumentar texto (A+)"
+                    aria-label="Aumentar tamanho do texto"
+                  >
+                    A+
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    const next = Math.min(1.45, Number((fontScale + 0.15).toFixed(2)))
-                    setFontScale(next)
-                    localStorage.setItem('mr_font_scale', String(next))
-                  }}
-                  title="Aumentar texto (A+)"
+                  className="mr-legacy-control"
+                  onClick={toggleTheme}
+                  title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+                  style={{ padding: '6px 8px', fontSize: '.9rem' }}
                 >
-                  A+
+                  {theme === 'dark' ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+                  {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
                 </button>
-              </div>
 
-              <button
-                type="button"
-                className="mr-legacy-control"
-                onClick={toggleTheme}
-                title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
-                style={{ padding: '6px 8px', fontSize: '.9rem' }}
-              >
-                {theme === 'dark' ? '☀️' : '🌙'}
-              </button>
+                <button
+                  className="mr-legacy-control"
+                  onClick={() => setCardReportTarget(card)}
+                  data-close-tools
+                  title="Reportar erro no cartão"
+                  style={{ padding: '6px 8px' }}
+                >
+                  <Flag size={15} aria-hidden="true" /> Reportar
+                </button>
 
-              <button
-                className="mr-legacy-control"
-                onClick={() => setCardReportTarget(card)}
-                title="Reportar erro no cartão"
-                style={{ padding: '6px 8px' }}
-              >
-                ⚠️
-              </button>
+                <button
+                  type="button"
+                  className="mr-legacy-control"
+                  onClick={() => resetCurrentCard(card)}
+                  data-close-tools
+                  title="Resetar este cartão para o estado novo (intervalos iniciais)"
+                  style={{ padding: '6px 8px', fontWeight: 700 }}
+                >
+                  <RotateCcw size={15} aria-hidden="true" /> Resetar
+                </button>
 
-              <button
-                type="button"
-                className="mr-legacy-control"
-                onClick={() => resetCurrentCard(card)}
-                title="Resetar este cartão para o estado novo (intervalos iniciais)"
-                style={{ padding: '6px 8px', fontWeight: 700 }}
-              >
-                ↺ Resetar
-              </button>
-
-              <button
-                type="button"
-                className="mr-legacy-control"
-                onClick={() => setSettingsOpen(true)}
-                title="Configurações"
-                aria-label="Configurações"
-                style={{ padding: '6px 8px', flexShrink: 0 }}
-              >
-                ⚙️
-              </button>
+                <button
+                  type="button"
+                  className="mr-legacy-control"
+                  onClick={() => setSettingsOpen(true)}
+                  data-close-tools
+                  title="Configurações"
+                  aria-label="Configurações"
+                  style={{ padding: '6px 8px', flexShrink: 0 }}
+                >
+                  <Settings size={15} aria-hidden="true" /> Configurações
+                </button>
+              </StudyToolsMenu>
 
               <button className="mr-legacy-control exit" onClick={returnToFolders} title="Sair da sessão">
-                ✕ Sair
+                <X size={15} aria-hidden="true" /> Sair
               </button>
             </div>
           </div>
@@ -5303,11 +5198,11 @@ export default function Index() {
             <div className="mr-study-modes">
               {(
                 [
-                  ['flip', '🔄 Virar'],
-                  ['write', '✍️ Escrever'],
-                  ['reverse', '🔁 Invertido'],
+                  ['flip', 'Virar', Eye],
+                  ['write', 'Escrever', PenLine],
+                  ['reverse', 'Invertido', ArrowRightLeft],
                 ] as const
-              ).map(([mode, label]) => (
+              ).map(([mode, label, Icon]) => (
                 <button
                   key={mode}
                   className={studyMode === mode ? 'active' : ''}
@@ -5318,7 +5213,7 @@ export default function Index() {
                     setFlipped(false)
                   }}
                 >
-                  {label}
+                  <Icon size={14} aria-hidden="true" /> {label}
                 </button>
               ))}
             </div>
@@ -5364,7 +5259,7 @@ export default function Index() {
                 className="mr-study-tool-pill"
                 title="Estatísticas deste cartão"
               >
-                📊 Stats
+                <ChartNoAxesCombined size={14} aria-hidden="true" /> Estatísticas
               </button>
               <button
                 type="button"
@@ -5584,7 +5479,7 @@ export default function Index() {
                   }}
                   title="Passar este cartão (não responder agora e deixar para o final da fila). (Atalho: P)"
                 >
-                  <span style={{ fontSize: '.84rem' }}>⏭️</span>
+                  <SkipForward size={14} aria-hidden="true" />
                   <span>Passar</span>
                 </button>
 
@@ -5624,7 +5519,7 @@ export default function Index() {
                       : 'Marcar com alerta de Atenção para reforçar depois (quando não sabe o assunto). (Atalho: A)'
                   }
                 >
-                  <span style={{ fontSize: '.84rem' }}>⚠️</span>
+                  <Flag size={14} aria-hidden="true" />
                   <span>{attentionCardIds.has(card.id.replace(/::rev$/, '')) ? 'Em Atenção •' : 'Atenção'}</span>
                 </button>
                 {/* Ferramentas de Marca-Texto */}
@@ -5689,8 +5584,9 @@ export default function Index() {
                     cursor: 'pointer',
                   }}
                   title="Anotações pessoais privadas"
+                  aria-pressed={showPersonalNotes}
                 >
-                  📝 {currentCardNote ? 'Anotações •' : 'Anotações'}
+                  <StickyNote size={14} aria-hidden="true" /> {currentCardNote ? 'Anotações •' : 'Anotações'}
                 </button>
 
                 {/* Controles de Áudio TTS */}
@@ -5707,7 +5603,8 @@ export default function Index() {
                   }}
                   title="Ouvir em voz alta em português"
                 >
-                  {isSpeaking ? '⏹️ Parar' : flipped ? '🔊 Resposta' : '🔊 Pergunta'}
+                  {isSpeaking ? <Square size={14} aria-hidden="true" /> : <Volume2 size={14} aria-hidden="true" />}
+                  {isSpeaking ? 'Parar' : flipped ? 'Resposta' : 'Pergunta'}
                 </button>
                 <select
                   value={speechRate}
@@ -5892,25 +5789,11 @@ export default function Index() {
                       e.stopPropagation()
                       setFlipped(true)
                     }}
-                    style={{
-                      background: 'linear-gradient(135deg, #16a34a, #22c55e)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 12,
-                      padding: '12px 28px',
-                      fontSize: '1rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(22, 163, 74, 0.25)',
-                      transition: 'all 0.15s ease',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
+                    className="mr-reveal-button"
                   >
-                    <span>👁️</span>
-                    <span>Mostrar Resposta / Virar Cartão</span>
-                    <span style={{ fontSize: '.75rem', opacity: 0.85, fontWeight: 600 }}>(Espaço ou clique)</span>
+                    <Eye size={18} aria-hidden="true" />
+                    <span>Mostrar resposta</span>
+                    <span className="mr-reveal-shortcut">Espaço</span>
                   </button>
                   <p className="mr-legacy-hint" style={{ margin: 0 }}>
                     {isCloze(card.q)
@@ -7418,73 +7301,6 @@ const center: React.CSSProperties = {
   justifyContent: 'center',
   fontFamily: 'Inter, system-ui, sans-serif',
 }
-const loginBox: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.9)',
-  backdropFilter: 'blur(8px)',
-  borderRadius: 24,
-  padding: '2.2rem 2rem',
-  boxShadow: '0 24px 60px -12px rgba(20,83,45,0.22), 0 0 0 1px rgba(134,239,172,0.35)',
-  width: 360,
-  maxWidth: '100%',
-  textAlign: 'center',
-  position: 'relative',
-  zIndex: 1,
-}
-const loginBadge: React.CSSProperties = {
-  width: 64,
-  height: 64,
-  margin: '0 auto 0.9rem',
-  borderRadius: 18,
-  display: 'grid',
-  placeItems: 'center',
-  background: 'linear-gradient(135deg,#16a34a,#15803d)',
-  boxShadow: '0 12px 26px rgba(22,163,74,0.35)',
-  fontSize: '1.8rem',
-}
-const input: React.CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '0.7rem 0.9rem',
-  borderRadius: 12,
-  border: '1.5px solid #cbd5e1',
-  fontSize: '0.95rem',
-  marginBottom: '0.7rem',
-  outline: 'none',
-  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-}
-const primaryBtn: React.CSSProperties = {
-  width: '100%',
-  padding: '0.8rem',
-  borderRadius: 12,
-  border: 'none',
-  background: 'linear-gradient(135deg,#16a34a,#15803d)',
-  color: '#fff',
-  fontWeight: 800,
-  fontSize: '0.95rem',
-  cursor: 'pointer',
-  marginTop: '0.4rem',
-  boxShadow: '0 8px 20px rgba(22,163,74,0.28)',
-  transition: 'transform 0.12s ease, box-shadow 0.12s ease',
-}
-const errBox: React.CSSProperties = {
-  background: '#fef2f2',
-  color: '#b91c1c',
-  border: '1px solid #fecaca',
-  borderRadius: 8,
-  padding: '0.6rem',
-  fontSize: '0.82rem',
-  marginBottom: '0.6rem',
-}
-const tabBtn = (active: boolean): React.CSSProperties => ({
-  flex: 1,
-  padding: '0.55rem',
-  borderRadius: 8,
-  border: active ? '2px solid #16a34a' : '1.5px solid #cbd5e1',
-  background: active ? '#f0fdf4' : '#fff',
-  color: active ? '#14532d' : '#64748b',
-  fontWeight: 700,
-  cursor: 'pointer',
-})
 // Feedback encorajador estilo Duolingo/Quizlet — microcopy variado por qualidade.
 const ENCOURAGE: Record<Quality, string[]> = {
   again: [
@@ -7515,22 +7331,19 @@ const qualityBtn = (q: Quality): React.CSSProperties => ({
   flex: 1,
   minWidth: 0,
   padding: '0.7rem 0.35rem',
-  borderRadius: 14,
+  borderRadius: 10,
   border: '1px solid rgba(255,255,255,0.16)',
   cursor: 'pointer',
   color: '#fff',
   background:
     q === 'again'
-      ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+      ? '#b91c1c'
       : q === 'hard'
-        ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+        ? '#a16207'
         : q === 'good'
-          ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-          : 'linear-gradient(135deg, #3b82f6, #2563eb)',
-  boxShadow:
-    q === 'good'
-      ? '0 6px 16px rgba(22,163,74,0.35)'
-      : '0 6px 16px rgba(0,0,0,0.14)',
+          ? '#15803d'
+          : '#1d4ed8',
+  boxShadow: 'none',
   transition: 'transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease',
   touchAction: 'manipulation',
   userSelect: 'none',

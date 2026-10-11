@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { Activity, CalendarDays, CheckCircle2, Trophy } from 'lucide-react'
 
 interface Props {
   reviews: Array<{
@@ -167,11 +168,11 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
     <div
       className="mr-legacy-study-heatmap"
       style={{
-        background: '#ffffff',
-        border: '1.5px solid #d1fae5',
-        borderRadius: 20,
+        background: 'var(--mr-ui-surface, #ffffff)',
+        border: '1px solid var(--mr-ui-border, #e2e8f0)',
+        borderRadius: 14,
         padding: compact ? '16px' : '22px 24px',
-        boxShadow: '0 4px 20px rgba(16, 185, 129, 0.06)',
+        boxShadow: 'none',
         marginBottom: 24,
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
@@ -189,13 +190,13 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: '1.4rem' }}>🔥</span>
+            <Activity size={22} color="var(--mr-ui-green, #15803d)" aria-hidden="true" />
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#14532d', fontWeight: 900 }}>
-                Consistência & Frequência Diária
+              <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--mr-ui-text, #172b26)', fontWeight: 600 }}>
+                Seu ritmo de estudo
               </h3>
               <p style={{ margin: '2px 0 0', fontSize: '.8rem', color: '#64748b' }}>
-                Seu mapa de fixação médica e disciplina nos estudos.
+                Cada revisão conta para manter a constância.
               </p>
             </div>
           </div>
@@ -208,16 +209,16 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: '#fef3c7',
-              border: '1px solid #fde68a',
+              background: 'var(--mr-ui-background, #f6f8fa)',
+              border: '1px solid var(--mr-ui-border, #e2e8f0)',
               borderRadius: 12,
               padding: '6px 12px',
               fontSize: '.82rem',
               fontWeight: 800,
-              color: '#b45309',
+              color: 'var(--mr-ui-muted, #64748b)',
             }}
           >
-            <span>🔥</span>
+            <CalendarDays size={14} aria-hidden="true" />
             <span>{currentStreak} {currentStreak === 1 ? 'dia de ofensiva' : 'dias seguidos'}</span>
           </div>
 
@@ -226,16 +227,16 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: '#ecfdf5',
-              border: '1px solid #a7f3d0',
+              background: 'var(--mr-ui-background, #f6f8fa)',
+              border: '1px solid var(--mr-ui-border, #e2e8f0)',
               borderRadius: 12,
               padding: '6px 12px',
               fontSize: '.82rem',
               fontWeight: 800,
-              color: '#065f46',
+              color: 'var(--mr-ui-muted, #64748b)',
             }}
           >
-            <span>🏆</span>
+            <Trophy size={14} aria-hidden="true" />
             <span>Recorde: {maxStreak}d</span>
           </div>
 
@@ -244,16 +245,16 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
+              background: 'var(--mr-ui-soft, #edf7f0)',
+              border: '1px solid var(--mr-ui-border, #e2e8f0)',
               borderRadius: 12,
               padding: '6px 12px',
               fontSize: '.82rem',
               fontWeight: 800,
-              color: '#1e40af',
+              color: 'var(--mr-ui-green, #15803d)',
             }}
           >
-            <span>⚡</span>
+            <CheckCircle2 size={14} aria-hidden="true" />
             <span>Hoje: {reviewsToday} cards</span>
           </div>
 

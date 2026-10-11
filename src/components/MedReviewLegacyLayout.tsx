@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
+import { Activity, Archive, BookOpen, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronDown, ClipboardList, Download, Flag, Folder, GraduationCap, Image, Layers, Moon, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Smartphone, Sparkles, Stethoscope, Sun, Target, Timer, TriangleAlert, Zap } from 'lucide-react'
 import { StudyHeatmap } from './StudyHeatmap'
 import { launchConfetti } from '@/lib/confetti'
 import {
@@ -2155,6 +2156,14 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [masterMenuOpen, setMasterMenuOpen] = useState(false)
+  const completedToday = useMemo(() => {
+    const start = new Date().setHours(0, 0, 0, 0)
+    const end = new Date().setHours(24, 0, 0, 0)
+    return new Set((reviews || []).filter((r) => {
+      const time = new Date(r.reviewed_at).getTime()
+      return time >= start && time < end
+    }).map((r) => r.card_id || r.card_ref || r.card).filter(Boolean)).size
+  }, [reviews])
   const [searchQuery, setSearchQuery] = useState('')
   const [examPlans, setExamPlans] = useState(() => getAllExamPlans())
 
@@ -2324,7 +2333,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
       <header className="mr-legacy-header">
         <div className="mr-legacy-header-inner">
           <div className="mr-legacy-brand" onClick={onHome} role="button" tabIndex={0}>
-            <span className="mr-legacy-brand-icon">🩺</span>
+            <span className="mr-legacy-brand-icon"><Stethoscope size={22} aria-hidden="true" /></span>
             <div className="mr-legacy-brand-title">
               <span className="mr-legacy-brand-main">MedReview</span>
               <span className="mr-legacy-brand-sub">FSRS-5 · Medicina</span>
@@ -2340,7 +2349,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   onClick={() => setMasterMenuOpen(!masterMenuOpen)}
                   title="Ferramentas do Docente"
                 >
-                  🎓 Docente ▾
+                  <GraduationCap size={16} aria-hidden="true" /> Docente <ChevronDown size={12} aria-hidden="true" />
                 </button>
                 {masterMenuOpen && (
                   <div className="mr-legacy-menu-popover">
@@ -2351,7 +2360,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         onOpenMasterAnalytics?.()
                       }}
                     >
-                      <span>📊</span> Painel da Turma
+                      <ChartNoAxesCombined size={16} aria-hidden="true" /> Painel da turma
                     </button>
                     <button
                       type="button"
@@ -2360,7 +2369,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         onOpenMasterReports?.()
                       }}
                     >
-                      <span>⚠️</span> Erros Reportados
+                      <Flag size={16} aria-hidden="true" /> Erros reportados
                     </button>
                   </div>
                 )}
@@ -2377,7 +2386,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 aria-label="Sincronizar flashcards"
               >
                 <span className={`sync-icon ${isSyncingActive ? 'spinning' : ''}`}>
-                  {syncSuccess ? '✓' : '🔄'}
+                  {syncSuccess ? <CheckCircle2 size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
                 </span>
                 <span>
                   {isSyncingActive ? 'Sincronizando...' : syncSuccess ? 'Sincronizado!' : 'Sincronizar'}
@@ -2391,7 +2400,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
               onClick={() => onOpenCramMode?.()}
               title="Revisão Intensiva de Véspera de Prova (Cram Mode)"
             >
-              ⚡ Véspera
+              <Zap size={16} aria-hidden="true" /> Véspera
             </button>
 
             <div className="mr-legacy-dropdown-wrap">
@@ -2401,7 +2410,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 onClick={() => setCreateMenuOpen(!createMenuOpen)}
                 title="Criar nova pasta ou cartas"
               >
-                ＋ Criar ▾
+                <Plus size={16} aria-hidden="true" /> Criar <ChevronDown size={12} aria-hidden="true" />
               </button>
               {createMenuOpen && (
                 <div className="mr-legacy-menu-popover">
@@ -2412,7 +2421,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       onNewFrontlineFolder()
                     }}
                   >
-                    <span>📁</span> Nova Pasta
+                    <Folder size={16} aria-hidden="true" /> Nova pasta
                   </button>
                   <button
                     type="button"
@@ -2421,7 +2430,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       onOpenAiGenerator?.()
                     }}
                   >
-                    <span>🤖</span> Criar Cartas com IA
+                    <Sparkles size={16} aria-hidden="true" /> Criar cartas com IA
                   </button>
                   <button
                     type="button"
@@ -2430,7 +2439,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       onOpenImageOcclusion?.()
                     }}
                   >
-                    <span>🖼️</span> Oclusão de Imagem
+                    <Image size={16} aria-hidden="true" /> Oclusão de imagem
                   </button>
                 </div>
               )}
@@ -2443,7 +2452,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 onClick={() => setMoreMenuOpen(!moreMenuOpen)}
                 title="Mais ferramentas e importação"
               >
-                🛠️ Mais ▾
+                <MoreHorizontal size={16} aria-hidden="true" /> Mais <ChevronDown size={12} aria-hidden="true" />
               </button>
               {moreMenuOpen && (
                 <div className="mr-legacy-menu-popover">
@@ -2454,7 +2463,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       onClinical()
                     }}
                   >
-                    <span>📋</span> Modo Clínico
+                    <ClipboardList size={16} aria-hidden="true" /> Modo clínico
                   </button>
                   <button
                     type="button"
@@ -2463,7 +2472,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                       onOpenAnkiImport?.()
                     }}
                   >
-                    <span>📥</span> Importar Baralho (.apkg)
+                    <Download size={16} aria-hidden="true" /> Importar baralho (.apkg)
                   </button>
                   {onExportBackup && (
                     <button
@@ -2473,7 +2482,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                         onExportBackup()
                       }}
                     >
-                      <span>💾</span> Fazer Backup (.json)
+                      <Archive size={16} aria-hidden="true" /> Fazer backup (.json)
                     </button>
                   )}
                 </div>
@@ -2517,7 +2526,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     gap: 5,
                   }}
                 >
-                  📱 App
+                  <Smartphone size={16} aria-hidden="true" /> App
                 </button>
               )}
               {onToggleTheme && (
@@ -2528,7 +2537,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                   title={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
                   aria-label="Alternar tema"
                 >
-                  {theme === 'dark' ? '☀️' : '🌙'}
+                  {theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
                 </button>
               )}
               <button
@@ -2538,7 +2547,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 title="Dashboard FSRS — estatísticas e heatmap"
                 aria-label="Dashboard"
               >
-                📈
+                <ChartNoAxesCombined size={17} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -2550,7 +2559,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 title="Configurações"
                 aria-label="Configurações"
               >
-                ⚙️
+                <Settings size={17} aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -2851,7 +2860,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                               background: '#fffbeb',
                             }}
                           >
-                            ⚡ Véspera
+                            <Zap size={16} aria-hidden="true" /> Véspera
                           </button>
                           <button
                             type="button"
@@ -2970,35 +2979,43 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
         ) : (
           <>
             <section className="mr-legacy-hero">
-              <span className="mr-legacy-badge">✦ Plataforma de Fixação Médica · FSRS-5</span>
-              <h1>Bom estudo, futuro colega! 🩺</h1>
+              <div className="mr-home-focus">
+              <div>
+              <span className="mr-legacy-badge">Seu estudo de hoje</span>
+              <h1>Um passo a mais na sua preparação.</h1>
               <p className="mr-legacy-copy">
-                Revisão médica ativa e repetição espaçada de alta retenção para a faculdade e residência.
+                {reviewTodayCount > 0 ? `${reviewTodayCount} cartões esperando sua revisão. Vamos começar?` : 'Continue aprendendo com novos cartões e revisões no seu ritmo.'}
               </p>
+              <span className="mr-home-today"><CheckCircle2 size={15} aria-hidden="true" /> {completedToday} {completedToday === 1 ? 'cartão revisado' : 'cartões revisados'} hoje</span>
+              </div>
+              <button className="mr-legacy-button primary mr-home-start" onClick={onStudyNow}>
+                <Play size={17} aria-hidden="true" /> Estudar agora
+              </button>
+              </div>
               <div className="mr-legacy-metrics">
-                <div className="mr-legacy-metric">
-                  <span className="mr-legacy-metric-icon">⚡</span>
+                <div className="mr-legacy-metric mr-home-due">
+                  <span className="mr-legacy-metric-icon"><Activity size={20} aria-hidden="true" /></span>
                   <div>
                     <span className="mr-legacy-metric-label">Para revisar hoje</span>
                     <strong className="mr-legacy-metric-value">{reviewTodayCount}</strong>
                   </div>
                 </div>
                 <div className="mr-legacy-metric">
-                  <span className="mr-legacy-metric-icon">📚</span>
+                  <span className="mr-legacy-metric-icon"><BookOpen size={20} aria-hidden="true" /></span>
                   <div>
                     <span className="mr-legacy-metric-label">Total de cartas</span>
                     <strong className="mr-legacy-metric-value">{totalCards}</strong>
                   </div>
                 </div>
                 <div className="mr-legacy-metric">
-                  <span className="mr-legacy-metric-icon">🎯</span>
+                  <span className="mr-legacy-metric-icon"><Target size={20} aria-hidden="true" /></span>
                   <div>
                     <span className="mr-legacy-metric-label">Domínio geral</span>
                     <strong className="mr-legacy-metric-value">{masteredPercent}%</strong>
                   </div>
                 </div>
                 <div className="mr-legacy-metric">
-                  <span className="mr-legacy-metric-icon">🗓️</span>
+                  <span className="mr-legacy-metric-icon"><CalendarDays size={20} aria-hidden="true" /></span>
                   <div>
                     <span className="mr-legacy-metric-label">Sequência</span>
                     <strong className="mr-legacy-metric-value">
@@ -3012,12 +3029,11 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 <StudyHeatmap reviews={reviews || []} cards={cards} />
               </div>
 
+              <details className="mr-home-extra">
+              <summary><SlidersHorizontal size={16} aria-hidden="true" /> Outras formas de estudar e ferramentas</summary>
               <div className="mr-legacy-actions">
-                <button className="mr-legacy-button primary" onClick={onStudyNow}>
-                  ⚡ Estudar Agora
-                </button>
                 <button className="mr-legacy-button" onClick={onSessionBuilder}>
-                  🎛️ Montar Sessão
+                  <SlidersHorizontal size={16} aria-hidden="true" /> Montar sessão
                 </button>
                 {isMaster && onSync && (
                   <button
@@ -3028,7 +3044,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     title="Forçar sincronização com a nuvem e transmitir novidades para todos os alunos"
                   >
                     <span className={`sync-icon ${isSyncingActive ? 'spinning' : ''}`}>
-                      {syncSuccess ? '✓' : '🔄'}
+                      {syncSuccess ? <CheckCircle2 size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
                     </span>
                     <span>
                       {isSyncingActive ? 'Sincronizando...' : syncSuccess ? 'Sincronizado!' : 'Sincronizar'}
@@ -3048,7 +3064,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     }}
                     title="Ver, gerenciar e estudar cartas com alerta de Atenção"
                   >
-                    ⚠️ Cartas em Atenção {attentionCount > 0 ? `(${attentionCount})` : ''}
+                    <Flag size={16} aria-hidden="true" /> Cartas em atenção {attentionCount > 0 ? `(${attentionCount})` : ''}
                   </button>
                 )}
                 {(onOpenCriticalModal || onStudyLeeches) && (
@@ -3064,37 +3080,38 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     }}
                     title="Ver, gerenciar e revisar cartas críticas (com mais erros acumulados)"
                   >
-                    🩸 Cartas Críticas {leechCount > 0 ? `(${leechCount})` : ''}
+                    <TriangleAlert size={16} aria-hidden="true" /> Cartas críticas {leechCount > 0 ? `(${leechCount})` : ''}
                   </button>
                 )}
                 <button className="mr-legacy-button" onClick={onQuiz}>
-                  ⏱️ Quiz Rápido
+                  <Timer size={16} aria-hidden="true" /> Quiz rápido
                 </button>
                 <button className="mr-legacy-button" onClick={onClinical}>
-                  📋 Modo Caso Clínico
+                  <ClipboardList size={16} aria-hidden="true" /> Modo caso clínico
                 </button>
                 <button
                   className="mr-legacy-button amber"
                   onClick={() => onOpenCramMode?.()}
                   title="Revisão Intensiva Pré-Prova"
                 >
-                  ⚡ Véspera de Prova
+                  <Zap size={16} aria-hidden="true" /> Véspera de prova
                 </button>
                 <button className="mr-legacy-button" onClick={onOpenAnkiImport}>
-                  📥 Importar Baralho
+                  <Download size={16} aria-hidden="true" /> Importar baralho
                 </button>
                 {onExportBackup && (
                   <button className="mr-legacy-button" onClick={onExportBackup} title="Exportar Backup Completo">
-                    💾 Fazer Backup
+                    <Archive size={16} aria-hidden="true" /> Fazer backup
                   </button>
                 )}
               </div>
+              </details>
             </section>
 
             <section>
               <header className="mr-legacy-section-head">
                 <div>
-                  <h2 className="mr-legacy-section-title">📁 Pastas de Estudo</h2>
+                  <h2 className="mr-legacy-section-title"><Folder size={21} aria-hidden="true" /> Pastas de estudo</h2>
                   <p className="mr-legacy-section-sub">
                     Navegue pelas disciplinas, casos clínicos e bancos de revisão
                   </p>
@@ -3104,7 +3121,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     ＋ Nova Pasta
                   </button>
                   <button className="mr-legacy-button" onClick={onLibrary}>
-                    📚 Gerenciar pastas
+                    <Layers size={16} aria-hidden="true" /> Gerenciar pastas
                   </button>
                 </div>
               </header>
@@ -3139,7 +3156,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     pointerEvents: 'none',
                   }}
                 >
-                  🔍
+                  <Search size={17} aria-hidden="true" />
                 </span>
                 {searchQuery && (
                   <button
@@ -3509,7 +3526,7 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                     }}
                   >
                     <div className="mr-card-top">
-                      <span className="mr-card-icon">{item.icon}</span>
+                      <span className="mr-card-icon">{item.sectionKind === 'tutoria' ? <Stethoscope size={22} aria-hidden="true" /> : item.sectionKind === 'custom' ? <Folder size={22} aria-hidden="true" /> : <Layers size={22} aria-hidden="true" />}</span>
                       <div className="mr-card-top-right">
                         <span className="mr-legacy-tag">{item.tag}</span>
                       </div>
