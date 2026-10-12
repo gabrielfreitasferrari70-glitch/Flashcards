@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   BookOpen,
   CalendarDays,
@@ -36,6 +36,7 @@ import {
   savePlanning,
 } from './service'
 import './planning.css'
+import { academicColor, academicLegend, academicReferences } from './academicCalendar'
 const tabs = ['Hoje', 'Semana', 'Estudos', 'Revisões', 'Materiais', 'Desempenho'] as const
 const label: Record<string, string> = {
   class: 'Aula prevista',
@@ -164,9 +165,6 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
     }
   }
   const settings = records.find((r) => r.kind === 'settings')
-  const agenda = records
-    .filter((r) => r.kind === 'event' && localDay(String(r.data.starts_at)) === day)
-    .sort((a, b) => Date.parse(String(a.data.starts_at)) - Date.parse(String(b.data.starts_at)))
   const nextExam = records
     .filter(
       (r) =>
@@ -211,7 +209,11 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
     } else await commit({ action: 'create', kind, data })
   }
   const card = (r: PlanningRecord) => (
-    <article className="mp-card" key={r.id}>
+    <article
+      className={`mp-card${academicColor(r) ? ' mp-academic-event' : ''}`}
+      style={academicColor(r) ? { '--mp-calendar-color': academicColor(r) } as CSSProperties : undefined}
+      key={r.id}
+    >
       <div className="mp-card-top">
         <span className={`mp-tag mp-tag-${r.kind}`}>
           {r.kind === 'event'
@@ -312,6 +314,36 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
         Nenhum registro para este período. Adicione informações reais para começar.
       </p>
     )
+  const calendarLegend = (
+    <ul className="mp-calendar-legend" aria-label="Legenda do cronograma do professor">
+      {academicLegend.map((item) => (
+        <li key={item.title} style={{ backgroundColor: item.color }}>{item.title}</li>
+      ))}
+    </ul>
+  )
+  const calendarDay = (date: string) => {
+    const entries = records
+      .filter((r) => (r.kind === 'event' || r.kind === 'task') &&
+        when(r).includes('T') && localDay(when(r)) === date)
+      .map((record) => ({ time: localTime(when(record)), key: record.id, content: card(record) }))
+    for (const slot of academicReferences(date, records)) {
+      const key = `${date}-${slot.start}-${slot.category}`
+      entries.push({ time: slot.start, key, content: (
+        <article className="mp-card mp-academic-reference" key={key}
+          style={{ backgroundColor: slot.color }}>
+          <p className="mp-academic-time">{slot.start}–{slot.end}</p>
+          <h3>{slot.title || 'Sem indicação no cronograma'}</h3>
+          <p className="mp-academic-caption">
+            {slot.category === 'free' ? 'Horário livre no cronograma do professor'
+              : slot.category === 'holiday' ? 'Calendário acadêmico'
+              : 'Campo vazio no arquivo original'}
+          </p>
+        </article>
+      ) })
+    }
+    return entries.length ? entries.sort((a, b) => a.time.localeCompare(b.time))
+      .map((entry) => entry.content) : <p className="mp-muted">Sem indicação no cronograma.</p>
+  }
   return (
     <Dialog
       open
@@ -448,8 +480,9 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
                         <span>Tarefas e revisões prioritárias</span>
                       </article>
                     </div>
-                    <h2>Compromissos</h2>
-                    {list(agenda)}
+                    <h2>Agenda do dia</h2>
+                    {calendarLegend}
+                    <div className="mp-grid">{calendarDay(day)}</div>
                     <h2>Prioridades</h2>
                     {list(pendingRecords)}
                   </>
@@ -457,22 +490,15 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
                 {tab === 'Semana' && (
                   <>
                     <p className="mp-muted">
-                      Aulas previstas, provas e tutorias vêm apenas dos registros/importações
-                      confirmados. Blocos manuais são preservados.
+                      Cores originais do cronograma do professor. “Livre” identifica os horários
+                      livres do arquivo; campos vazios permanecem sem indicação.
                     </p>
+                    {calendarLegend}
                     <div className="mp-week">
                       {Array.from({ length: 7 }, (_, i) => addDays(day, i)).map((date) => (
                         <section key={date}>
                           <h3>{date}</h3>
-                          {records
-                            .filter(
-                              (r) =>
-                                (r.kind === 'event' || r.kind === 'task') &&
-                                when(r).includes('T') &&
-                                localDay(when(r)) === date,
-                            )
-                            .sort((a, b) => when(a).localeCompare(when(b)))
-                            .map(card)}
+                          {calendarDay(date)}
                         </section>
                       ))}
                     </div>

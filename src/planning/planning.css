@@ -314,3 +314,42 @@
 .mp-consent a {
   text-decoration: underline;
 }
+.mp-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 16px;
+}
+.mp-calendar-legend li {
+  color: #17212b;
+  border: 1px solid #737373;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mp-card.mp-academic-event {
+  background: var(--mp-calendar-color);
+}
+.mp-card.mp-academic-event,
+.mp-card.mp-academic-reference {
+  color: #17212b;
+  border-color: #737373;
+}
+.mp-academic-event .mp-muted,
+.mp-academic-reference .mp-academic-time,
+.mp-academic-reference .mp-academic-caption {
+  color: #283640;
+  font-size: 12px;
+}
+.mp-academic-event .mp-tag {
+  color: #17212b;
+  background: #ffffffb8;
+}
+.mp-academic-event button.secondary {
+  color: #17212b;
+  background: #ffffffdc;
+  border-color: #737373;
+}
