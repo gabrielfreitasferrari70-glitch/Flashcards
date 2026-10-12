@@ -21,6 +21,7 @@ import {
   performance,
   PLANNING_ADMIN,
   PLANNING_START,
+  PLANNING_ZONE,
   proposePlan,
   type Availability,
   type Command,
@@ -38,6 +39,16 @@ import {
 import './planning.css'
 import { academicColor, academicLegend, academicReferences } from './academicCalendar'
 const tabs = ['Hoje', 'Semana', 'Estudos', 'Revisões', 'Materiais', 'Desempenho'] as const
+const calendarDateFormatter = new Intl.DateTimeFormat('pt-BR', {
+  weekday: 'long',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: PLANNING_ZONE,
+})
+function displayDate(date: string) {
+  return calendarDateFormatter.format(new Date(`${date}T12:00:00Z`))
+}
 const label: Record<string, string> = {
   class: 'Aula prevista',
   exam: 'Prova',
@@ -239,7 +250,9 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
       )}
       {when(r) && (
         <p className="mp-muted">
-          {when(r).includes('T') ? `${localDay(when(r))} · ${localTime(when(r))}` : when(r)}
+          {when(r).includes('T')
+            ? `${displayDate(localDay(when(r)))} · ${localTime(when(r))}`
+            : displayDate(when(r))}
           {r.data.ends_at ? `–${localTime(String(r.data.ends_at))}` : ''}
         </p>
       )}
@@ -470,7 +483,7 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
                         </strong>
                         <span>
                           {nextExam
-                            ? `${localDay(String(nextExam.data.starts_at))} · ${localTime(String(nextExam.data.starts_at))}`
+                            ? `${displayDate(localDay(String(nextExam.data.starts_at)))} · ${localTime(String(nextExam.data.starts_at))}`
                             : 'Sem previsão inventada'}
                         </span>
                       </article>
@@ -480,7 +493,7 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
                         <span>Tarefas e revisões prioritárias</span>
                       </article>
                     </div>
-                    <h2>Agenda do dia</h2>
+                    <h2>Agenda do dia · {displayDate(day)}</h2>
                     {calendarLegend}
                     <div className="mp-grid">{calendarDay(day)}</div>
                     <h2>Prioridades</h2>
@@ -497,7 +510,7 @@ export default function AdminPlanning({ onClose }: { onClose: () => void }) {
                     <div className="mp-week">
                       {Array.from({ length: 7 }, (_, i) => addDays(day, i)).map((date) => (
                         <section key={date}>
-                          <h3>{date}</h3>
+                          <h3>{displayDate(date)}</h3>
                           {calendarDay(date)}
                         </section>
                       ))}
