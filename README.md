@@ -129,3 +129,6 @@ npm run build
 ```
 
 Os arquivos otimizados serão gerados na pasta `dist/` e estarão prontos para deploy.
+
+
+Documentação da nova área administrativa: [Planejamento de Medicina e conexão MCP](docs/PLANEJAMENTO.md).

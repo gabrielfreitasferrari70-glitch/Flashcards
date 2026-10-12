@@ -61,6 +61,7 @@ const MasterReportsModal = lazy(() =>
 const MasterAnalyticsModal = lazy(() =>
   import('@/components/MasterAnalyticsModal').then((m) => ({ default: m.MasterAnalyticsModal })),
 )
+const AdminPlanning = lazy(() => import('@/planning/AdminPlanning'))
 const AiCardGeneratorModal = lazy(() =>
   import('@/components/AiCardGeneratorModal').then((m) => ({ default: m.AiCardGeneratorModal })),
 )
@@ -2964,6 +2965,7 @@ export default function Index() {
   const [cardReportTarget, setCardReportTarget] = useState<Card | null>(null)
   const [masterReportsOpen, setMasterReportsOpen] = useState(false)
   const [masterAnalyticsOpen, setMasterAnalyticsOpen] = useState(false)
+  const [planningOpen, setPlanningOpen] = useState(false)
   const [currentCardNote, setCurrentCardNote] = useState('')
   const [noteSaving, setNoteSaving] = useState(false)
   const [cramModalOpen, setCramModalOpen] = useState(false)
@@ -6477,6 +6479,7 @@ export default function Index() {
         onOpenExamPlan={(dId, dTitle) => setExamPlanTarget({ id: dId, title: dTitle })}
         onOpenMasterReports={() => setMasterReportsOpen(true)}
         onOpenMasterAnalytics={() => setMasterAnalyticsOpen(true)}
+        onOpenPlanning={user?.id === MASTER_USER_ID ? () => setPlanningOpen(true) : undefined}
         reviews={reviews}
         onOpenCramMode={(dId) => {
           setCramInitialDeckId(dId)
@@ -6504,6 +6507,7 @@ export default function Index() {
         }}
       />
       <Suspense fallback={null}>
+        {planningOpen && user?.id === MASTER_USER_ID && <AdminPlanning onClose={() => setPlanningOpen(false)} />}
         {specialCardsModal && (
           <SpecialCardsModal
             type={specialCardsModal.type}
