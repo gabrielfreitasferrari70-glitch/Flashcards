@@ -6633,6 +6633,7 @@ export default function Index() {
         {aiGeneratorOpen && (
           <AiCardGeneratorModal
             decks={decks}
+            cards={cards}
             initialDeckId={route.deckId}
             onClose={() => setAiGeneratorOpen(false)}
             onSuccess={() => {

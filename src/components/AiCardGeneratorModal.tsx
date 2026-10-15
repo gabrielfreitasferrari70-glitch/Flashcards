@@ -4,14 +4,20 @@ import {
   getGeminiApiKey,
   saveGeminiApiKey,
   verifyCardsWithGemini,
+  enrichCardsWithGemini,
+  canEnrich,
+  type EnrichedCard,
   type GeneratedCard,
 } from '@/services/aiGenerator'
-import { createCard } from '@/services/medreview'
+import { createCard, updateCard } from '@/services/medreview'
+import { renderRichHtml } from '@/lib/richCard'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 
 interface Props {
   decks: Array<{ id: string; title: string; kind?: string; parent?: string; deleted?: boolean }>
   initialDeckId?: string
+  /** Cartões existentes, para o modo "Aprimorar cartões". */
+  cards?: Array<{ id: string; deck: string; q: string; a: string; ref?: string; clinical?: boolean; occlusion?: unknown; rich?: unknown; deleted?: boolean }>
   onClose: () => void
   onSuccess: () => void
 }
@@ -19,6 +25,7 @@ interface Props {
 export const AiCardGeneratorModal: React.FC<Props> = ({
   decks,
   initialDeckId,
+  cards = [],
   onClose,
   onSuccess,
 }) => {
@@ -33,6 +40,27 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
   const [msg, setMsg] = useState('')
   const [previewCards, setPreviewCards] = useState<GeneratedCard[]>([])
   const [selectedCards, setSelectedCards] = useState<Set<number>>(new Set())
+  // Modo "Aprimorar cartões existentes"
+  const [mode, setMode] = useState<'create' | 'enrich'>('create')
+  const [enrichSize, setEnrichSize] = useState(8)
+  const [enriched, setEnriched] = useState<EnrichedCard[]>([])
+  const [enrichSel, setEnrichSel] = useState<Set<string>>(new Set())
+  const [openPreview, setOpenPreview] = useState<string | null>(null)
+
+  const eligible = React.useMemo(() => {
+    const ids = new Set<string>([deckId])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const d of decks) {
+        if (d.parent && ids.has(d.parent) && !ids.has(d.id)) {
+          ids.add(d.id)
+          grew = true
+        }
+      }
+    }
+    return cards.filter((c) => ids.has(c.deck) && canEnrich(c))
+  }, [cards, decks, deckId])
 
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -96,6 +124,63 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
       }
     } catch (e: any) {
       setMsg('Erro na geração com IA: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleEnrich = async () => {
+    if (!apiKey.trim()) {
+      setMsg('Por favor, insira sua chave da API Gemini (gratuita em aistudio.google.com).')
+      setShowKeyInput(true)
+      return
+    }
+    const batch = eligible.slice(0, enrichSize)
+    if (!batch.length) {
+      setMsg('Não há cartões elegíveis nesta pasta (já aprimorados, com oclusão de imagem ou cloze).')
+      return
+    }
+    saveGeminiApiKey(apiKey)
+    setBusy(true)
+    setMsg('')
+    try {
+      const result = await enrichCardsWithGemini({
+        cards: batch.map((c) => ({ id: c.id, q: c.q, a: c.a, ref: c.ref })),
+        apiKey,
+      })
+      setEnriched(result)
+      // Cartões que a conferência marcou começam desmarcados
+      setEnrichSel(new Set(result.filter((r) => r.rich.review?.status !== 'flagged').map((r) => r.id)))
+      if (result.some((r) => r.rich.review?.status === 'flagged')) {
+        setMsg('Alguns cartões foram marcados pela conferência da IA e vieram desmarcados. Leia a observação de cada um.')
+      }
+    } catch (e: any) {
+      setMsg('Erro ao aprimorar com IA: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleApplyEnriched = async () => {
+    const chosen = enriched.filter((r) => enrichSel.has(r.id))
+    if (!chosen.length) {
+      setMsg('Selecione pelo menos um cartão para aplicar.')
+      return
+    }
+    setBusy(true)
+    setMsg('')
+    try {
+      for (const r of chosen) {
+        const src = cards.find((c) => c.id === r.id)
+        // Pergunta e verso original permanecem como estão; só o verso em camadas é adicionado.
+        await updateCard({ id: r.id, q: r.q, a: r.originalA, clinical: !!src?.clinical, rich: r.rich })
+      }
+      onSuccess()
+      setEnriched([])
+      setEnrichSel(new Set())
+      setMsg(`${chosen.length} cartões aprimorados. Rode de novo para o próximo lote.`)
+    } catch (e: any) {
+      setMsg('Erro ao salvar cartões: ' + (e?.message || e))
     } finally {
       setBusy(false)
     }
@@ -267,7 +352,29 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
             </div>
           )}
 
-          {previewCards.length === 0 ? (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {([['create', '✨ Criar a partir de texto/PDF'], ['enrich', '⬆️ Aprimorar cartões existentes']] as const).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  flex: 1,
+                  padding: '9px 12px',
+                  borderRadius: 10,
+                  border: mode === m ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                  background: mode === m ? '#f0fdf4' : '#fff',
+                  color: mode === m ? '#14532d' : '#475569',
+                  fontWeight: 800,
+                  fontSize: '.82rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'create' && (previewCards.length === 0 ? (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 16 }}>
                 <div>
@@ -446,6 +553,96 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
                 })}
               </div>
             </div>
+          ))}
+
+          {mode === 'enrich' && (
+            <div>
+              {enriched.length === 0 ? (
+                <>
+                  <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                    Pasta (inclui subpastas)
+                  </label>
+                  <FolderTreeSelect decks={decks} selectedDeckId={deckId} onSelect={(id) => setDeckId(id)} style={{ width: '100%' }} />
+                  <p style={{ fontSize: '.84rem', color: '#334155', margin: '12px 0 8px' }}>
+                    <strong>{eligible.length}</strong> cartões elegíveis nesta pasta. A pergunta e o verso original
+                    <strong> não são alterados</strong>: o verso em camadas é acrescentado e só vale se você aprovar.
+                  </p>
+                  <label style={{ display: 'block', fontSize: '.82rem', fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                    Cartões por lote
+                  </label>
+                  <select
+                    value={enrichSize}
+                    onChange={(e) => setEnrichSize(Number(e.target.value))}
+                    style={{ padding: '9px 12px', borderRadius: 10, border: '1.5px solid #cbd5e1', background: '#fff' }}
+                  >
+                    {[5, 8, 12].map((n) => (
+                      <option key={n} value={n}>{n} cartões</option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {enriched.map((r) => {
+                    const on = enrichSel.has(r.id)
+                    const flagged = r.rich.review?.status === 'flagged'
+                    return (
+                      <div
+                        key={r.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 12,
+                          border: on ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                          background: on ? '#f0fdf4' : '#fff',
+                        }}
+                      >
+                        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => {
+                              const next = new Set(enrichSel)
+                              if (next.has(r.id)) next.delete(r.id)
+                              else next.add(r.id)
+                              setEnrichSel(next)
+                            }}
+                            style={{ marginTop: 4, width: 18, height: 18, accentColor: '#16a34a' }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                              {r.rich.review?.status === 'verified' && (
+                                <span style={{ fontSize: '.7rem', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>✓ CONFERIDO PELA IA</span>
+                              )}
+                              {flagged && (
+                                <span style={{ fontSize: '.7rem', background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>⚠ CONFERIR</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{r.q.replace(/<[^>]+>/g, '')}</div>
+                            <div style={{ fontSize: '.8rem', color: '#64748b' }}>
+                              <strong>Antes:</strong> {r.originalA.replace(/<[^>]+>/g, '').slice(0, 220)}
+                            </div>
+                            {flagged && r.rich.review?.notes && (
+                              <div style={{ fontSize: '.78rem', color: '#991b1b', marginTop: 4 }}>{r.rich.review.notes}</div>
+                            )}
+                          </div>
+                        </label>
+                        <button
+                          onClick={() => setOpenPreview(openPreview === r.id ? null : r.id)}
+                          style={{ marginTop: 6, background: 'none', border: 'none', color: '#16a34a', fontWeight: 700, fontSize: '.78rem', cursor: 'pointer' }}
+                        >
+                          {openPreview === r.id ? 'Ocultar verso novo' : 'Ver verso novo'}
+                        </button>
+                        {openPreview === r.id && (
+                          <div
+                            style={{ marginTop: 8, padding: 12, borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0' }}
+                            dangerouslySetInnerHTML={{ __html: renderRichHtml(r.rich) }}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {msg && (
@@ -490,7 +687,41 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
           >
             Cancelar
           </button>
-          {previewCards.length === 0 ? (
+          {mode === 'enrich' ? (
+            enriched.length === 0 ? (
+              <button
+                onClick={handleEnrich}
+                disabled={busy || eligible.length === 0}
+                style={{
+                  padding: '9px 20px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'linear-gradient(135deg,#16a34a,#22c55e)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: busy || eligible.length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {busy ? 'Aprimorando com IA…' : `⬆️ Aprimorar ${Math.min(enrichSize, eligible.length)} cartões`}
+              </button>
+            ) : (
+              <button
+                onClick={handleApplyEnriched}
+                disabled={busy || enrichSel.size === 0}
+                style={{
+                  padding: '9px 20px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'linear-gradient(135deg,#16a34a,#22c55e)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: busy || enrichSel.size === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {busy ? 'Aplicando…' : `Aplicar em ${enrichSel.size} cartões`}
+              </button>
+            )
+          ) : previewCards.length === 0 ? (
             <button
               onClick={handleGenerate}
               disabled={busy}

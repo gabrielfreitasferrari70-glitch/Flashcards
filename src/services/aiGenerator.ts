@@ -281,3 +281,124 @@ ${JSON.stringify(payload)}`,
     }
   })
 }
+
+export interface EnrichInput {
+  id: string
+  q: string
+  a: string
+  ref?: string
+}
+
+export interface EnrichedCard {
+  id: string
+  q: string
+  /** Verso original, intocado (continua guardado em `a`). */
+  originalA: string
+  rich: RichCardV2
+}
+
+/** Cartão elegível para ganhar verso em camadas: texto simples, sem oclusão de imagem, sem cloze, sem rich. */
+export function canEnrich(c: { q?: string; a?: string; occlusion?: unknown; rich?: unknown; deleted?: boolean }): boolean {
+  if (c.deleted || c.rich || c.occlusion) return false
+  const q = c.q || ''
+  const a = (c.a || '').trim()
+  if (!a || !q.trim()) return false
+  if (q.includes('{{c') || /image-occlusion|anki-io/i.test(q + a)) return false
+  // Imagens dentro do verso só aparecem no formato clássico; o verso em camadas as esconderia
+  if (/<img/i.test(a)) return false
+  return true
+}
+
+const stripHtml = (s: string) =>
+  s
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+    .slice(0, 1800)
+
+/**
+ * Reescreve o verso de cartões EXISTENTES no formato em camadas, preservando todos os fatos originais.
+ * Não altera a pergunta nem o verso original; o resultado só vira `rich` se o usuário aprovar. Depois,
+ * uma 2ª passada de conferência marca o que parece errado, e o que foi perdido do original.
+ */
+export async function enrichCardsWithGemini(params: {
+  cards: EnrichInput[]
+  apiKey?: string
+}): Promise<EnrichedCard[]> {
+  const ai = new GoogleGenAI({ apiKey: requireKey(params.apiKey) })
+  const inputs = params.cards.map((c, index) => ({
+    index,
+    pergunta: stripHtml(c.q),
+    verso_original: stripHtml(c.a),
+    referencia_original: c.ref || '',
+  }))
+
+  const interaction = await ai.interactions.create({
+    model: MODEL,
+    input: [
+      {
+        type: 'text',
+        text: `Você é um professor e preceptor médico sênior. Abaixo há flashcards existentes (pergunta + verso simples).
+Reescreva APENAS o verso de cada um no formato em camadas (campo rich), sem alterar a pergunta.
+
+REGRAS
+- Preserve TODOS os fatos do verso original. Nada pode ser perdido, trocado ou contradito.
+- Pode acrescentar o porquê (mecanismo/raciocínio) e pegadinhas de prova SOMENTE quando tiver alta confiança. Na dúvida, não acrescente.
+- answer: a resposta direta em uma linha. why: explicação curta. bullets só se a resposta for uma lista. compare só se houver comparação real.
+- NÃO invente referências, páginas, anos, números ou links. Se houver referencia_original, use-a em source.name.
+- Use **negrito** só nos termos-chave. Português do Brasil.
+- highYield: true apenas para temas muito cobrados em provas de residência.
+
+Cartões (JSON):
+${JSON.stringify(inputs)}`,
+      },
+    ],
+    response_format: {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { index: { type: 'integer' }, rich: RICH_SCHEMA },
+              required: ['index', 'rich'],
+            },
+          },
+        },
+        required: ['items'],
+      },
+    },
+  })
+
+  const outputText = interaction.output_text
+  if (!outputText) throw new Error('Nenhum resultado do modelo.')
+  const parsed = JSON.parse(outputText)
+  const items: Array<{ index: number; rich: unknown }> = Array.isArray(parsed.items) ? parsed.items : []
+
+  const enriched: EnrichedCard[] = []
+  for (const it of items) {
+    const src = params.cards[it.index]
+    const rich = sanitizeRich(it.rich)
+    if (src && rich) enriched.push({ id: src.id, q: src.q, originalA: src.a, rich })
+  }
+  if (!enriched.length) throw new Error('O modelo não devolveu versos válidos. Tente de novo.')
+
+  // 2ª passada: confere erros e perdas em relação ao verso original
+  try {
+    const asGenerated: GeneratedCard[] = enriched.map((e) => ({ q: e.q, a: e.originalA, rich: e.rich }))
+    const checked = await verifyCardsWithGemini({
+      cards: asGenerated,
+      text: `Versos originais (o novo verso deve preservá-los; sinalize "duvida" se algo do original foi perdido ou alterado):\n${JSON.stringify(
+        enriched.map((e, i) => ({ index: i, verso_original: stripHtml(e.originalA) })),
+      )}`,
+      apiKey: params.apiKey,
+    })
+    return enriched.map((e, i) => ({ ...e, rich: checked[i]?.rich || e.rich }))
+  } catch {
+    return enriched
+  }
+}
