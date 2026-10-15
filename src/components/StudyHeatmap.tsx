@@ -330,6 +330,8 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
               {week.map((day) => (
                 <div
                   key={day.key}
+                  className="mr-study-heatmap-cell"
+                  data-future={day.isFuture}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect()
                     setHoverInfo({
@@ -348,12 +350,6 @@ export const StudyHeatmap = React.memo<Props>(({ reviews, cards = [], compact = 
                     cursor: day.isFuture ? 'default' : 'pointer',
                     transition: 'transform 0.1s ease',
                     boxSizing: 'border-box',
-                  }}
-                  onMouseOver={(e) => {
-                    if (!day.isFuture) (e.currentTarget.style.transform = 'scale(1.35)')
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)'
                   }}
                 />
               ))}

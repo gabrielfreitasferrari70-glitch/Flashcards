@@ -39,6 +39,13 @@ export function saveOfflineReview(review: OfflineReview): void {
   }
 }
 
+export function removeOfflineReview(id: string): number {
+  const remaining = getOfflineReviews().filter((review) => review.id !== id)
+  if (remaining.length) localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining))
+  else localStorage.removeItem(OFFLINE_QUEUE_KEY)
+  return remaining.length
+}
+
 async function flushQueuedReviews(): Promise<SyncResult> {
   let synced = 0
   try {

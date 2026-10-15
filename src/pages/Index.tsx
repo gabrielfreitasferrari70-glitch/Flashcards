@@ -4,6 +4,7 @@ import { LoginScreen } from '@/components/LoginScreen'
 import { StudyToolsMenu } from '@/components/StudyToolsMenu'
 import { selectStudyScope, type StudyFilter, type StudyScope } from '@/lib/studyAvailability'
 import { compareDecks } from '@/lib/deckSort'
+import { applyFuzz } from '@/lib/fsrsFuzz'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
 import { getLocalCache, setLocalCache, clearLocalCache } from '@/lib/cache/localCache'
@@ -39,7 +40,7 @@ import { ImageLightboxModal } from '@/components/ImageLightboxModal'
 import { parseOcclusion } from '@/services/imageOcclusion'
 import { fetchCardNote, saveCardNote } from '@/services/cardNotes'
 import { extractCardTags } from '@/services/cardTags'
-import { saveOfflineReview, flushOfflineReviews, initOfflineSync, getOfflineReviews } from '@/services/offlineSync'
+import { saveOfflineReview, removeOfflineReview, flushOfflineReviews, initOfflineSync, getOfflineReviews } from '@/services/offlineSync'
 import { getCardHighlights, saveCardHighlight, clearCardHighlights, applyHighlightsToHtml, CardHighlight } from '@/services/cardHighlights'
 import { downloadFullBackup } from '@/services/fullBackup'
 import { isMasterUser, migrateLegacyImagesIfNeeded } from '@/services/imageMigration'
@@ -84,6 +85,13 @@ const FSRS_W = [
 const FSRS_DECAY = -0.5
 const FSRS_FACTOR = Math.pow(0.9, 1 / FSRS_DECAY) - 1
 const FSRS_MAX_INTERVAL = 36500
+const STUDY_INTERACTIVE = 'button, a, input, textarea, select, label, [role="button"], [contenteditable="true"], .mr-legacy-card-note-box, .mr-highlighter-cluster, .mr-occlusion-btn, img'
+const UNDO_SHORTCUT = typeof navigator !== 'undefined' && navigator.platform.includes('Mac') ? '⌘Z' : 'Ctrl+Z'
+
+function getSwipeGestures(): boolean {
+  try { return localStorage.getItem('mr_swipe_gestures') === '1' }
+  catch { return false }
+}
 
 function fsrsRetrievability(elapsedDays: number, stability: number): number {
   if (!stability || stability <= 0) return 0
@@ -711,6 +719,7 @@ function SettingsModal({
     () => ((typeof localStorage !== 'undefined' && localStorage.getItem('mr_study_order_mode')) as StudyOrderMode) || 'sequential',
   )
   const [scheduleError, setScheduleError] = useState('')
+  const [swipeGestures, setSwipeGestures] = useState(getSwipeGestures)
   const [saving, setSaving] = useState(false)
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
@@ -812,6 +821,7 @@ function SettingsModal({
     const v = Math.min(97, Math.max(80, val))
     localStorage.setItem(RETENTION_KEY, String(v / 100))
     localStorage.setItem('mr_study_order_mode', modalStudyOrder)
+    localStorage.setItem('mr_swipe_gestures', swipeGestures ? '1' : '0')
     onSaveStudyOrder?.(modalStudyOrder)
 
     const payload = { mode: schedulerMode, intervals: manualIntervals }
@@ -900,6 +910,14 @@ function SettingsModal({
         <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.83rem' }}>
           Ajuste o motor FSRS-5 ao seu ritmo de estudo.
         </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: '#475569', fontSize: '.83rem' }}>
+          <input
+            type="checkbox"
+            checked={swipeGestures}
+            onChange={(e) => setSwipeGestures(e.target.checked)}
+          />
+          Gestos de deslizar para avaliar
+        </label>
         <label
           style={{
             display: 'block',
@@ -2844,6 +2862,18 @@ export default function Index() {
   })
   const [queue, setQueue] = useState<Card[]>([])
   const [qIdx, setQIdx] = useState(0)
+  const [swipeGestures, setSwipeGestures] = useState(getSwipeGestures)
+  const [armed, setArmed] = useState(false)
+  const [pendingOfflineReviews, setPendingOfflineReviews] = useState<number>(0)
+  const ratingLock = useRef(false)
+  const undoneReviewIds = useRef(new Set<string>())
+  useEffect(() => {
+    setArmed(false)
+    if (!flipped || route.view !== 'study') return
+    const timer = window.setTimeout(() => setArmed(true), 350)
+    return () => window.clearTimeout(timer)
+  }, [flipped, qIdx, route.view])
+  useEffect(() => { ratingLock.current = false }, [qIdx, route.view])
   const [studySession, setStudySession] = useState({
     startMs: Date.now(),
     again: 0,
@@ -2893,8 +2923,21 @@ export default function Index() {
       setQueue((q) => q.slice(0, -1))
     }
     if (reviewId) {
-      setReviews((rs) => rs.filter((r) => r.id !== reviewId))
-      void supabase.from('mr_reviews').delete().eq('id', reviewId)
+      undoneReviewIds.current.add(reviewId)
+      setPendingOfflineReviews(removeOfflineReview(reviewId))
+      setReviews((rs) => {
+        const remaining = rs.filter((r) => r.id !== reviewId)
+        setLocalCache('mr_cached_reviews', remaining).catch(() => {})
+        return remaining
+      })
+      // IDs locais ainda não existem no banco; a gravação pendente verifica o cancelamento.
+      if (!reviewId.startsWith('rev_')) {
+        const { error } = await supabase.from('mr_reviews').delete().eq('id', reviewId)
+        if (error) {
+          setMsg('Erro ao desfazer no servidor: ' + error.message)
+          return
+        }
+      }
     }
     setMsg(isPass ? '↺ Passar desfeito: cartão recuperado!' : '↺ Última avaliação desfeita!')
     setTimeout(() => setMsg(''), 2500)
@@ -3030,6 +3073,7 @@ export default function Index() {
 
   // Ref para gestos de swipe no touch (Mobile e iPad)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const suppressClickUntil = useRef(0)
 
   // Evita buscas concorrentes de loadData (realtime/disparos múltiplos)
   const loadInFlightRef = useRef(false)
@@ -3038,7 +3082,6 @@ export default function Index() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null)
   const [isStandalone, setIsStandalone] = useState(false)
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true)
-  const [pendingOfflineReviews, setPendingOfflineReviews] = useState<number>(0)
 
   // Marca-texto (Highlighter) e Anotações no Cartão
   const [cardHighlights, setCardHighlights] = useState<CardHighlight[]>([])
@@ -4615,7 +4658,7 @@ export default function Index() {
     setDeckTitle(decks.find((d) => d.id === deckId)?.title || '')
     setDeckModal({ type: 'rename', deckId })
   }
-  const confirmDeckDelete = (deckId: string) => {
+  const confirmDeckDelete = async (deckId: string) => {
     const deck = decks.find((d) => d.id === deckId)
     if (!deck) return
     if (
@@ -4623,29 +4666,32 @@ export default function Index() {
         `Excluir “${deck.title}”? As cartas desta pasta também saem da sua biblioteca.`,
       )
     )
+      return
     // Otimista: remove da tela imediatamente
     setDecks((prev) => prev.filter((d) => d.id !== deckId && d.parent !== deckId))
     setCards((prev) => prev.filter((c) => c.deck !== deckId))
-    deleteDeck(deckId)
-      .then(async () => {
-        const parentId = deck.parent || ''
-        await loadData()
-        // Se a pasta excluída estava aberta, sai dela: volta à organizadora pai,
-        // ou ao portal Minhas Pastas quando era uma pasta de nível inicial.
-        if (route.deckId === deckId) {
-          if (parentId) {
-            setRoute({ view: 'home', folderKind: 'custom', deckId: parentId })
-          } else {
-            setRoute({
-              view: 'home',
-              folderKind: deck.kind === 'tutoria' || deck.kind === 'prova' ? deck.kind : 'custom',
-            })
-          }
+    try {
+      await deleteDeck(deckId)
+      const parentId = deck.parent || ''
+      await loadData()
+      // Se a pasta excluída estava aberta, sai dela: volta à organizadora pai,
+      // ou ao portal Minhas Pastas quando era uma pasta de nível inicial.
+      if (route.deckId === deckId) {
+        if (parentId) {
+          setRoute({ view: 'home', folderKind: 'custom', deckId: parentId })
+        } else {
+          setRoute({
+            view: 'home',
+            folderKind: deck.kind === 'tutoria' || deck.kind === 'prova' ? deck.kind : 'custom',
+          })
         }
-        setMsg(`Pasta “${deck.title}” excluída.`)
-        window.setTimeout(() => setMsg(''), 3500)
-      })
-      .catch((e: any) => setMsg('Erro ao excluir: ' + (e?.message || e)))
+      }
+      setMsg(`Pasta “${deck.title}” excluída.`)
+      window.setTimeout(() => setMsg(''), 3500)
+    } catch (e: any) {
+      setMsg('Erro ao excluir: ' + (e?.message || e))
+      await loadData()
+    }
   }
   const confirmDeckReset = async (deckId: string) => {
     const deck = decks.find((d) => d.id === deckId)
@@ -4792,9 +4838,11 @@ export default function Index() {
 
   // Avalia carta: grava review no banco e avança
   const rate = async (quality: Quality) => {
-    speechService.stop()
+    if (!flipped || !armed || ratingLock.current) return
     const card = queue[qIdx]
     if (!card) return
+    ratingLock.current = true
+    speechService.stop()
     const realId = card.id.replace(/::rev$/, '')
     const cardReviews = reviewsForCard(card, realId)
     const cs = cardStateFromReviews(cardReviews)
@@ -4811,7 +4859,10 @@ export default function Index() {
       return
     }
     const now = new Date()
-    const dueDate = new Date(now.getTime() + chosen.value * 86400000)
+    const scheduledDays = schedulerSettings.mode === 'automatic'
+      ? Math.min(FSRS_MAX_INTERVAL, applyFuzz(chosen.value))
+      : chosen.value
+    const dueDate = new Date(now.getTime() + scheduledDays * 86400000)
     const reviewInput = {
       card_id: realId,
       card_ref: realId,
@@ -4826,7 +4877,7 @@ export default function Index() {
           )
         : null,
       elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
-      scheduled_days: chosen.value,
+      scheduled_days: scheduledDays,
       state: chosen.state,
       due: dueDate.toISOString(),
       reviewed_at: now.toISOString(),
@@ -4874,7 +4925,7 @@ export default function Index() {
           stability: chosen.newS ?? fsrsInitialStability(chosen.g),
           difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
           elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
-          scheduled_days: chosen.value,
+          scheduled_days: scheduledDays,
           state: chosen.state,
           due: dueDate.toISOString(),
           reviewed_at: now.toISOString(),
@@ -4886,10 +4937,15 @@ export default function Index() {
           const created = await createReview(reviewInput)
           if (created && (created as any).id) {
             const finalId = (created as any).id
+            if (undoneReviewIds.current.delete(synthId)) {
+              await supabase.from('mr_reviews').delete().eq('id', finalId)
+              return
+            }
             setReviews((rs) => rs.map((r) => (r.id === synthId ? { ...r, id: finalId } : r)))
             setLastReview((prev) => (prev && prev.reviewId === synthId ? { ...prev, reviewId: finalId } : prev))
           }
         } catch (netErr: any) {
+          if (undoneReviewIds.current.delete(synthId)) return
           console.warn('Falha de conexão ao salvar revisão; enfileirando offline:', netErr)
           const offlineItem = {
             id: synthId,
@@ -4899,7 +4955,7 @@ export default function Index() {
             stability: chosen.newS ?? fsrsInitialStability(chosen.g),
             difficulty: chosen.newD ?? fsrsInitialDifficulty(chosen.g),
             elapsed_days: cs.lastReviewMs ? (now.getTime() - cs.lastReviewMs) / 86400000 : 0,
-            scheduled_days: chosen.value,
+            scheduled_days: scheduledDays,
             state: chosen.state,
             due: dueDate.toISOString(),
             reviewed_at: now.toISOString(),
@@ -4945,57 +5001,30 @@ export default function Index() {
     setQIdx((i) => i + 1)
   }, [queue, qIdx])
 
-  // Atalhos de teclado no modo de estudo (Espaço / Enter para virar, 1-4 para avaliar, P para passar, Ctrl+Z para desfazer)
+  // Atalhos de estudo preservam os comandos do navegador no Mac/Windows.
   useEffect(() => {
-    if (route.view !== 'study' || studyMode === 'write' || settingsOpen || cardStatsOpen) return
+    if (route.view !== 'study' || settingsOpen || cardStatsOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
-      if ((e.target as HTMLElement)?.closest('button, select, summary, .mr-study-tools-popover')) return
-
-      if (e.key === 'p' || e.key === 'P') {
-        if (queue[qIdx]) {
-          e.preventDefault()
-          passCard()
-          return
-        }
+      if (e.repeat || e.altKey) return
+      const target = e.target as HTMLElement
+      if (target?.closest('input, textarea, select') || target?.isContentEditable) return
+      const key = e.key.toLowerCase()
+      if ((e.metaKey || e.ctrlKey) && key !== 'z') return
+      if (!['z', 'p', 'a', ' ', 'enter', '1', '2', '3', '4'].includes(key)) return
+      if (document.activeElement instanceof HTMLElement && document.activeElement.closest('button')) {
+        document.activeElement.blur()
       }
-
-      if (e.key === 'a' || e.key === 'A') {
-        if (queue[qIdx]) {
-          e.preventDefault()
-          toggleAttention(queue[qIdx].id.replace(/::rev$/, ''))
-          return
-        }
-      }
-
-      if (e.key === 'z' || e.key === 'Z') {
-        if (lastReview) {
-          e.preventDefault()
-          undoLastReview()
-          return
-        }
-      }
-
-      if (e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault()
-        if (!flipped) {
-          setFlipped(true)
-        }
+      e.preventDefault()
+      if (key === 'z') {
+        if (lastReview) void undoLastReview()
+      } else if (key === 'p') {
+        if (queue[qIdx]) passCard()
+      } else if (key === 'a') {
+        if (queue[qIdx]) toggleAttention(queue[qIdx].id.replace(/::rev$/, ''))
+      } else if (key === ' ' || key === 'enter') {
+        if (!flipped) setFlipped(true)
       } else if (flipped) {
-        if (e.key === '1') {
-          e.preventDefault()
-          rate('again')
-        } else if (e.key === '2') {
-          e.preventDefault()
-          rate('hard')
-        } else if (e.key === '3') {
-          e.preventDefault()
-          rate('good')
-        } else if (e.key === '4') {
-          e.preventDefault()
-          rate('easy')
-        }
+        void rate((['again', 'hard', 'good', 'easy'] as Quality[])[Number(key) - 1])
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -5101,7 +5130,7 @@ export default function Index() {
                 <button
                   className="mr-legacy-control"
                   onClick={undoLastReview}
-                  title="Desfazer última avaliação (Ctrl+Z)"
+                  title={`Desfazer última avaliação (${UNDO_SHORTCUT})`}
                   style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 800 }}
                 >
                   <Undo2 size={15} aria-hidden="true" /> Desfazer
@@ -5274,7 +5303,7 @@ export default function Index() {
                     alignItems: 'center',
                     gap: 4,
                   }}
-                  title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+                  title={`Desfazer última avaliação (${UNDO_SHORTCUT} ou tecla Z)`}
                 >
                   ↺ Desfazer
                 </button>
@@ -5315,33 +5344,40 @@ export default function Index() {
             className="mr-legacy-study-card"
             style={{ ['--mr-font-scale' as any]: fontScale }}
             onTouchStart={(e) => {
+              suppressClickUntil.current = 0
+              if (e.touches.length !== 1 || (e.target as Element).closest(STUDY_INTERACTIVE)) {
+                touchStartRef.current = null
+                return
+              }
               const t = e.touches[0]
               touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() }
             }}
-            onTouchEnd={(e) => {
-              if (!touchStartRef.current) return
-              const t = e.changedTouches[0]
-              const dx = t.clientX - touchStartRef.current.x
-              const dy = t.clientY - touchStartRef.current.y
-              const elapsed = Date.now() - touchStartRef.current.time
-              touchStartRef.current = null
-              if (elapsed < 550) {
-                if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
-                  // Swipe horizontal
-                  if (dx > 0) {
-                    if (flipped) rate('good')
-                    else setFlipped(true)
-                  } else {
-                    if (flipped) rate('again')
-                    else setFlipped(true)
-                  }
-                } else if (dy < -55 && Math.abs(dy) > Math.abs(dx)) {
-                  // Swipe vertical para cima
-                  if (flipped) rate('hard')
-                  else setFlipped(true)
-                }
+            onTouchMove={(e) => {
+              const start = touchStartRef.current
+              if (!start) return
+              if (e.touches.length !== 1 || Math.abs(e.touches[0].clientY - start.y) > 40) {
+                touchStartRef.current = null
+                suppressClickUntil.current = Date.now() + 600
               }
+            }}
+            onTouchCancel={() => {
+              touchStartRef.current = null
+              suppressClickUntil.current = Date.now() + 600
+            }}
+            onTouchEnd={(e) => {
               handleTextSelection()
+              const start = touchStartRef.current
+              touchStartRef.current = null
+              if (!start || e.touches.length || !e.changedTouches.length) return
+              const t = e.changedTouches[0]
+              const dx = t.clientX - start.x
+              const dy = t.clientY - start.y
+              if (Math.abs(dx) < 90) return
+              suppressClickUntil.current = Date.now() + 600
+              if (!swipeGestures || Date.now() - start.time > 600 || Math.abs(dy) > 40) return
+              if (window.getSelection()?.toString().trim()) return
+              if (!flipped) setFlipped(true)
+              else void rate(dx > 0 ? 'good' : 'again')
             }}
             onErrorCapture={(e) => {
               const target = e.target as HTMLImageElement
@@ -5360,6 +5396,7 @@ export default function Index() {
             }}
             onMouseUp={handleTextSelection}
             onClick={(e) => {
+              if (Date.now() < suppressClickUntil.current) return
               const target = e.target as HTMLElement
               if (target.tagName === 'IMG') {
                 e.stopPropagation()
@@ -5367,10 +5404,11 @@ export default function Index() {
                 setLightboxImage({ src: img.src, title: img.alt || 'Visualização Anatômica em Alta Resolução' })
                 return
               }
+              if (target.closest(STUDY_INTERACTIVE)) return
               const sel = window.getSelection()?.toString().trim()
               if (sel && sel.length > 0) return
 
-              setFlipped((f) => !f)
+              if (!flipped) setFlipped(true)
             }}
           >
             {/* Linha de contagem regressiva visual do Timer de Foco */}
@@ -6153,7 +6191,7 @@ export default function Index() {
           {flipped && (
             <div className="mr-legacy-rating-row">
               {(['again', 'hard', 'good', 'easy'] as Quality[]).map((q, idx) => (
-                <button key={q} style={qualityBtn(q)} onClick={() => rate(q)}>
+                <button key={q} disabled={!armed} style={qualityBtn(q)} onClick={() => rate(q)}>
                   <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                     <span style={{ fontSize: '.74rem', opacity: 0.85, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
                       [{idx + 1}]
@@ -6193,10 +6231,10 @@ export default function Index() {
                   boxShadow: '0 2px 6px rgba(180,83,9,0.12)',
                   transition: 'all 0.15s ease',
                 }}
-                title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+                title={`Desfazer última avaliação (${UNDO_SHORTCUT} ou tecla Z)`}
               >
                 <span>{lastReview.isPass ? '↺ Desfazer cartão passado' : '↺ Desfazer última carta avaliada'}</span>
-                <span style={{ fontSize: '.7rem', opacity: 0.8 }}>(Ctrl+Z)</span>
+                <span style={{ fontSize: '.7rem', opacity: 0.8 }}>({UNDO_SHORTCUT})</span>
               </button>
             </div>
           )}
@@ -6233,19 +6271,19 @@ export default function Index() {
                   boxShadow: '0 2px 6px rgba(180,83,9,0.15)',
                   transition: 'all 0.15s ease',
                 }}
-                title="Desfazer última avaliação (Ctrl+Z ou tecla Z)"
+                title={`Desfazer última avaliação (${UNDO_SHORTCUT} ou tecla Z)`}
               >
                 <span>↺ Desfazer</span>
-                <span style={{ fontSize: '.68rem', opacity: 0.8 }}>(<kbd>Ctrl</kbd>+<kbd>Z</kbd>)</span>
+                <span style={{ fontSize: '.68rem', opacity: 0.8 }}>(<kbd>{UNDO_SHORTCUT}</kbd>)</span>
               </button>
             ) : (
               <span>
-                <kbd>Ctrl</kbd>+<kbd>Z</kbd> desfazer
+                <kbd>{UNDO_SHORTCUT}</kbd> desfazer
               </span>
             )}
           </div>
           {msg && (
-            <div style={toast}>
+            <div className="mr-app-toast" role="status" style={toast}>
               {msg}
               {undoInfo && (
                 <button
@@ -6295,6 +6333,7 @@ export default function Index() {
             onClose={() => setSettingsOpen(false)}
             onSaved={() => {
               setRetentionTick((t) => t + 1)
+              setSwipeGestures(getSwipeGestures())
               const savedOrder = (localStorage.getItem('mr_study_order_mode') as StudyOrderMode) || 'sequential'
               setStudyOrderMode(savedOrder)
             }}
@@ -6506,6 +6545,7 @@ export default function Index() {
           startStudy(cardsToStudy as any, scope?.deckId, sessionTitle, { protectFsrs: false })
         }}
       />
+      {msg && <div className="mr-app-toast" role="status" style={toast}>{msg}</div>}
       <Suspense fallback={null}>
         {planningOpen && user?.id === MASTER_USER_ID && <AdminPlanning onClose={() => setPlanningOpen(false)} />}
         {specialCardsModal && (
@@ -6693,6 +6733,7 @@ export default function Index() {
           onClose={() => setSettingsOpen(false)}
           onSaved={() => {
             setRetentionTick((t) => t + 1)
+            setSwipeGestures(getSwipeGestures())
             const savedOrder = (localStorage.getItem('mr_study_order_mode') as StudyOrderMode) || 'sequential'
             setStudyOrderMode(savedOrder)
           }}
@@ -7382,7 +7423,7 @@ const qualityBtn = (q: Quality): React.CSSProperties => ({
 })
 const toast: React.CSSProperties = {
   position: 'fixed',
-  bottom: 20,
+  bottom: 'calc(20px + env(safe-area-inset-bottom))',
   left: '50%',
   transform: 'translateX(-50%)',
   background: '#14532d',

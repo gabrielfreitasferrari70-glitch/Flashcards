@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushOfflineReviews, getOfflineReviews, saveOfflineReview } from './offlineSync'
+import { flushOfflineReviews, getOfflineReviews, removeOfflineReview, saveOfflineReview } from './offlineSync'
 import type { OfflineReview } from './offlineSync'
 
 const { insert } = vi.hoisted(() => ({ insert: vi.fn() }))
@@ -50,6 +50,23 @@ afterEach(() => {
 })
 
 describe('offline review synchronization', () => {
+  it('undo removes only its review, updates the count, and never uploads it later', async () => {
+    saveOfflineReview(review('rev_a'))
+    saveOfflineReview(review('rev_b'))
+    expect(removeOfflineReview('rev_a')).toBe(1)
+    expect(removeOfflineReview('not-queued')).toBe(1)
+    expect(getOfflineReviews().map((r) => r.id)).toEqual(['rev_b'])
+    await flushOfflineReviews()
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(insert.mock.calls[0][0]).toEqual([expect.objectContaining({ card_id: 'card-rev_b' })])
+  })
+
+  it('removes an empty queue after undoing the last pending review', () => {
+    saveOfflineReview(review('rev_a'))
+    expect(removeOfflineReview('rev_a')).toBe(0)
+    expect(localStorage.getItem('mr_offline_reviews_queue')).toBeNull()
+  })
+
   it('does not send an empty queue', async () => {
     expect(await flushOfflineReviews()).toEqual({ synced: 0 })
     expect(insert).not.toHaveBeenCalled()

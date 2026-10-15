@@ -325,9 +325,11 @@
   background: var(--mr-ui-background);
   box-shadow: none;
 }
-.mr-legacy-shell .mr-legacy-metric:hover {
-  transform: none;
-  border-color: var(--mr-ui-border);
+@media (hover: hover) {
+  .mr-legacy-shell .mr-legacy-metric:hover {
+    transform: none;
+    border-color: var(--mr-ui-border);
+  }
 }
 .mr-legacy-shell .mr-legacy-metric-icon {
   background: transparent;

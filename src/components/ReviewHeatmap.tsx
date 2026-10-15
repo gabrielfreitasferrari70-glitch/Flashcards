@@ -178,6 +178,7 @@ export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
           {days.map((d) => (
             <div
               key={d.dateStr}
+              className="mr-review-heatmap-cell"
               title={`${d.dateLabel}: ${d.count} carta${d.count !== 1 ? 's' : ''} revisada${d.count !== 1 ? 's' : ''}`}
               style={{
                 width: 12,
@@ -187,12 +188,6 @@ export const ReviewHeatmap: React.FC<ReviewHeatmapProps> = ({
                 border: d.count > 0 ? 'none' : `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
                 cursor: 'pointer',
                 transition: 'transform 0.1s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.3)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)'
               }}
             />
           ))}
