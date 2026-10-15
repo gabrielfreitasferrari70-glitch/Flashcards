@@ -5,6 +5,7 @@ import { StudyToolsMenu } from '@/components/StudyToolsMenu'
 import { selectStudyScope, type StudyFilter, type StudyScope } from '@/lib/studyAvailability'
 import { compareDecks } from '@/lib/deckSort'
 import { applyFuzz } from '@/lib/fsrsFuzz'
+import { renderRichHtml, sanitizeRich } from '@/lib/richCard'
 import pb from '@/lib/pocketbase/client'
 import { supabase } from '@/lib/supabase/client'
 import { getLocalCache, setLocalCache, clearLocalCache } from '@/lib/cache/localCache'
@@ -210,6 +211,9 @@ function getAnswerDisplay(card: Card, studyMode: string): string {
   if (studyMode === 'reverse') {
     return renderClozeHtml(card.q, true)
   }
+  // Verso em camadas (v2): só quando o cartão tem `rich` válido; senão cai no fluxo clássico abaixo.
+  const rich = card.rich ? sanitizeRich(card.rich) : null
+  if (rich) return renderRichHtml(rich)
   // Se for oclusão de imagem e houver um visualizador de oclusão válido,
   // evita duplicar a imagem embaixo do visualizador de oclusão
   const validOcclusion = parseOcclusion(card.occlusion, card.a, card.q)
@@ -359,6 +363,8 @@ interface Card {
   tags?: string[]
   imageUrl?: string
   created?: string
+  /** Verso em camadas v2 (mr_cards.rich). Ausente = cartão clássico. */
+  rich?: unknown
 }
 interface Review {
   id: string
@@ -3268,12 +3274,12 @@ export default function Index() {
         const [p1, p2] = await Promise.all([
           supabase
             .from('mr_cards')
-            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, rich, created_at')
             .or(cardFilter)
             .range(0, 999),
           supabase
             .from('mr_cards')
-            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+            .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, rich, created_at')
             .or(cardFilter)
             .range(1000, 1999),
         ])
@@ -3286,7 +3292,7 @@ export default function Index() {
           while (true) {
             const { data, error } = await supabase
               .from('mr_cards')
-              .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, created_at')
+              .select('id, user_id, deck_id, q, a, group, ref, clinical, suspended, reverse, choices, tags, image_url, occlusion, rich, created_at')
               .or(cardFilter)
               .range(from, from + PAGE - 1)
             if (error || !data || data.length === 0) break
@@ -3638,7 +3644,7 @@ export default function Index() {
         } else {
           supabase
             .from('mr_cards')
-            .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+            .select('id, user_id, deck_id, q, a, occlusion, image_url, rich, reverse, clinical, choices, tags, created_at')
             .eq('id', realId)
             .single()
             .then(({ data }) => {
@@ -4223,7 +4229,7 @@ export default function Index() {
           try {
             const { data: pRows } = await supabase
               .from('mr_cards')
-              .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .select('id, user_id, deck_id, q, a, occlusion, image_url, rich, reverse, clinical, choices, tags, created_at')
               .in('id', priorityIds)
             if (pRows && pRows.length > 0) {
               const pMap = new Map<string, Card>()
@@ -4268,7 +4274,7 @@ export default function Index() {
           try {
             const { data: chunkRows, error } = await supabase
               .from('mr_cards')
-              .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+              .select('id, user_id, deck_id, q, a, occlusion, image_url, rich, reverse, clinical, choices, tags, created_at')
               .in('id', chunk)
 
             if (!error && chunkRows && chunkRows.length > 0) {
@@ -4384,7 +4390,7 @@ export default function Index() {
       try {
         const { data: qRows } = await supabase
           .from('mr_cards')
-          .select('id, user_id, deck_id, q, a, occlusion, image_url, reverse, clinical, choices, tags, created_at')
+          .select('id, user_id, deck_id, q, a, occlusion, image_url, rich, reverse, clinical, choices, tags, created_at')
           .in('id', realMissingQuizIds)
         if (qRows) {
           for (const r of qRows) {

@@ -162,7 +162,7 @@ export interface CardExtras {
 
 export const createCard = async (
   deckId: string,
-  card: ParsedCsvCard & CardExtras & { occlusion?: any; tags?: string[] },
+  card: ParsedCsvCard & CardExtras & { occlusion?: any; tags?: string[]; rich?: any },
 ) => {
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) throw new Error('Not authenticated')
@@ -193,6 +193,8 @@ export const createCard = async (
   if ((card as any).occlusion) extendedPayload.occlusion = (card as any).occlusion
   if (resolvedImageUrl) extendedPayload.image_url = resolvedImageUrl
   if ((card as any).tags) extendedPayload.tags = (card as any).tags
+  // Verso em camadas (migração 004). Se a coluna ainda não existir, o fallback abaixo salva q/a normalmente.
+  if ((card as any).rich) extendedPayload.rich = (card as any).rich
   if ((card as any).group) extendedPayload.group = (card as any).group
   if ((card as any).ref) extendedPayload.ref = (card as any).ref
 
@@ -232,6 +234,7 @@ export const createCardsBatch = async (
     group?: string
     occlusion?: any
     imageUrl?: string
+    rich?: any
   }>,
 ) => {
   const { data: user } = await supabase.auth.getUser()
@@ -284,6 +287,8 @@ export const createCardsBatch = async (
       choices: (c as any).choices || null,
       image_url: imageUrlByCard.get(i) ?? null,
       occlusion: c.occlusion && typeof c.occlusion === 'object' ? c.occlusion : null,
+      // Só envia `rich` quando existe, para não quebrar importações enquanto a migração 004 não foi aplicada
+      ...(c.rich && typeof c.rich === 'object' ? { rich: c.rich } : {}),
     }
   })
 
@@ -378,6 +383,7 @@ export const updateCard = async (
     id: string
     q: string
     a: string
+    rich?: any | null
   } & CardExtras,
 ) => {
   const updatePayload: Record<string, any> = {
@@ -385,6 +391,7 @@ export const updateCard = async (
     a: card.a,
     clinical: !!card.clinical,
   }
+  if (card.rich !== undefined) updatePayload.rich = card.rich
   if (card.group !== undefined) updatePayload.group = card.group
   if (card.ref !== undefined) updatePayload.ref = card.ref
   if (card.reverse !== undefined) updatePayload.reverse = card.reverse

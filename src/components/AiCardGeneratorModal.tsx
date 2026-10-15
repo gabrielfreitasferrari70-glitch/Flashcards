@@ -3,6 +3,7 @@ import {
   generateFlashcardsWithGemini,
   getGeminiApiKey,
   saveGeminiApiKey,
+  verifyCardsWithGemini,
   type GeneratedCard,
 } from '@/services/aiGenerator'
 import { createCard } from '@/services/medreview'
@@ -69,8 +70,30 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
         apiKey,
       })
 
-      setPreviewCards(generated)
-      setSelectedCards(new Set(generated.map((_, i) => i)))
+      // 2ª passada: um revisor independente marca o que parece errado ou duvidoso.
+      let checked = generated
+      let verifyFailed = false
+      try {
+        checked = await verifyCardsWithGemini({
+          cards: generated,
+          text,
+          pdfBase64: pdfBase64 || undefined,
+          apiKey,
+        })
+      } catch {
+        verifyFailed = true
+      }
+
+      setPreviewCards(checked)
+      // Cartões marcados pela conferência começam desmarcados; o resto, marcado.
+      setSelectedCards(
+        new Set(checked.map((c, i) => (c.rich?.review?.status === 'flagged' ? -1 : i)).filter((i) => i >= 0)),
+      )
+      if (verifyFailed) {
+        setMsg('A conferência automática falhou; revise os cartões com atenção antes de salvar.')
+      } else if (checked.some((c) => c.rich?.review?.status === 'flagged')) {
+        setMsg('Alguns cartões foram marcados pela conferência da IA e vieram desmarcados. Leia a observação de cada um.')
+      }
     } catch (e: any) {
       setMsg('Erro na geração com IA: ' + (e?.message || e))
     } finally {
@@ -106,7 +129,8 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
           group: c.group || 'Gerado com IA',
           ref: c.ref || 'Gemini 3.8 Flash',
           clinical: !!c.clinical,
-          tags: c.tags || ['🤖 Gerado com IA'],
+          tags: c.tags && c.tags.length ? c.tags : ['🤖 Gerado com IA'],
+          ...(c.rich ? { rich: c.rich } : {}),
         } as any)
       }
 
@@ -376,13 +400,46 @@ export const AiCardGeneratorModal: React.FC<Props> = ({
                           <span style={{ fontSize: '.7rem', background: '#e2e8f0', color: '#475569', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
                             {c.group || 'Geral'}
                           </span>
+                          {c.rich?.highYield && (
+                            <span style={{ fontSize: '.7rem', background: '#ffedd5', color: '#9a3412', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>
+                              🔥 ALTO RENDIMENTO
+                            </span>
+                          )}
+                          {c.rich?.review?.status === 'verified' && (
+                            <span style={{ fontSize: '.7rem', background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>
+                              ✓ CONFERIDO PELA IA
+                            </span>
+                          )}
+                          {c.rich?.review?.status === 'flagged' && (
+                            <span style={{ fontSize: '.7rem', background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>
+                              ⚠ CONFERIR
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '.88rem', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
                           {c.q}
                         </div>
                         <div style={{ fontSize: '.84rem', color: '#334155' }}>
-                          <strong>R:</strong> {c.a}
+                          <strong>R:</strong> {c.rich?.answer || c.a}
                         </div>
+                        {c.rich?.review?.status === 'flagged' && c.rich.review.notes && (
+                          <div style={{ fontSize: '.78rem', color: '#991b1b', marginTop: 4 }}>
+                            {c.rich.review.notes}
+                          </div>
+                        )}
+                        {c.rich && (
+                          <div style={{ fontSize: '.74rem', color: '#64748b', marginTop: 4 }}>
+                            {[
+                              c.rich.why ? 'porquê' : '',
+                              c.rich.bullets ? 'lista' : '',
+                              c.rich.pearls ? `${c.rich.pearls.length} pegadinha(s)` : '',
+                              c.rich.compare ? 'tabela' : '',
+                              c.rich.mnemonic ? 'mnemônico' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
