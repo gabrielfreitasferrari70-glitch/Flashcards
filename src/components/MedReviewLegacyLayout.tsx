@@ -2067,7 +2067,6 @@ type HomeProps = {
   onOpenExamPlan?: (deckId: string, deckTitle: string) => void
   onOpenMasterReports?: () => void
   onOpenMasterAnalytics?: () => void
-  onOpenPlanning?: () => void
   onOpenCramMode?: (deckId?: string) => void
   onOpenAnkiImport?: () => void
   onStudyDeck?: (deckId: string) => void
@@ -2129,7 +2128,6 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
     onOpenExamPlan,
     onOpenMasterReports,
     onOpenMasterAnalytics,
-    onOpenPlanning,
     reviews,
     onOpenCramMode,
     onOpenAnkiImport,
@@ -2380,7 +2378,6 @@ export const MedReviewLegacyHome = React.memo(function MedReviewLegacyHome(props
                 </button>
                 {masterMenuOpen && (
                   <div className="mr-legacy-menu-popover">
-                    {onOpenPlanning && <button type="button" onClick={() => { setMasterMenuOpen(false); onOpenPlanning() }}><CalendarDays size={16} aria-hidden="true" /> Planejamento</button>}
                     <button
                       type="button"
                       onClick={() => {

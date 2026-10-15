@@ -43,7 +43,7 @@ export const MasterAnalyticsModal: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'cards' | 'decks'>('cards')
   const [search, setSearch] = useState('')
   const [minReviewsFilter, setMinReviewsFilter] = useState<number>(1)
-  const [dataOrigin, setDataOrigin] = useState<'global_rpc' | 'global_table' | 'local_fallback'>('local_fallback')
+  const [dataOrigin, setDataOrigin] = useState<'global_rpc' | 'local_fallback'>('local_fallback')
 
   // Estado consolidado por card_id: { [card_id]: { reviews, lapses, goodCount, students } }
   const [cardStatsMap, setCardStatsMap] = useState<Map<string, { reviews: number; lapses: number; goodCount: number; studentCount: number }>>(new Map())
@@ -53,74 +53,42 @@ export const MasterAnalyticsModal: React.FC<Props> = ({
     setLoading(true)
     let fetchedMap = new Map<string, { reviews: number; lapses: number; goodCount: number; studentCount: number }>()
     let totalStudents = 1
-    let origin: 'global_rpc' | 'global_table' | 'local_fallback' = 'local_fallback'
+    let origin: 'global_rpc' | 'local_fallback' = 'local_fallback'
 
     try {
-      // 1. Tenta chamar o RPC master_card_stats() criado nas migrações do Supabase
-      const { data: rpcData, error: rpcErr } = await supabase.rpc('master_card_stats')
+      // Estatísticas de TODOS os alunos: as funções do banco (SECURITY DEFINER, só docente) agregam
+      // as revisões de toda a turma. Ler mr_reviews direto só devolveria as revisões do próprio docente.
+      const [statsRes, overviewRes] = await Promise.all([
+        supabase.rpc('master_card_stats'),
+        supabase.rpc('master_class_overview'),
+      ])
+      if (statsRes.error) throw statsRes.error
 
-      if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
-        origin = 'global_rpc'
-        let maxStudents = 0
-        for (const row of rpcData) {
-          const cId = String(row.card_id).replace(/::rev$/, '')
-          const revs = Number(row.reviews || 0)
-          const laps = Number(row.lapses || 0)
-          const studs = Number(row.students || 1)
-          if (studs > maxStudents) maxStudents = studs
-          fetchedMap.set(cId, {
-            reviews: revs,
-            lapses: laps,
-            goodCount: Math.max(0, revs - laps),
-            studentCount: studs,
-          })
-        }
-        totalStudents = Math.max(1, maxStudents)
-      } else {
-        // 2. Se o RPC não estiver disponível ou vazio, tenta ler as revisões da turma via mr_reviews
-        const { data: allRevs, error: revErr } = await supabase
-          .from('mr_reviews')
-          .select('card_id, rating, user_id')
-          .limit(25000)
-
-        if (!revErr && Array.isArray(allRevs) && allRevs.length > 0) {
-          origin = 'global_table'
-          const studentSet = new Set<string>()
-          const cardAggMap = new Map<string, { reviews: number; lapses: number; goodCount: number; students: Set<string> }>()
-
-          for (const r of allRevs) {
-            const cId = String(r.card_id || '').replace(/::rev$/, '')
-            if (!cId) continue
-            if (r.user_id) studentSet.add(r.user_id)
-
-            let entry = cardAggMap.get(cId)
-            if (!entry) {
-              entry = { reviews: 0, lapses: 0, goodCount: 0, students: new Set<string>() }
-              cardAggMap.set(cId, entry)
-            }
-            entry.reviews += 1
-            if (r.rating === 'again') entry.lapses += 1
-            else if (r.rating === 'good' || r.rating === 'easy') entry.goodCount += 1
-            if (r.user_id) entry.students.add(r.user_id)
-          }
-
-          totalStudents = Math.max(1, studentSet.size)
-          cardAggMap.forEach((val, key) => {
-            fetchedMap.set(key, {
-              reviews: val.reviews,
-              lapses: val.lapses,
-              goodCount: val.goodCount,
-              studentCount: Math.max(1, val.students.size),
-            })
-          })
-        }
+      origin = 'global_rpc'
+      for (const row of (statsRes.data as any[]) || []) {
+        const cId = String(row.card_id).replace(/::rev$/, '')
+        const revs = Number(row.reviews || 0)
+        const laps = Number(row.lapses || 0)
+        fetchedMap.set(cId, {
+          reviews: revs,
+          lapses: laps,
+          goodCount: Math.max(0, revs - laps),
+          studentCount: Number(row.students || 0),
+        })
       }
+      const overview = Array.isArray(overviewRes.data) ? overviewRes.data[0] : overviewRes.data
+      totalStudents = Math.max(
+        1,
+        Number(overview?.students) || Math.max(0, ...Array.from(fetchedMap.values()).map((v) => v.studentCount)),
+      )
     } catch (err) {
+      origin = 'local_fallback'
+      fetchedMap = new Map()
       console.warn('Não foi possível ler métricas globais da turma no Supabase, usando local:', err)
     }
 
     // 3. Fallback: se não conseguiu dados globais do banco, usa as avaliações passadas
-    if (fetchedMap.size === 0 && Array.isArray(localReviews)) {
+    if (origin !== 'global_rpc' && Array.isArray(localReviews)) {
       origin = 'local_fallback'
       const cardAggMap = new Map<string, { reviews: number; lapses: number; goodCount: number }>()
       for (const r of localReviews) {
@@ -317,20 +285,18 @@ export const MasterAnalyticsModal: React.FC<Props> = ({
                   borderRadius: 12,
                   fontWeight: 700,
                   background:
-                    dataOrigin === 'global_rpc' || dataOrigin === 'global_table'
+                    dataOrigin === 'global_rpc'
                       ? '#dcfce7'
                       : '#fef3c7',
                   color:
-                    dataOrigin === 'global_rpc' || dataOrigin === 'global_table'
+                    dataOrigin === 'global_rpc'
                       ? '#166534'
                       : '#b45309',
                 }}
               >
                 {dataOrigin === 'global_rpc'
-                  ? '🟢 Nuvem Supabase (RPC)'
-                  : dataOrigin === 'global_table'
-                  ? '🟢 Base Compartilhada da Turma'
-                  : '🟡 Modo Local'}
+                  ? '🟢 Toda a turma'
+                  : '🟡 Só os seus dados (sem conexão com a turma)'}
               </span>
             </div>
           </div>

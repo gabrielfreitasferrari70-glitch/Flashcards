@@ -15,8 +15,7 @@
     "format:check": "oxfmt --check",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:planning:e2e": "node tests/planning/browser.mjs"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
