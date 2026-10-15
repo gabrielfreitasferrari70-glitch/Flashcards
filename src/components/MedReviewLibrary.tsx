@@ -24,6 +24,22 @@ import {
 } from '@/services/medreview'
 import { downloadFullBackup } from '@/services/fullBackup'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
+import { richToPlainText, sanitizeRich, type RichCardV2 } from '@/lib/richCard'
+
+// Formulário do verso em camadas (cartões com mr_cards.rich). Listas viram uma linha por item.
+type RichDraft = {
+  answer: string
+  why: string
+  bullets: string
+  pearls: string
+  mnemonic: string
+  related: string
+}
+const lines = (s: string) =>
+  s
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
 
 type Deck = {
   id: string
@@ -48,6 +64,8 @@ type Card = {
   reverse?: boolean
   clinical?: boolean
   deleted?: boolean
+  /** Verso em camadas v2 (mr_cards.rich). */
+  rich?: unknown
 }
 type Props = {
   decks: Deck[]
@@ -252,6 +270,9 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
   const [cardChoices, setCardChoices] = useState('')
   const [cardReverse, setCardReverse] = useState(false)
   const [cardClinical, setCardClinical] = useState(false)
+  // Verso em camadas: richBase guarda o original (tabela, fonte, selo etc. são preservados); richDraft é o que se edita.
+  const [richBase, setRichBase] = useState<RichCardV2 | null>(null)
+  const [richDraft, setRichDraft] = useState<RichDraft | null>(null)
   const [importText, setImportText] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -657,6 +678,20 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
     setCardChoices(existingChoices.join('\n'))
     setCardReverse(!!card?.reverse)
     setCardClinical(!!card?.clinical)
+    const rich = (card as any)?.rich ? sanitizeRich((card as any).rich) : null
+    setRichBase(rich)
+    setRichDraft(
+      rich
+        ? {
+            answer: rich.answer,
+            why: rich.why || '',
+            bullets: (rich.bullets?.items || []).join('\n'),
+            pearls: (rich.pearls || []).join('\n'),
+            mnemonic: rich.mnemonic || '',
+            related: (rich.related || []).join('\n'),
+          }
+        : null,
+    )
     setModal({ type: 'card', deckId, card })
   }
   const openMoveModal = (card: Card) => {
@@ -856,7 +891,26 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
   }
   const submitCard = async () => {
     if (modal.type !== 'card') return
-    if (!cardQ.trim() || !cardA.trim()) return setError('Preencha frente e verso.')
+    // Cartão com verso em camadas: monta o `rich` novo a partir do formulário e mantém o que não é editável aqui.
+    let editedRich: RichCardV2 | null = null
+    if (richDraft && richBase && modal.card) {
+      editedRich = sanitizeRich({
+        ...richBase,
+        answer: richDraft.answer,
+        why: richDraft.why,
+        bullets: lines(richDraft.bullets).length
+          ? { title: richBase.bullets?.title, items: lines(richDraft.bullets) }
+          : undefined,
+        pearls: lines(richDraft.pearls),
+        mnemonic: richDraft.mnemonic,
+        related: lines(richDraft.related),
+        // quem editou conferiu o conteúdo: o aviso automático da IA deixa de valer
+        review: undefined,
+      })
+      if (!cardQ.trim() || !editedRich) return setError('Preencha a pergunta e a resposta direta.')
+    } else if (!cardQ.trim() || !cardA.trim()) {
+      return setError('Preencha frente e verso.')
+    }
     const done = await run(
       async () => {
         const extras = {
@@ -873,7 +927,8 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
           await updateCard({
             id: modal.card.id,
             q: cardQ,
-            a: cardA,
+            a: editedRich ? richToPlainText(editedRich) : cardA,
+            ...(editedRich ? { rich: editedRich } : {}),
             group: cardGroup,
             ref: cardRef,
             ...extras,
@@ -1933,12 +1988,62 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
               value={cardQ}
               onChange={(e) => setCardQ(e.target.value)}
             />
-            <label className="mr-lib-label">Verso (resposta)</label>
-            <textarea
-              style={{ ...fieldStyle, minHeight: 90 }}
-              value={cardA}
-              onChange={(e) => setCardA(e.target.value)}
-            />
+            {richDraft ? (
+              <>
+                <label className="mr-lib-label">Resposta direta (uma linha)</label>
+                <input
+                  style={fieldStyle}
+                  value={richDraft.answer}
+                  onChange={(e) => setRichDraft({ ...richDraft, answer: e.target.value })}
+                />
+                <label className="mr-lib-label">
+                  Por quê / mecanismo (parágrafos separados por linha em branco; use **negrito** nos termos-chave)
+                </label>
+                <textarea
+                  style={{ ...fieldStyle, minHeight: 120 }}
+                  value={richDraft.why}
+                  onChange={(e) => setRichDraft({ ...richDraft, why: e.target.value })}
+                />
+                <label className="mr-lib-label">Pontos-chave (um por linha)</label>
+                <textarea
+                  style={{ ...fieldStyle, minHeight: 70 }}
+                  value={richDraft.bullets}
+                  onChange={(e) => setRichDraft({ ...richDraft, bullets: e.target.value })}
+                />
+                <label className="mr-lib-label">Pegadinhas de prova (uma por linha)</label>
+                <textarea
+                  style={{ ...fieldStyle, minHeight: 70 }}
+                  value={richDraft.pearls}
+                  onChange={(e) => setRichDraft({ ...richDraft, pearls: e.target.value })}
+                />
+                <label className="mr-lib-label">Mnemônico (opcional)</label>
+                <input
+                  style={fieldStyle}
+                  value={richDraft.mnemonic}
+                  onChange={(e) => setRichDraft({ ...richDraft, mnemonic: e.target.value })}
+                />
+                <label className="mr-lib-label">Veja também (um tema por linha)</label>
+                <textarea
+                  style={{ ...fieldStyle, minHeight: 56 }}
+                  value={richDraft.related}
+                  onChange={(e) => setRichDraft({ ...richDraft, related: e.target.value })}
+                />
+                {(richBase?.compare || richBase?.source) && (
+                  <p style={{ fontSize: '.76rem', color: '#64748b', margin: '4px 0 8px' }}>
+                    A tabela comparativa e a fonte deste cartão são mantidas como estão.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <label className="mr-lib-label">Verso (resposta)</label>
+                <textarea
+                  style={{ ...fieldStyle, minHeight: 90 }}
+                  value={cardA}
+                  onChange={(e) => setCardA(e.target.value)}
+                />
+              </>
+            )}
             <label className="mr-lib-label">Grupo / objetivo (opcional)</label>
             <input
               style={fieldStyle}
