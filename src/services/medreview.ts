@@ -819,6 +819,7 @@ export const importCards = async (
     imageUrl?: string
     tags?: string[]
     occlusion?: any
+    rich?: any
   }>,
 ) => {
   return createCardsBatch(
@@ -832,6 +833,7 @@ export const importCards = async (
       tags: c.tags,
       occlusion: c.occlusion,
       imageUrl: c.imageUrl,
+      rich: c.rich,
     })),
   )
 }
@@ -1060,6 +1062,7 @@ export const importCardsAuto = async (
     imageUrl?: string
     tags?: string[]
     occlusion?: any
+    rich?: any
   }>,
   deckTree?: Array<{ id?: string; title: string; parent?: string; kind?: string }>,
 ) => {

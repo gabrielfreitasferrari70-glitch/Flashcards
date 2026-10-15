@@ -25,6 +25,7 @@ import {
 import { downloadFullBackup } from '@/services/fullBackup'
 import FolderTreeSelect from '@/components/FolderTreeSelect'
 import { richToPlainText, sanitizeRich, type RichCardV2 } from '@/lib/richCard'
+import { extractJson, normalizeImportJson, type ImportedCard } from '@/lib/importJson'
 
 // Formulário do verso em camadas (cartões com mr_cards.rich). Listas viram uma linha por item.
 type RichDraft = {
@@ -185,44 +186,8 @@ const libCss = `
 @media(max-width:720px){.mr-lib-main{padding:16px 12px 48px}.mr-lib-deck{padding:10px 12px}.mr-lib-deck.is-child{padding-left:28px}.mr-lib-card-row{flex-direction:column;align-items:flex-start}.mr-lib-card-actions{width:100%;justify-content:flex-end;margin-top:6px}.mr-lib-panel{padding:16px 14px}.mr-lib-panel-head h2{font-size:1.08rem}}
 `
 
-function normalizeJsonCards(input: unknown): ParsedCsvCard[] {
-  let rows: any = input
-  if (rows && !Array.isArray(rows))
-    rows = rows.flashcards || rows.cards || rows.cartoes || rows.cartas
-  if (!Array.isArray(rows))
-    throw new Error('JSON deve conter uma lista em flashcards, cards ou cartoes.')
-  return rows
-    .map((row: any) => {
-      const clinicoRaw = String(
-        row.clinical ?? row.clinico ?? row['modo_clinico'] ?? row.modoClinico ?? '',
-      )
-        .trim()
-        .toLowerCase()
-      const q = String(
-        row.q ?? row.question ?? row.pergunta ?? row.front ?? row.frente ?? '',
-      ).trim()
-      const clinicalFlag =
-        clinicoRaw === ''
-          ? /caso cl[ií]nico/i.test(q)
-          : clinicoRaw !== '0' &&
-            clinicoRaw !== 'nao' &&
-            clinicoRaw !== 'não' &&
-            clinicoRaw !== 'false' &&
-            clinicoRaw !== 'normal'
-      const imgRaw = String(
-        row.imageUrl ?? row.image ?? row['imagem'] ?? row.imagem ?? row.img ?? '',
-      ).trim()
-      return {
-        q,
-        a: String(row.a ?? row.answer ?? row.resposta ?? row.back ?? row.verso ?? 'Sem resposta').trim(),
-        group: String(row.group ?? row.grupo ?? row.category ?? row.categoria ?? '').trim(),
-        ref: String(row.ref ?? row.referencia ?? row.source ?? row.fonte ?? '').trim(),
-        folder: String(row.folder ?? row.pasta ?? row.deck ?? '').trim(),
-        clinical: clinicalFlag,
-        imageUrl: /^https?:\/\//i.test(imgRaw) ? imgRaw : '',
-      }
-    })
-    .filter((row: any) => row.q)
+function normalizeJsonCards(input: unknown): ImportedCard[] {
+  return normalizeImportJson(input).cards
 }
 
 function Modal({
@@ -996,11 +961,17 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
   const submitImport = async () => {
     if (modal.type !== 'import') return
     if (!modal.deckId) return setError('Escolha a pasta de destino.')
-    let parsed: ParsedCsvCard[]
+    let parsed: Array<ParsedCsvCard & { tags?: string[]; rich?: any }>
+    let richInfo = ''
     const trimmed = importText.trim()
     try {
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        parsed = normalizeJsonCards(JSON.parse(trimmed))
+      if (/^[[{]|^```/.test(trimmed)) {
+        const report = normalizeImportJson(extractJson(trimmed))
+        parsed = report.cards
+        richInfo =
+          (report.richCount ? ` ${report.richCount} com verso em camadas.` : '') +
+          (report.richInvalid ? ` ${report.richInvalid} com verso em camadas inválido (importados sem ele).` : '') +
+          (report.skipped ? ` ${report.skipped} ignorados por falta de pergunta ou resposta.` : '')
       } else {
         const result = parseCardsFromCsv(trimmed)
         if (result.error) return setError(result.error)
@@ -1014,16 +985,21 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
       for (let i = 0; i < parsed.length; i += 250)
         await importCards(modal.deckId, parsed.slice(i, i + 250))
       setImportText('')
-    }, `${parsed.length} cartões importados.`)
+    }, `${parsed.length} cartões importados.${richInfo}`)
     if (done) setModal({ type: 'none' })
   }
   const submitImportAuto = async () => {
     if (modal.type !== 'importAuto') return
-    let parsed: (ParsedCsvCard & { folder?: string })[]
+    let parsed: Array<ParsedCsvCard & { folder?: string; tags?: string[]; rich?: any }>
+    let richInfo = ''
     const trimmed = importText.trim()
     try {
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        parsed = normalizeJsonCards(JSON.parse(trimmed))
+      if (/^[[{]|^```/.test(trimmed)) {
+        const report = normalizeImportJson(extractJson(trimmed))
+        parsed = report.cards
+        richInfo =
+          (report.richCount ? ` ${report.richCount} com verso em camadas.` : '') +
+          (report.richInvalid ? ` ${report.richInvalid} com verso em camadas inválido (importados sem ele).` : '')
       } else {
         const result = parseCardsFromCsv(trimmed)
         if (result.error) return setError(result.error)
@@ -1043,7 +1019,7 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
         for (let i = 0; i < parsed.length; i += 250) await importCardsAuto(parsed.slice(i, i + 250))
         setImportText('')
       },
-      `${parsed.length} cartões importados${parsed.length - withFolder.length ? ` (${withFolder.length} criaram/foram para pastas)` : ''}.`,
+      `${parsed.length} cartões importados${parsed.length - withFolder.length ? ` (${withFolder.length} criaram/foram para pastas)` : ''}.${richInfo}`,
     )
     if (done) setModal({ type: 'none' })
   }
@@ -2191,7 +2167,7 @@ export default function MedReviewLibrary({ decks, cards, reviews, onBack, onRefr
         {modal.type === 'importAuto' && (
           <Modal
             title="📥 Importar com pastas automáticas"
-            subtitle="CSV com colunas frente,verso,pasta (ou JSON com pergunta,resposta,categoria,pasta). As pastas da coluna pasta são criadas automaticamente se não existirem."
+            subtitle="CSV com colunas frente,verso,pasta ou JSON (inclui o verso em camadas: campo rich). As pastas são criadas automaticamente se não existirem."
             onClose={() => setModal({ type: 'none' })}
           >
             <input
